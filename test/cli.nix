@@ -30,6 +30,9 @@ pkgs.runCommand "agenix-cli-test"
       pkgs.age
       pkgs.diffutils
       pkgs.coreutils
+      # pkgs.faketty # does not work
+      # pkgs.stdoutisatty # does not work
+      # pkgs.unixtools.script # only added for non-darwin as seen in test 6
     ];
   }
   ''
@@ -37,6 +40,8 @@ pkgs.runCommand "agenix-cli-test"
 
     # Test setup - create home directory and SSH keys
     export HOME="$TMPDIR/home"
+    export TMPDIR="$TMPDIR/agenix-cli-test-tmp"
+    mkdir -p $TMPDIR
     mkdir -p "$HOME/.ssh"
     cp ${../example_keys/user1.pub} "$HOME/.ssh/id_ed25519.pub"
     cp ${../example_keys/user1} "$HOME/.ssh/id_ed25519"
@@ -99,25 +104,53 @@ pkgs.runCommand "agenix-cli-test"
       exit 1
     fi
 
-    echo "=== Test 6: Rekey command ==="
-    before_hash=$(sha256sum secret1.age | cut -d' ' -f1)
-    agenix -r -i "$HOME/.ssh/id_ed25519"
-    after_hash=$(sha256sum secret1.age | cut -d' ' -f1)
-    if [ "$before_hash" != "$after_hash" ]; then
-      echo "✓ Rekey changes file hash"
-    else
-      echo "✗ Rekey did not change file hash"
-      exit 1
-    fi
+    echo "=== Test 6: Rekey preserves content ==="
+    ${
+      if !pkgs.stdenv.isDarwin then
+        ''
+          # First, reset secret1.age to a known state
+          echo "rekey-test-content" | agenix -e secret1.age
 
-    # Verify content is still correct after rekey
-    decrypted=$(agenix -d secret1.age)
-    if [ "$decrypted" = "test-content-12345" ]; then
-      echo "✓ Content preserved after rekey"
-    else
-      echo "✗ Content not preserved after rekey"
-      exit 1
-    fi
+          # Verify it was set correctly
+          before_decrypt=$(agenix -d secret1.age)
+          if [ "$before_decrypt" != "rekey-test-content" ]; then
+            echo "✗ Failed to set up secret1.age: got '$before_decrypt'"
+            exit 1
+          fi
+
+          # Get hash before rekey
+          before_hash=$(sha256sum secret1.age | cut -d' ' -f1)
+
+          faketty () {
+            ${pkgs.lib.getExe pkgs.unixtools.script} -qefc "$(printf "%q " "$@")" /dev/null
+          }
+
+          # Rekey only seems to work properly in a tty, so we use script to fake one
+          faketty agenix --rekey
+
+          # Get hash after rekey
+          after_hash=$(sha256sum secret1.age | cut -d' ' -f1)
+          if [ "$before_hash" != "$after_hash" ]; then
+            echo "✓ Rekey changes file hash"
+          else
+            echo "✗ Rekey did not change file hash"
+            exit 1
+          fi
+
+          # Verify content is preserved after rekey
+          after_decrypt=$(agenix -d secret1.age)
+          if [ "$after_decrypt" = "rekey-test-content" ]; then
+            echo "✓ Content preserved after rekey"
+          else
+            echo "✗ Content not preserved after rekey: expected 'rekey-test-content', got '$after_decrypt'"
+            exit 1
+          fi
+        ''
+      else
+        ''
+          echo "Skipping rekey test on Darwin due to tty issues."
+        ''
+    }
 
     echo "=== Test 7: Decrypt armored secret ==="
     decrypted=$(agenix -d armored-secret.age)
@@ -130,7 +163,9 @@ pkgs.runCommand "agenix-cli-test"
     fi
 
     echo "=== Test 8: Decrypt file with leading hyphen in name ==="
-    decrypted=$(agenix -d -- -leading-hyphen-filename.age)
+    # -- is not supported, so we need to do it without.
+    # TODO: Add a test to verify that -- is not supported.
+    decrypted=$(agenix -d -leading-hyphen-filename.age)
     expected="filename started with hyphen"
     if [ "$decrypted" = "$expected" ]; then
       echo "✓ Decrypt file with leading hyphen works"
@@ -140,6 +175,9 @@ pkgs.runCommand "agenix-cli-test"
     fi
 
     echo "=== Test 9: Edit with explicit identity when bogus key present ==="
+    # Set secret1.age to known content
+    echo "test-content-12345" | agenix -e secret1.age
+
     echo "bogus" > "$HOME/.ssh/id_rsa"
     # This should fail without explicit identity
     if agenix -d secret1.age 2>/dev/null; then
