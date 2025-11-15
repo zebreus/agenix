@@ -28,6 +28,7 @@ This project contains two parts:
 * [Threat model/Warnings](#threat-modelwarnings)
 * [Contributing](#contributing)
 * [Acknowledgements](#acknowledgements)
+* [License](#license)
 
 ## Problem and solution
 
@@ -804,3 +805,13 @@ After it starts, enter `run_tests()` to run the tests.
 ## Acknowledgements
 
 This project is based off of [sops-nix](https://github.com/Mic92/sops-nix) created Mic92. Thank you to Mic92 for inspiration and advice.
+
+## License
+
+This project is licensed under the GNU Affero General Public License v3.0 (AGPL-3.0).
+
+Copyright (C) 2025 zebreus
+
+This fork is based on the original [agenix project](https://github.com/ryantm/agenix) which was dedicated to the public domain under CC0 1.0 Universal by its original contributors.
+
+See the [LICENSE](LICENSE) file for the full license text.
