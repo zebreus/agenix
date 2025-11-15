@@ -5,6 +5,7 @@ on:
 jobs:
   tests-linux:
     runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
     steps:
     - uses: actions/checkout@v3
     - uses: cachix/install-nix-action@v22
@@ -20,6 +21,7 @@ jobs:
     - run: nix flake check
   tests-darwin:
     runs-on: macos-latest
+    if: github.event_name == 'pull_request'
     steps:
     - uses: actions/checkout@v3
     - uses: cachix/install-nix-action@v30
