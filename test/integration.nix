@@ -81,7 +81,7 @@ pkgs.nixosTest {
     ''
       # This test focuses on the NixOS and home-manager modules' ability
       # to decrypt and mount secrets. CLI-specific tests are in test/cli.nix.
-      
+
       system1.wait_for_unit("multi-user.target")
       system1.wait_until_succeeds("pgrep -f 'agetty.*tty1'")
       system1.sleep(2)
@@ -98,12 +98,12 @@ pkgs.nixosTest {
       system1.send_chars("whoami > /tmp/1\n")
       system1.wait_for_file("/tmp/1")
       assert "${user}" in system1.succeed("cat /tmp/1")
-      
+
       # Test home-manager module: user secret should be decrypted at expected path
       system1.send_chars("cat /run/user/$(id -u)/agenix/secret2 > /tmp/2\n")
       system1.wait_for_file("/tmp/2")
       assert "${secret2}" in system1.succeed("cat /tmp/2")
-      
+
       # Test home-manager module: armored secret should be decrypted
       system1.send_chars("cat /run/user/$(id -u)/agenix/armored-secret > /tmp/3\n")
       system1.wait_for_file("/tmp/3")
@@ -111,7 +111,7 @@ pkgs.nixosTest {
 
       # Test NixOS module: system secret with leading hyphen in filename
       assert "${hyphen-secret}" in system1.succeed("cat /run/agenix/leading-hyphen")
-      
+
       # Test home-manager module: custom path for secret
       system1.send_chars("cat /home/user1/secret2 > /tmp/4\n")
       system1.wait_for_file("/tmp/4")
