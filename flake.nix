@@ -68,12 +68,26 @@
                 }
               ];
             }).system;
+          cli = import ./test/cli.nix {
+            inherit nixpkgs;
+            pkgs = nixpkgs.legacyPackages.${system};
+            inherit system;
+            agenixPkg = self.packages.${system}.agenix;
+          };
         })
         // {
-          x86_64-linux.integration = import ./test/integration.nix {
-            inherit nixpkgs home-manager;
-            pkgs = nixpkgs.legacyPackages.x86_64-linux;
-            system = "x86_64-linux";
+          x86_64-linux = {
+            integration = import ./test/integration.nix {
+              inherit nixpkgs home-manager;
+              pkgs = nixpkgs.legacyPackages.x86_64-linux;
+              system = "x86_64-linux";
+            };
+            cli = import ./test/cli.nix {
+              inherit nixpkgs;
+              pkgs = nixpkgs.legacyPackages.x86_64-linux;
+              system = "x86_64-linux";
+              agenixPkg = self.packages.x86_64-linux.agenix;
+            };
           };
         };
 
