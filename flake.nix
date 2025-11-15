@@ -89,6 +89,14 @@
               agenixPkg = self.packages.x86_64-linux.agenix;
             };
           };
+          aarch64-linux = {
+            cli = import ./test/cli.nix {
+              inherit nixpkgs;
+              pkgs = nixpkgs.legacyPackages.aarch64-linux;
+              system = "aarch64-linux";
+              agenixPkg = self.packages.aarch64-linux.agenix;
+            };
+          };
         };
 
       darwinConfigurations.integration-x86_64.system = self.checks.x86_64-darwin.integration;
