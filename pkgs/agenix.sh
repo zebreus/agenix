@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# SPDX-License-Identifier: AGPL-3.0-or-later
-# Copyright (C) 2025 zebreus
 set -Eeuo pipefail
 
 PACKAGE="agenix"

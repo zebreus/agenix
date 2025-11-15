@@ -1,7 +1,5 @@
 agenix - age-encrypted secrets for NixOS
 
-Copyright (C) 2025 zebreus (https://github.com/zebreus)
-
 This fork is based on the original agenix project which was dedicated to the 
 public domain under CC0 1.0 Universal by its original contributors.
 
