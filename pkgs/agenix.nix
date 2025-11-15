@@ -26,6 +26,8 @@ stdenv.mkDerivation rec {
   dontUnpack = true;
   doInstallCheck = true;
   installCheckInputs = [ shellcheck ];
+  # This is a basic smoke test that runs during package build.
+  # Comprehensive CLI tests are in test/cli.nix
   postInstallCheck = ''
     shellcheck ${bin}
     ${bin} -h | grep ${version}

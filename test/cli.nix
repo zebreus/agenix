@@ -1,3 +1,17 @@
+# CLI Test Suite for agenix
+#
+# This test suite treats the agenix CLI as a blackbox, testing only the
+# binary interface (commands and outputs). It can be used to verify any
+# implementation of the agenix CLI, not just the default one.
+#
+# To use with an alternative implementation:
+#   import ./test/cli.nix {
+#     inherit nixpkgs;
+#     pkgs = import nixpkgs { };
+#     system = "x86_64-linux";
+#     agenixPkg = myAlternativeAgenixImplementation;
+#   }
+#
 {
   nixpkgs ? <nixpkgs>,
   pkgs ? import nixpkgs {

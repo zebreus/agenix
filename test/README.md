@@ -48,10 +48,16 @@ nix flake check
 
 ### Run specific test:
 ```bash
-# CLI tests (Linux)
+# CLI tests (Linux x86_64)
 nix build .#checks.x86_64-linux.cli
 
-# CLI tests (Darwin)
+# CLI tests (Linux ARM64)
+nix build .#checks.aarch64-linux.cli
+
+# CLI tests (Darwin x86_64)
+nix build .#checks.x86_64-darwin.cli
+
+# CLI tests (Darwin ARM64)
 nix build .#checks.aarch64-darwin.cli
 
 # NixOS module tests
@@ -59,6 +65,7 @@ nix build .#checks.x86_64-linux.integration
 
 # Darwin module tests
 nix build .#checks.x86_64-darwin.integration
+nix build .#checks.aarch64-darwin.integration
 ```
 
 ## Design Principles
