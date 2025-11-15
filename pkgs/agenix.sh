@@ -162,9 +162,12 @@ function edit {
 
     [ ! -f "$CLEARTEXT_FILE" ] || cp -- "$CLEARTEXT_FILE" "$CLEARTEXT_FILE.before"
 
-    [ -t 0 ] || EDITOR='cp -- /dev/stdin'
-
-    $EDITOR "$CLEARTEXT_FILE"
+    if [ -t 0 ] ; then
+      $EDITOR "$CLEARTEXT_FILE"
+    else
+      cat > "$CLEARTEXT_FILE"
+    fi
+    ${EDITOR:=:}
 
     if [ ! -f "$CLEARTEXT_FILE" ]
     then
