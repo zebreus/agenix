@@ -1,35 +1,45 @@
 {
   lib,
-  stdenv,
-  age,
-  jq,
+  rustPlatform,
   nix,
-  mktemp,
-  diffutils,
-  replaceVars,
-  ageBin ? "${age}/bin/age",
-  shellcheck,
+  age,
+  makeWrapper,
 }:
-let
-  bin = "${placeholder "out"}/bin/agenix";
-in
-stdenv.mkDerivation rec {
+
+rustPlatform.buildRustPackage rec {
   pname = "agenix";
   version = "0.15.0";
-  src = replaceVars ./agenix.sh {
-    inherit ageBin version;
-    jqBin = "${jq}/bin/jq";
-    nixInstantiate = "${nix}/bin/nix-instantiate";
-    mktempBin = "${mktemp}/bin/mktemp";
-    diffBin = "${diffutils}/bin/diff";
-  };
-  dontUnpack = true;
-  doInstallCheck = true;
-  installCheckInputs = [ shellcheck ];
-  postInstallCheck = ''
-    shellcheck ${bin}
-    ${bin} -h | grep ${version}
+  
+  src = ./.;
 
+  cargoLock = {
+    lockFile = ./Cargo.lock;
+  };
+
+  nativeBuildInputs = [ makeWrapper ];
+  
+  buildInputs = [ ];
+
+  # The Rust binary calls nix-instantiate at runtime
+  # We need to make sure it's available in PATH
+  postInstall = ''
+    wrapProgram $out/bin/agenix \
+      --prefix PATH : ${lib.makeBinPath [ nix ]}
+  '';
+
+  doCheck = true;
+
+  checkPhase = ''
+    cargo test --release
+  '';
+
+  doInstallCheck = true;
+  
+  installCheckPhase = ''
+    $out/bin/agenix --help | grep ${version}
+    $out/bin/agenix --version | grep ${version}
+
+    # Test decrypt functionality with example files
     test_tmp=$(mktemp -d 2>/dev/null || mktemp -d -t 'mytmpdir')
     export HOME="$test_tmp/home"
     export NIX_STORE_DIR="$test_tmp/nix/store"
@@ -55,12 +65,13 @@ stdenv.mkDerivation rec {
     )
 
     cd $HOME/secrets
-    test $(${bin} -d secret1.age) = "hello"
+    test $($out/bin/agenix -d secret1.age) = "hello"
   '';
 
-  installPhase = ''
-    install -D $src ${bin}
-  '';
-
-  meta.description = "age-encrypted secrets for NixOS";
+  meta = {
+    description = "age-encrypted secrets for NixOS";
+    homepage = "https://github.com/ryantm/agenix";
+    license = lib.licenses.mit;
+    maintainers = with lib.maintainers; [ ryantm ];
+  };
 }

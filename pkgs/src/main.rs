@@ -1,6 +1,6 @@
 use age::{Decryptor, Encryptor};
 use anyhow::{anyhow, Context, Result};
-use clap::{Parser, Subcommand};
+use clap::Parser;
 use std::fs;
 use std::io::{Read, Write};
 use std::path::PathBuf;
