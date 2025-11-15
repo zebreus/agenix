@@ -15,6 +15,8 @@ jobs:
     - run: nix build
     - run: nix build .#doc
     - run: nix fmt . -- --ci
+    - name: "Run CLI tests"
+      run: nix build .#checks.x86_64-linux.cli
     - run: nix flake check
   tests-darwin:
     runs-on: macos-latest
@@ -28,6 +30,14 @@ jobs:
     - run: nix build
     - run: nix build .#doc
     - run: nix fmt . -- --ci
+    - name: "Run CLI tests"
+      run: |
+        # Determine architecture of GitHub runner
+        ARCH=x86_64
+        if [ "$(arch)" = arm64 ]; then
+          ARCH=aarch64
+        fi
+        nix build .#checks."${ARCH}"-darwin.cli
     - run: nix flake check
     - name: "Install nix-darwin module"
       run: |
