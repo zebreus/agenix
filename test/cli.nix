@@ -50,8 +50,16 @@ pkgs.runCommand "agenix-cli-test"
     cd "$HOME/secrets"
 
     echo "=== Test 1: Help command ==="
-    agenix --help | grep -q "agenix - edit and rekey age secret files"
-    echo "✓ Help command works"
+    # Temporarily disable pipefail for help command which can trigger SIGPIPE
+    set +o pipefail
+    help_output=$(agenix --help 2>&1)
+    set -o pipefail
+    if echo "$help_output" | grep -q "agenix - edit and rekey age secret files"; then
+      echo "✓ Help command works"
+    else
+      echo "✗ Help command failed"
+      exit 1
+    fi
 
     echo "=== Test 2: Decrypt command ==="
     decrypted=$(agenix -d secret1.age)
