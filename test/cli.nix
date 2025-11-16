@@ -42,13 +42,13 @@ pkgs.runCommand "agenix-cli-test"
     export TMPDIR="$TMPDIR/agenix-cli-test-tmp"
     mkdir -p $TMPDIR
     mkdir -p "$HOME/.ssh"
-    cp ${../example_keys/user1.pub} "$HOME/.ssh/id_ed25519.pub"
-    cp ${../example_keys/user1} "$HOME/.ssh/id_ed25519"
+    cp ${./example_keys/user1.pub} "$HOME/.ssh/id_ed25519.pub"
+    cp ${./example_keys/user1} "$HOME/.ssh/id_ed25519"
     chmod 644 "$HOME/.ssh/id_ed25519.pub"
     chmod 600 "$HOME/.ssh/id_ed25519"
 
     # Copy example secrets for testing
-    cp -r ${../example} "$HOME/secrets"
+    cp -r ${./example} "$HOME/secrets"
     chmod -R u+rw "$HOME/secrets"
 
     cd "$HOME/secrets"

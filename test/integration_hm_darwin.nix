@@ -10,7 +10,7 @@
 
   age = {
     identityPaths = options.age.identityPaths.default ++ [ "/Users/user1/.ssh/this_key_wont_exist" ];
-    secrets.user-secret.file = ../example/secret2.age;
+    secrets.user-secret.file = ./example/secret2.age;
   };
 
   home = rec {
