@@ -25,8 +25,8 @@ pkgs.nixosTest {
       services.openssh.enable = true;
 
       age.secrets = {
-        passwordfile-user1.file = ../example/passwordfile-user1.age;
-        leading-hyphen.file = ../example/-leading-hyphen-filename.age;
+        passwordfile-user1.file = ./example/passwordfile-user1.age;
+        leading-hyphen.file = ./example/-leading-hyphen-filename.age;
       };
 
       age.identityPaths = options.age.identityPaths.default ++ [ "/etc/ssh/this_key_wont_exist" ];
@@ -56,14 +56,14 @@ pkgs.nixosTest {
             identityPaths = options.age.identityPaths.default ++ [ "/home/user1/.ssh/this_key_wont_exist" ];
             secrets.secret2 = {
               # Only decryptable by user1's key
-              file = ../example/secret2.age;
+              file = ./example/secret2.age;
             };
             secrets.secret2Path = {
-              file = ../example/secret2.age;
+              file = ./example/secret2.age;
               path = "/home/user1/secret2";
             };
             secrets.armored-secret = {
-              file = ../example/armored-secret.age;
+              file = ./example/armored-secret.age;
             };
           };
         };

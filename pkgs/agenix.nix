@@ -40,16 +40,16 @@ rustPlatform.buildRustPackage rec {
     trap "cleanup" 0 2 3 15
 
     mkdir -p $HOME/.ssh
-    cp -r "${../example}" $HOME/secrets
+    cp -r "${../test/example}" $HOME/secrets
     chmod -R u+rw $HOME/secrets
     (
     umask u=rw,g=r,o=r
-    cp ${../example_keys/user1.pub} $HOME/.ssh/id_ed25519.pub
+    cp ${../test/example_keys/user1.pub} $HOME/.ssh/id_ed25519.pub
     chown $UID $HOME/.ssh/id_ed25519.pub
     )
     (
     umask u=rw,g=,o=
-    cp ${../example_keys/user1} $HOME/.ssh/id_ed25519
+    cp ${../test/example_keys/user1} $HOME/.ssh/id_ed25519
     chown $UID $HOME/.ssh/id_ed25519
     )
 
