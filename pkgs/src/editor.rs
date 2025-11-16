@@ -95,10 +95,10 @@ pub fn decrypt_file(
 pub fn rekey_all_files(rules_path: &str, identity: Option<&str>) -> Result<()> {
     let files = get_all_files(rules_path)?;
 
-    for file in files {
+    files.iter().try_for_each(|file| {
         eprintln!("Rekeying {file}...");
-        edit_file(rules_path, &file, ":", identity)?;
-    }
+        edit_file(rules_path, file, ":", identity)
+    })?;
 
     Ok(())
 }
