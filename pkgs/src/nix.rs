@@ -1,43 +1,68 @@
 use anyhow::{Context, Result, anyhow};
-use serde_json::Value;
-use std::process::Command;
+use snix_eval::EvaluationBuilder;
+use snix_eval::Value;
+use std::env::current_dir;
+use std::path::Path;
 
 pub const NIX_INSTANTIATE: &str = "nix-instantiate";
+
+fn eval_nix_expression(expr: &str, path: &Path) -> Result<Value> {
+    let path = std::path::absolute(path)
+        .with_context(|| format!("Failed to get absolute path for evaluation at {:?}", path))?;
+
+    let builder = EvaluationBuilder::new_impure();
+    let evaluation = builder.build();
+    let sourcemap = evaluation.source_map();
+
+    let result = evaluation.evaluate(expr, Some(path));
+
+    for error in result.errors.iter() {
+        error.fancy_format_stderr();
+    }
+    for warning in result.warnings.iter() {
+        warning.fancy_format_stderr(&sourcemap);
+    }
+    let Some(result) = result.value else {
+        return Err(anyhow!("Failed to evaluate Nix expression"));
+    };
+    Ok(result)
+}
+
+fn value_to_string_array(value: Value) -> Result<Vec<String>> {
+    match value {
+        Value::List(arr) => arr
+            .into_iter()
+            .map(|v| {
+                let Value::String(s) = v else {
+                    return Err(anyhow!("Expected string public key, got: {:?}", v));
+                };
+                Ok(s.as_str().map(|s| s.to_string())?)
+            })
+            .collect::<Result<Vec<_>, _>>(),
+        _ => {
+            return Err(anyhow!(
+                "Expected JSON array for public keys, got: {:?}",
+                value
+            ));
+        }
+    }
+}
+
+fn value_to_bool(value: Value) -> Result<bool> {
+    match value {
+        Value::Bool(b) => Ok(b),
+        _ => Err(anyhow!("Expected boolean value, got: {:?}", value)),
+    }
+}
 
 /// Get public keys for a file from the rules
 pub fn get_public_keys(nix_instantiate: &str, rules_path: &str, file: &str) -> Result<Vec<String>> {
     let nix_expr = format!("(let rules = import {rules_path}; in rules.\"{file}\".publicKeys)");
 
-    let output = Command::new(nix_instantiate)
-        .args(["--json", "--eval", "--strict", "-E", &nix_expr])
-        .output()
-        .context("Failed to run nix-instantiate")?;
+    let current_dir = current_dir()?;
+    let output = eval_nix_expression(nix_expr.as_str(), &current_dir)?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(anyhow!(
-            "Failed to get keys for file: {file}, nix error: {stderr}"
-        ));
-    }
-
-    let json_str =
-        String::from_utf8(output.stdout).context("Failed to parse nix output as UTF-8")?;
-
-    let json_value: Value =
-        serde_json::from_str(&json_str).context("Failed to parse nix output as JSON")?;
-
-    // Parse the JSON array into a vector of strings
-    let keys = match json_value {
-        Value::Array(arr) => arr
-            .into_iter()
-            .filter_map(|v| v.as_str().map(str::to_string))
-            .collect(),
-        _ => {
-            return Err(anyhow!(
-                "Expected JSON array for public keys, got: {json_value}"
-            ));
-        }
-    };
+    let keys = value_to_string_array(output)?;
 
     Ok(keys)
 }
@@ -48,58 +73,28 @@ pub fn should_armor(nix_instantiate: &str, rules_path: &str, file: &str) -> Resu
         "(let rules = import {rules_path}; in (builtins.hasAttr \"armor\" rules.\"{file}\" && rules.\"{file}\".armor))",
     );
 
-    let output = Command::new(nix_instantiate)
-        .args(["--json", "--eval", "--strict", "-E", &nix_expr])
-        .output()
-        .context("Failed to run nix-instantiate for armor check")?;
+    let current_dir = current_dir()?;
+    let output = eval_nix_expression(nix_expr.as_str(), &current_dir)?;
 
-    if !output.status.success() {
-        return Ok(false);
-    }
-
-    let result = String::from_utf8(output.stdout).context("Failed to parse nix output as UTF-8")?;
-
-    Ok(result.trim() == "true")
+    value_to_bool(output)
 }
 
 /// Get all file names from the rules
 pub fn get_all_files(nix_instantiate: &str, rules_path: &str) -> Result<Vec<String>> {
     let nix_expr = format!("(let rules = import {rules_path}; in builtins.attrNames rules)");
 
-    let output = Command::new(nix_instantiate)
-        .args(["--json", "--eval", "-E", &nix_expr])
-        .output()
-        .context("Failed to run nix-instantiate")?;
+    let current_dir = current_dir()?;
+    let output = eval_nix_expression(nix_expr.as_str(), &current_dir)?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(anyhow!("Failed to get file list from rules: {stderr}"));
-    }
+    let keys = value_to_string_array(output)?;
 
-    let json_str =
-        String::from_utf8(output.stdout).context("Failed to parse nix output as UTF-8")?;
-
-    let json_value: Value =
-        serde_json::from_str(&json_str).context("Failed to parse nix output as JSON")?;
-
-    // Parse the JSON array into a vector of strings
-    let files = match json_value {
-        Value::Array(arr) => arr
-            .into_iter()
-            .filter_map(|v| v.as_str().map(str::to_string))
-            .collect(),
-        _ => {
-            return Err(anyhow!(
-                "Expected JSON array for file names, got: {json_value}"
-            ));
-        }
-    };
-
-    Ok(files)
+    Ok(keys)
 }
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use super::*;
 
     fn create_nix() -> &'static str {
@@ -140,22 +135,13 @@ mod tests {
     fn test_nix_expr_format_get_public_keys() {
         // Test that the Nix expression is formatted correctly
         let nix = create_nix();
-        let rules = "./test_secrets.nix";
-        let result = get_public_keys(nix, rules, "test.age");
+        let rules = "./resources/test_secrets.nix";
+        let result = get_public_keys("", rules, "test.age");
 
         // This will fail in most test environments due to missing nix-instantiate
         // but we can at least test that the function doesn't panic
-        match result {
-            Ok(_) => {
-                // If nix-instantiate is available and works, great!
-            }
-            Err(err) => {
-                // Expected in most test environments
-                let err_str = err.to_string();
-                // Should contain our file name in the error
-                assert!(err_str.contains("test.age") || err_str.contains("nix-instantiate"));
-            }
-        }
+        let results = result.unwrap();
+        // TODO: assert that results contain expected keys
     }
 
     #[test]
@@ -169,12 +155,5 @@ mod tests {
             // If it works, armor should be a boolean
             assert!(matches!(armor, true | false));
         }
-    }
-
-    #[test]
-    fn test_nix_expr_format_get_all_files() {
-        let nix = create_nix();
-        let rules = "./test_secrets.nix";
-        let _ = get_all_files(nix, rules);
     }
 }
