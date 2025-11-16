@@ -45,59 +45,26 @@
         default = self.packages.${system}.agenix;
       });
 
-      checks =
-        nixpkgs.lib.genAttrs [ "aarch64-darwin" "x86_64-darwin" ] (system: {
-          integration =
-            (darwin.lib.darwinSystem {
-              inherit system;
-              modules = [
-                ./test/integration_darwin.nix
-
-                # Allow new-style nix commands in CI
-                { nix.extraOptions = "experimental-features = nix-command flakes"; }
-
-                home-manager.darwinModules.home-manager
-                {
-                  home-manager = {
-                    verbose = true;
-                    useGlobalPkgs = true;
-                    useUserPackages = true;
-                    backupFileExtension = "hmbak";
-                    users.runner = ./test/integration_hm_darwin.nix;
-                  };
-                }
-              ];
-            }).system;
-          cli = import ./test/cli.nix {
-            inherit nixpkgs;
-            pkgs = nixpkgs.legacyPackages.${system};
-            inherit system;
-            agenixPkg = self.packages.${system}.agenix;
-          };
-        })
-        // {
-          x86_64-linux = {
-            integration = import ./test/integration.nix {
-              inherit nixpkgs home-manager;
-              pkgs = nixpkgs.legacyPackages.x86_64-linux;
-              system = "x86_64-linux";
-            };
-            cli = import ./test/cli.nix {
-              inherit nixpkgs;
-              pkgs = nixpkgs.legacyPackages.x86_64-linux;
-              system = "x86_64-linux";
-              agenixPkg = self.packages.x86_64-linux.agenix;
-            };
-          };
-          aarch64-linux = {
-            cli = import ./test/cli.nix {
-              inherit nixpkgs;
-              pkgs = nixpkgs.legacyPackages.aarch64-linux;
-              system = "aarch64-linux";
-              agenixPkg = self.packages.aarch64-linux.agenix;
-            };
-          };
+      checks = eachSystem (system: {
+        integration =
+          if null != (builtins.match ".*darwin" system) then
+            (import ./test/integration_darwin.nix {
+              inherit darwin home-manager;
+              pkgs = nixpkgs.legacyPackages.${system};
+              system = system;
+            })
+          else
+            (import ./test/integration.nix {
+              inherit home-manager;
+              pkgs = nixpkgs.legacyPackages.${system};
+              system = system;
+            });
+        cli = import ./test/cli.nix {
+          pkgs = nixpkgs.legacyPackages.${system};
+          inherit system;
+          agenixPkg = self.packages.${system}.agenix;
         };
+      });
 
       darwinConfigurations.integration-x86_64.system = self.checks.x86_64-darwin.integration;
       darwinConfigurations.integration-aarch64.system = self.checks.aarch64-darwin.integration;

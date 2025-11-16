@@ -1,5 +1,4 @@
 {
-  nixpkgs ? <nixpkgs>,
   pkgs ? import <nixpkgs> {
     inherit system;
     config = { };

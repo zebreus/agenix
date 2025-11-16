@@ -13,8 +13,7 @@
 #   }
 #
 {
-  nixpkgs ? <nixpkgs>,
-  pkgs ? import nixpkgs {
+  pkgs ? import <nixpkgs> {
     inherit system;
     config = { };
   },
