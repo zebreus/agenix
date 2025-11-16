@@ -18,7 +18,11 @@ fn validate_dependencies() -> Result<(), Vec<String>> {
             missing.push(format!("{name} ({path})"));
         }
     }
-    if missing.is_empty() { Ok(()) } else { Err(missing) }
+    if missing.is_empty() {
+        Ok(())
+    } else {
+        Err(missing)
+    }
 }
 
 /// Single public entrypoint: parse CLI args and execute
@@ -29,18 +33,26 @@ where
 {
     if let Err(missing) = validate_dependencies() {
         eprintln!("Missing required dependencies:");
-        for dep in missing { eprintln!("  - {dep}"); }
+        for dep in missing {
+            eprintln!("  - {dep}");
+        }
         return Err(anyhow::anyhow!("Required dependencies are missing"));
     }
 
     let args = cli::Args::parse_from(iter);
 
     if args.rekey {
-        return editor::rekey_all_files(&args.rules, args.identity.as_deref()).context("Failed to rekey files");
+        return editor::rekey_all_files(&args.rules, args.identity.as_deref())
+            .context("Failed to rekey files");
     }
     if let Some(file) = &args.decrypt {
-        return editor::decrypt_file(&args.rules, file, args.output.as_deref(), args.identity.as_deref())
-            .with_context(|| format!("Failed to decrypt {file}"));
+        return editor::decrypt_file(
+            &args.rules,
+            file,
+            args.output.as_deref(),
+            args.identity.as_deref(),
+        )
+        .with_context(|| format!("Failed to decrypt {file}"));
     }
     if let Some(file) = &args.edit {
         return editor::edit_file(&args.rules, file, &args.editor, args.identity.as_deref())

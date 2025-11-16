@@ -7,7 +7,11 @@ use std::process::Command;
 pub const AGE_BIN: &str = "age";
 
 /// Decrypt a file to another file
-pub fn decrypt_to_file<P: AsRef<Path>>(input_file: &str, output_file: P, identity: Option<&str>) -> Result<()> {
+pub fn decrypt_to_file<P: AsRef<Path>>(
+    input_file: &str,
+    output_file: P,
+    identity: Option<&str>,
+) -> Result<()> {
     let mut args = vec!["--decrypt".to_string()];
 
     match identity {
