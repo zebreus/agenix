@@ -5,7 +5,6 @@ use std::process::Command;
 use tempfile::TempDir;
 
 use crate::crypto::{decrypt_to_file, encrypt_from_file, files_equal};
-use crate::nix::NIX_INSTANTIATE;
 use crate::nix::{get_all_files, get_public_keys, should_armor};
 
 /// Edit a file with encryption/decryption
@@ -15,8 +14,8 @@ pub fn edit_file(
     editor_cmd: &str,
     identity: Option<&str>,
 ) -> Result<()> {
-    let public_keys = get_public_keys(NIX_INSTANTIATE, rules_path, file)?;
-    let armor = should_armor(NIX_INSTANTIATE, rules_path, file)?;
+    let public_keys = get_public_keys(rules_path, file)?;
+    let armor = should_armor(rules_path, file)?;
 
     if public_keys.is_empty() {
         return Err(anyhow!("No public keys found for file: {file}"));
@@ -79,7 +78,7 @@ pub fn decrypt_file(
     output: Option<&str>,
     identity: Option<&str>,
 ) -> Result<()> {
-    let public_keys = get_public_keys(NIX_INSTANTIATE, rules_path, file)?;
+    let public_keys = get_public_keys(rules_path, file)?;
     if public_keys.is_empty() {
         return Err(anyhow!("No public keys found for file: {file}"));
     }
@@ -94,7 +93,7 @@ pub fn decrypt_file(
 
 /// Rekey all files in the rules (no-op editor used to avoid launching an editor)
 pub fn rekey_all_files(rules_path: &str, identity: Option<&str>) -> Result<()> {
-    let files = get_all_files(NIX_INSTANTIATE, rules_path)?;
+    let files = get_all_files(rules_path)?;
 
     for file in files {
         eprintln!("Rekeying {file}...");

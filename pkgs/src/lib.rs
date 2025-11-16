@@ -5,26 +5,6 @@ mod nix;
 
 use anyhow::{Context, Result};
 use clap::Parser;
-use std::process::Command;
-
-use crate::nix::NIX_INSTANTIATE;
-
-fn validate_dependencies() -> Result<(), Vec<String>> {
-    let mut missing = Vec::new();
-    // Only check for nix-instantiate since we use the age crate instead of the binary
-    if Command::new(NIX_INSTANTIATE)
-        .arg("--version")
-        .output()
-        .is_err()
-    {
-        missing.push(format!("nix-instantiate ({NIX_INSTANTIATE})"));
-    }
-    if missing.is_empty() {
-        Ok(())
-    } else {
-        Err(missing)
-    }
-}
 
 /// Parse CLI arguments and execute the requested action.
 ///
@@ -38,14 +18,6 @@ where
     I: IntoIterator<Item = T>,
     T: Into<std::ffi::OsString> + Clone,
 {
-    if let Err(missing) = validate_dependencies() {
-        eprintln!("Missing required dependencies:");
-        for dep in missing {
-            eprintln!("  - {dep}");
-        }
-        return Err(anyhow::anyhow!("Required dependencies are missing"));
-    }
-
     let args = cli::Args::parse_from(iter);
 
     if args.rekey {
