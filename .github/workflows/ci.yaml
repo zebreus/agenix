@@ -4,21 +4,11 @@ on:
   pull_request:
     types: [opened, reopened]
 jobs:
-  tests-linux:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: cachix/install-nix-action@v22
-        with:
-          extra_nix_config: |
-            system-features = nixos-test recursive-nix benchmark big-parallel kvm
-            extra-experimental-features = recursive-nix nix-command flakes
-      - run: nix build
-      - run: nix build .#doc
-      - run: nix fmt . -- --ci
-      - run: nix flake check
-  tests-darwin:
-    runs-on: macos-latest
+  tests:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v3
       - uses: cachix/install-nix-action@v30
@@ -30,28 +20,26 @@ jobs:
       - run: nix build .#doc
       - run: nix fmt . -- --ci
       - run: nix flake check
-      - name: "Install nix-darwin module"
+      - name: "Activate nix-darwin module"
+        if: matrix.os == 'macos-latest'
         run: |
-          # Determine architecture of GitHub runner
-          ARCH=x86_64
-          if [ "$(arch)" = arm64 ]; then
-            ARCH=aarch64
-          fi
-          # https://github.com/ryantm/agenix/pull/230#issuecomment-1867025385
+          ARCH="$(nix eval --impure --raw --expr builtins.currentSystem)"
 
           sudo mv /etc/nix/nix.conf{,.bak}
-          nix \
-            --extra-experimental-features 'nix-command flakes' \
-            build .#checks."${ARCH}"-darwin.integration
-
+          nix build --no-link --print-out-paths .#checks."${ARCH}".integration
           ./result/activate-user
           sudo ./result/activate
       - name: "Test nix-darwin module"
+        if: matrix.os == 'macos-latest'
         run: |
           sudo /run/current-system/sw/bin/agenix-integration
-      - name: "Test home-manager module"
+      - name: "Activate home-manager module"
+        if: matrix.os == 'macos-latest'
         run: |
           # Do the job of `home-manager switch` in-line to avoid rate limiting
           nix build .#homeConfigurations.integration-darwin.activationPackage
           ./result/activate
+      - name: "Test home-manager module"
+        if: matrix.os == 'macos-latest'
+        run: |
           ~/agenix-home-integration/bin/agenix-home-integration
