@@ -7,13 +7,20 @@ use std::process::Command;
 pub const AGE_BIN: &str = "age";
 
 /// Decrypt a file to another file
-pub fn decrypt_to_file<P: AsRef<Path>>(input_file: &str, output_file: P) -> Result<()> {
+pub fn decrypt_to_file<P: AsRef<Path>>(input_file: &str, output_file: P, identity: Option<&str>) -> Result<()> {
     let mut args = vec!["--decrypt".to_string()];
 
-    // Add default identities
-    let identities = get_default_identities();
-    for identity in identities {
-        args.extend_from_slice(&["--identity".to_string(), identity]);
+    match identity {
+        Some(id) => {
+            args.extend_from_slice(&["--identity".to_string(), id.to_string()]);
+        }
+        None => {
+            // Add default identities
+            let identities = get_default_identities();
+            for identity in identities {
+                args.extend_from_slice(&["--identity".to_string(), identity]);
+            }
+        }
     }
 
     args.extend_from_slice(&[
@@ -36,13 +43,20 @@ pub fn decrypt_to_file<P: AsRef<Path>>(input_file: &str, output_file: P) -> Resu
 }
 
 /// Decrypt a file to stdout
-pub fn decrypt_to_stdout(input_file: &str) -> Result<()> {
+pub fn decrypt_to_stdout(input_file: &str, identity: Option<&str>) -> Result<()> {
     let mut args = vec!["--decrypt".to_string()];
 
-    // Add default identities
-    let identities = get_default_identities();
-    for identity in identities {
-        args.extend_from_slice(&["--identity".to_string(), identity]);
+    match identity {
+        Some(id) => {
+            args.extend_from_slice(&["--identity".to_string(), id.to_string()]);
+        }
+        None => {
+            // Add default identities
+            let identities = get_default_identities();
+            for identity in identities {
+                args.extend_from_slice(&["--identity".to_string(), identity]);
+            }
+        }
     }
 
     args.extend_from_slice(&["--".to_string(), input_file.to_string()]);
