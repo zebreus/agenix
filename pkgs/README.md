@@ -4,27 +4,32 @@ Pure Rust implementation of agenix - edit and rekey age secret files using Nix e
 
 ## Dependencies
 
-- `age` - Age encryption tool (hardcoded into binary during Nix build)
-- `snix-eval` - Pure Rust Nix expression evaluator (replaces `nix-instantiate`)
+This is a pure Rust implementation with the following main dependencies:
 
-## Improvements over shell version
+- `age` (Rust crate) - Standalone Rust implementation of the age encryption format, supporting both age and SSH keys
+- `snix-eval` - Pure Rust Nix expression evaluator for reading secrets configuration
+- `clap` - Command-line argument parsing
+- `serde_json` - JSON parsing for Nix evaluation results
 
-- No `jq` dependency (uses `serde_json` for JSON parsing)
-- No `nix-instantiate` dependency (uses pure Rust `snix-eval` library)
-- Native Rust binary (no bash required)
-- Better error handling with detailed error messages
-- Type-safe Nix expression evaluation
-- Comprehensive test coverage
+## Key Features
 
-## Features
+- **Pure Rust implementation**: No external dependencies on shell scripts, `jq`, or `nix-instantiate`
+- **Native age library**: Uses the Rust age crate for all encryption/decryption operations
+- **Type-safe Nix evaluation**: Evaluates Nix expressions using the pure Rust `snix-eval` library
+- **Comprehensive error handling**: Detailed error messages with proper context
+- **Extensive test coverage**: Unit and integration tests covering all major functionality
 
-- Edit encrypted secrets with your preferred editor
-- Decrypt secrets to stdout or a file
-- Rekey all secrets with updated recipients
-- Support for both armored (ASCII) and binary age encryption
-- Automatic detection of SSH keys (RSA, ed25519) and age keys
-- Custom rules file support via `--rules` flag or `RULES` environment variable
-- Flexible identity management with `--identity` flag
+## Capabilities
+
+This tool provides the following functionality:
+
+- **Edit secrets**: Open encrypted secrets in your preferred editor, with automatic encryption/decryption
+- **Decrypt secrets**: Output decrypted content to stdout or save to a file
+- **Rekey secrets**: Re-encrypt all secrets when recipients change
+- **Flexible encryption**: Support for both ASCII-armored and binary age file formats
+- **Multiple key types**: Automatically handles age keys (age1...) and SSH keys (RSA, ed25519)
+- **Configurable rules**: Define encryption recipients and settings in a Nix file
+- **Identity management**: Use custom SSH/age identities or auto-detect from `~/.ssh/`
 
 ## Usage
 
