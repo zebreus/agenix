@@ -12,7 +12,7 @@ jobs:
         with:
           extra_nix_config: |
             system-features = nixos-test recursive-nix benchmark big-parallel kvm
-            extra-experimental-features = recursive-nix nix-command flakes
+            experimental-features = recursive-nix nix-command flakes
       - run: nix fmt . -- --ci
   tests:
     strategy:
@@ -26,7 +26,7 @@ jobs:
         with:
           extra_nix_config: |
             system-features = nixos-test recursive-nix benchmark big-parallel kvm
-            extra-experimental-features = recursive-nix nix-command flakes
+            experimental-features = recursive-nix nix-command flakes
       - run: nix build
       - run: nix build .#doc
       - run: nix flake check
@@ -34,9 +34,8 @@ jobs:
         if: matrix.os == 'macos-latest'
         run: |
           ARCH="$(nix eval --impure --raw --expr builtins.currentSystem)"
-
+          nix build .#checks."${ARCH}".integration
           sudo mv /etc/nix/nix.conf{,.bak}
-          nix build --no-link --print-out-paths .#checks."${ARCH}".integration
           ./result/activate-user
           sudo ./result/activate
       - name: "Test nix-darwin module"
