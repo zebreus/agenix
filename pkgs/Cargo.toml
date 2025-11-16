@@ -10,6 +10,7 @@ keywords = ["age", "encryption", "nix", "secrets", "cli"]
 categories = ["command-line-utilities", "cryptography"]
 
 [dependencies]
+age = { version = "0.11", features = ["armor", "ssh"] }
 clap = { version = "4.4", features = ["derive", "color", "env"] }
 anyhow = "1.0"
 tempfile = "3.8"

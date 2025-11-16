@@ -7,16 +7,17 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use std::process::Command;
 
-use crate::crypto::AGE_BIN;
 use crate::nix::NIX_INSTANTIATE;
 
 fn validate_dependencies() -> Result<(), Vec<String>> {
     let mut missing = Vec::new();
-    let binaries = [(AGE_BIN, "age"), (NIX_INSTANTIATE, "nix-instantiate")];
-    for (path, name) in &binaries {
-        if Command::new(path).arg("--version").output().is_err() {
-            missing.push(format!("{name} ({path})"));
-        }
+    // Only check for nix-instantiate since we use the age crate instead of the binary
+    if Command::new(NIX_INSTANTIATE)
+        .arg("--version")
+        .output()
+        .is_err()
+    {
+        missing.push(format!("nix-instantiate ({NIX_INSTANTIATE})"));
     }
     if missing.is_empty() {
         Ok(())

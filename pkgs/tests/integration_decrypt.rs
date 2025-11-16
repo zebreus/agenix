@@ -84,7 +84,7 @@ fn integration_encrypt_then_decrypt_secret() {
         "-o",
         out_path.to_str().unwrap(),
     ]);
-    assert!(result.is_ok(), "decrypt should succeed");
+    assert!(result.is_ok(), "decrypt should succeed: {:?}", result.err());
 
     // Restore env
     std::env::set_current_dir(&old_cwd).unwrap();

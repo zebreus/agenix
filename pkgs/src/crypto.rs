@@ -1,10 +1,9 @@
+use age::{Decryptor, Encryptor, Identity, IdentityFile, Recipient, armor};
 use anyhow::{Context, Result};
 use std::fs;
+use std::io::{Read, Write};
 use std::path::Path;
-use std::process::Command;
-
-/// Age binary name
-pub const AGE_BIN: &str = "age";
+use std::str::FromStr;
 
 /// Decrypt a file to another file
 pub fn decrypt_to_file<P: AsRef<Path>>(
@@ -12,61 +11,77 @@ pub fn decrypt_to_file<P: AsRef<Path>>(
     output_file: P,
     identity: Option<&str>,
 ) -> Result<()> {
-    let mut args = vec!["--decrypt".to_string()];
+    // Read ciphertext
+    let mut ciphertext = vec![];
+    fs::File::open(input_file)
+        .with_context(|| format!("Failed to open ciphertext file {input_file}"))?
+        .read_to_end(&mut ciphertext)
+        .with_context(|| format!("Failed to read ciphertext file {input_file}"))?;
 
-    if let Some(id) = identity {
-        args.extend_from_slice(&["--identity".to_string(), id.to_string()]);
+    // Parse decryptor (auto-detect armored)
+    let decryptor = Decryptor::new(&ciphertext[..]).context("Failed to parse age file")?;
+
+    // Collect identities
+    let identities: Vec<Box<dyn Identity>> = if let Some(id_path) = identity {
+        load_identities_from_file(id_path)?
     } else {
-        // Add default identities
-        let identities = get_default_identities();
-        for identity in identities {
-            args.extend_from_slice(&["--identity".to_string(), identity]);
-        }
-    }
+        get_default_identities()
+            .into_iter()
+            .flat_map(|path| load_identities_from_file(&path).unwrap_or_default())
+            .collect()
+    };
 
-    args.extend_from_slice(&[
-        "-o".to_string(),
-        output_file.as_ref().to_string_lossy().to_string(),
-        "--".to_string(),
-        input_file.to_string(),
-    ]);
+    let mut reader = decryptor
+        .decrypt(identities.iter().map(|i| i.as_ref() as &dyn Identity))
+        .map_err(|e| anyhow::anyhow!("Failed to decrypt {input_file}: {e}"))?;
 
-    let status = Command::new(AGE_BIN)
-        .args(&args)
-        .status()
-        .context("Failed to run age decrypt")?;
+    let mut plaintext = vec![];
+    reader
+        .read_to_end(&mut plaintext)
+        .context("Failed to read decrypted plaintext")?;
 
-    if !status.success() {
-        return Err(anyhow::anyhow!("Failed to decrypt {input_file}"));
-    }
+    fs::write(&output_file, &plaintext).with_context(|| {
+        format!(
+            "Failed to write decrypted file {}",
+            output_file.as_ref().display()
+        )
+    })?;
 
     Ok(())
 }
 
 /// Decrypt a file to stdout
 pub fn decrypt_to_stdout(input_file: &str, identity: Option<&str>) -> Result<()> {
-    let mut args = vec!["--decrypt".to_string()];
+    let mut ciphertext = vec![];
+    fs::File::open(input_file)
+        .with_context(|| format!("Failed to open ciphertext file {input_file}"))?
+        .read_to_end(&mut ciphertext)
+        .with_context(|| format!("Failed to read ciphertext file {input_file}"))?;
 
-    if let Some(id) = identity {
-        args.extend_from_slice(&["--identity".to_string(), id.to_string()]);
+    let decryptor = Decryptor::new(&ciphertext[..]).context("Failed to parse age file")?;
+
+    let identities: Vec<Box<dyn Identity>> = if let Some(id_path) = identity {
+        load_identities_from_file(id_path)?
     } else {
-        // Add default identities
-        let identities = get_default_identities();
-        for identity in identities {
-            args.extend_from_slice(&["--identity".to_string(), identity]);
-        }
-    }
+        get_default_identities()
+            .into_iter()
+            .flat_map(|path| load_identities_from_file(&path).unwrap_or_default())
+            .collect()
+    };
 
-    args.extend_from_slice(&["--".to_string(), input_file.to_string()]);
+    let mut reader = decryptor
+        .decrypt(identities.iter().map(|i| i.as_ref() as &dyn Identity))
+        .map_err(|e| anyhow::anyhow!("Failed to decrypt {input_file}: {e}"))?;
 
-    let status = Command::new(AGE_BIN)
-        .args(&args)
-        .status()
-        .context("Failed to run age decrypt")?;
+    let mut plaintext = vec![];
+    reader
+        .read_to_end(&mut plaintext)
+        .context("Failed to read decrypted plaintext")?;
 
-    if !status.success() {
-        return Err(anyhow::anyhow!("Failed to decrypt {input_file}"));
-    }
+    // Write to stdout
+    std::io::stdout()
+        .write_all(&plaintext)
+        .context("Failed to write decrypted plaintext to stdout")?;
 
     Ok(())
 }
@@ -78,33 +93,89 @@ pub fn encrypt_from_file(
     recipients: &[String],
     armor: bool,
 ) -> Result<()> {
-    let mut args = Vec::new();
+    // Load recipients (support ssh keys and age public keys)
+    let mut parsed_recipients: Vec<Box<dyn Recipient>> = Vec::new();
+    for r in recipients {
+        // Try to parse as a recipients file (contains multiple recipients) first
+        if Path::new(r).exists()
+            && let Ok(id_file) = IdentityFile::from_file(r.clone())
+        {
+            // Convert identities to recipients
+            if let Ok(recs) = id_file.to_recipients() {
+                parsed_recipients.extend(recs.into_iter().map(|r| r as Box<dyn Recipient>));
+                continue;
+            }
+        }
+        // Fallback: treat as single recipient string (e.g., age1.. or ssh-ed25519 AAAA...)
+        match age::ssh::Recipient::from_str(r) {
+            Ok(ssh_recipient) => parsed_recipients.push(Box::new(ssh_recipient)),
+            Err(_) => {
+                // Try x25519 recipient
+                match age::x25519::Recipient::from_str(r) {
+                    Ok(x_recipient) => parsed_recipients.push(Box::new(x_recipient)),
+                    Err(_) => return Err(anyhow::anyhow!("Invalid recipient: {r}")),
+                }
+            }
+        }
+    }
 
+    let encryptor = Encryptor::with_recipients(parsed_recipients.iter().map(AsRef::as_ref))
+        .context("Failed to build encryptor with recipients")?;
+
+    let mut input = vec![];
+    fs::File::open(input_file)
+        .with_context(|| format!("Failed to open input file {input_file}"))?
+        .read_to_end(&mut input)
+        .with_context(|| format!("Failed to read input file {input_file}"))?;
+
+    let mut output_buf = vec![];
     if armor {
-        args.push("--armor".to_string());
+        let armor_writer =
+            armor::ArmoredWriter::wrap_output(&mut output_buf, armor::Format::AsciiArmor)
+                .context("Failed to create armored writer")?;
+        let mut writer = encryptor.wrap_output(armor_writer)?;
+        writer
+            .write_all(&input)
+            .context("Failed to write plaintext")?;
+        // Finish returns the inner writer (ArmoredWriter), so we need to call finish on it too
+        let armor_writer = writer.finish().context("Failed to finish encryption")?;
+        armor_writer.finish().context("Failed to finish armor")?;
+    } else {
+        let mut writer = encryptor.wrap_output(&mut output_buf)?;
+        writer
+            .write_all(&input)
+            .context("Failed to write plaintext")?;
+        writer.finish().context("Failed to finish encryption")?;
     }
 
-    for recipient in recipients {
-        args.extend_from_slice(&["--recipient".to_string(), recipient.clone()]);
-    }
-
-    args.extend_from_slice(&[
-        "-o".to_string(),
-        output_file.to_string(),
-        "--".to_string(),
-        input_file.to_string(),
-    ]);
-
-    let status = Command::new(AGE_BIN)
-        .args(&args)
-        .status()
-        .context("Failed to run age encrypt")?;
-
-    if !status.success() {
-        return Err(anyhow::anyhow!("Failed to encrypt to {output_file}"));
-    }
+    fs::write(output_file, &output_buf)
+        .with_context(|| format!("Failed to write encrypted file {output_file}"))?;
 
     Ok(())
+}
+
+/// Load identities from a file, handling both age identity files and SSH private keys
+fn load_identities_from_file(path: &str) -> Result<Vec<Box<dyn Identity>>> {
+    let content =
+        fs::read_to_string(path).with_context(|| format!("Failed to read identity file {path}"))?;
+
+    // Try to parse as SSH identity first
+    if content.contains("-----BEGIN OPENSSH PRIVATE KEY-----")
+        || content.contains("-----BEGIN RSA PRIVATE KEY-----")
+        || content.contains("-----BEGIN EC PRIVATE KEY-----")
+    {
+        let ssh_identity =
+            age::ssh::Identity::from_buffer(std::io::Cursor::new(content), Some(path.to_string()))
+                .map_err(|e| anyhow::anyhow!("Failed to parse SSH identity from {path}: {e}"))?;
+        return Ok(vec![Box::new(ssh_identity)]);
+    }
+
+    // Fall back to age identity file format
+    let id_file = IdentityFile::from_file(path.to_string())
+        .with_context(|| format!("Failed to parse identity file {path}"))?;
+    id_file
+        .into_identities()
+        .context("Failed to convert identity file into identities")
 }
 
 /// Get default SSH identity files
