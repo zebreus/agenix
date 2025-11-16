@@ -14,15 +14,39 @@ fn eval_nix_expression(expr: &str, path: &Path) -> Result<Value> {
 
     let result = evaluation.evaluate(expr, Some(path));
 
-    for error in result.errors.iter() {
-        error.fancy_format_stderr();
-    }
-    for warning in result.warnings.iter() {
-        warning.fancy_format_stderr(&sourcemap);
-    }
+    // Capture formatted errors and warnings instead of printing directly
+    let error_messages: Vec<String> = result
+        .errors
+        .iter()
+        .map(|error| error.fancy_format_str())
+        .collect();
+
+    let warning_messages: Vec<String> = result
+        .warnings
+        .iter()
+        .map(|warning| warning.fancy_format_str(&sourcemap))
+        .collect();
+
     let Some(result) = result.value else {
-        return Err(anyhow!("Failed to evaluate Nix expression"));
+        // Include captured errors and warnings in the anyhow error
+        let mut error_msg = "Failed to evaluate Nix expression".to_string();
+
+        if !error_messages.is_empty() {
+            error_msg.push_str("\n\nErrors:\n");
+            error_msg.push_str(&error_messages.join("\n"));
+        }
+
+        if !warning_messages.is_empty() {
+            error_msg.push_str("\n\nWarnings:\n");
+            error_msg.push_str(&warning_messages.join("\n"));
+        }
+
+        return Err(anyhow!("{}", error_msg));
     };
+
+    // If there are warnings but evaluation succeeded, we could optionally log them
+    // For now, we'll just proceed silently with warnings
+
     Ok(result)
 }
 
@@ -1101,5 +1125,29 @@ mod tests {
         assert_eq!(keys3.len(), 1);
 
         Ok(())
+    }
+
+    // Test to verify error message formatting is captured in anyhow
+    #[test]
+    fn test_formatted_error_capture() -> Result<()> {
+        // This test verifies that Nix errors are properly captured with formatting
+        let result = get_public_keys("/nonexistent/path/to/rules.nix", "test.age");
+
+        match result {
+            Err(err) => {
+                let error_string = err.to_string();
+
+                // The error should contain our formatted Nix error message
+                assert!(error_string.contains("Failed to evaluate Nix expression"));
+                assert!(error_string.contains("Errors:"));
+                assert!(error_string.contains("No such file or directory"));
+
+                Ok(())
+            }
+            Ok(_) => {
+                // This should not succeed with a nonexistent file
+                panic!("Expected an error but got success");
+            }
+        }
     }
 }
