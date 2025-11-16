@@ -7,14 +7,14 @@ fn have(bin: &str) -> bool {
     Command::new(bin).arg("--version").output().is_ok()
 }
 
-const TEST_PRIV_KEY: &str = r#"-----BEGIN OPENSSH PRIVATE KEY-----
+const TEST_PRIV_KEY: &str = r"-----BEGIN OPENSSH PRIVATE KEY-----
 b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW
 QyNTUxOQAAACC9InTb4BornFoLqf5j+/M8gtt7hY2KtHr3FnYxkFGgRwAAAJC2JJ8htiSf
 IQAAAAtzc2gtZWQyNTUxOQAAACC9InTb4BornFoLqf5j+/M8gtt7hY2KtHr3FnYxkFGgRw
 AAAEDxt5gC/s53IxiKAjfZJVCCcFIsdeERdIgbYhLO719+Kb0idNvgGiucWgup/mP78zyC
 23uFjYq0evcWdjGQUaBHAAAADHJ5YW50bUBob21lMQE=
 -----END OPENSSH PRIVATE KEY-----
-"#;
+";
 
 const TEST_PUB_KEY: &str =
     "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH";
@@ -43,10 +43,8 @@ fn integration_encrypt_then_decrypt_secret() {
 
     // Prepare minimal secrets.nix
     let rules_path = tmp_path.join("secrets.nix");
-    let rules_content = format!(
-        "{{\n  \"secret1.age\" = {{ publicKeys = [ \"{}\" ]; }};\n}}\n",
-        TEST_PUB_KEY
-    );
+    let rules_content =
+        format!("{{\n  \"secret1.age\" = {{ publicKeys = [ \"{TEST_PUB_KEY}\" ]; }};\n}}\n",);
     fs::write(&rules_path, rules_content).unwrap();
 
     // Create plaintext and encrypt with age
@@ -71,7 +69,7 @@ fn integration_encrypt_then_decrypt_secret() {
     let old_home = std::env::var("HOME").ok();
     unsafe { std::env::set_var("HOME", &home) };
     let old_cwd: PathBuf = std::env::current_dir().unwrap();
-    std::env::set_current_dir(&tmp_path).unwrap();
+    std::env::set_current_dir(tmp_path).unwrap();
 
     // Decrypt using public entrypoint with custom identity to a file
     let out_path = tmp_path.join("out.txt");
