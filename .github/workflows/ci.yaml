@@ -4,6 +4,16 @@ on:
   pull_request:
     types: [opened, reopened]
 jobs:
+  check-formatting:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: cachix/install-nix-action@v30
+        with:
+          extra_nix_config: |
+            system-features = nixos-test recursive-nix benchmark big-parallel kvm
+            extra-experimental-features = recursive-nix nix-command flakes
+      - run: nix fmt . -- --ci
   tests:
     strategy:
       matrix:
@@ -18,7 +28,6 @@ jobs:
             extra-experimental-features = recursive-nix nix-command flakes
       - run: nix build
       - run: nix build .#doc
-      - run: nix fmt . -- --ci
       - run: nix flake check
       - name: "Activate nix-darwin module"
         if: matrix.os == 'macos-latest'
