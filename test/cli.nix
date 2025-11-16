@@ -59,7 +59,7 @@ pkgs.runCommand "agenix-cli-test"
     set +o pipefail
     help_output=$(agenix --help 2>&1)
     set -o pipefail
-    if echo "$help_output" | grep -q "agenix - edit and rekey age secret files"; then
+    if echo "$help_output" | grep -q "edit and rekey age secret files"; then
       echo "✓ Help command works"
     else
       echo "✗ Help command failed"
