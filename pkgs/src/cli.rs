@@ -18,7 +18,7 @@ fn default_editor() -> String {
 )]
 pub struct Args {
     /// Edit FILE using $EDITOR
-    #[arg(short, long, value_name = "FILE")]
+    #[arg(short, long, value_name = "FILE", allow_hyphen_values = true)]
     pub edit: Option<String>,
 
     /// Identity to use when decrypting
@@ -30,7 +30,7 @@ pub struct Args {
     pub rekey: bool,
 
     /// Decrypt FILE to STDOUT (or to --output)
-    #[arg(short, long, value_name = "FILE")]
+    #[arg(short, long, value_name = "FILE", allow_hyphen_values = true)]
     pub decrypt: Option<String>,
 
     /// Write decrypt output to FILE instead of STDOUT
