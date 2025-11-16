@@ -6,7 +6,7 @@ fn default_editor() -> String {
     if stdin_isatty() {
         "vi".to_string()
     } else {
-        "cp -- /dev/stdin".to_string()
+        "cat >".to_string()
     }
 }
 
