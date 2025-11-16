@@ -29,9 +29,13 @@ pub struct Args {
     #[arg(short, long)]
     pub rekey: bool,
 
-    /// Decrypt FILE to STDOUT
+    /// Decrypt FILE to STDOUT (or to --output)
     #[arg(short, long, value_name = "FILE")]
     pub decrypt: Option<String>,
+
+    /// Write decrypt output to FILE instead of STDOUT
+    #[arg(short = 'o', long, value_name = "FILE")]
+    pub output: Option<String>,
 
     /// Path to Nix rules file (can also be set via RULES env var)
     #[arg(
