@@ -818,21 +818,20 @@ mod tests {
         let mut rules_content = String::from("{\n");
 
         // Generate 100 secrets with varying configurations
-        for i in 0..100 {
+        (0..100).for_each(|i| {
             let armor = if i % 3 == 0 { "true" } else { "false" };
             let key_count = (i % 5) + 1; // 1-5 keys per secret
 
-            let mut keys = Vec::new();
-            for j in 0..key_count {
-                keys.push(format!("\"age1key{}user{}example\"", i, j));
-            }
-            let keys_str = keys.join(" ");
+            let keys_str: String = (0..key_count)
+                .map(|j| format!("\"age1key{}user{}example\"", i, j))
+                .collect::<Vec<_>>()
+                .join(" ");
 
             rules_content.push_str(&format!(
                 "  \"secret-{:03}.age\" = {{\n    publicKeys = [ {} ];\n    armor = {};\n  }};\n",
                 i, keys_str, armor
             ));
-        }
+        });
 
         rules_content.push_str("}\n");
 
@@ -1070,14 +1069,15 @@ mod tests {
         assert_eq!(all_files.len(), 5);
 
         // Verify all levels were created correctly
-        for i in 1..=5 {
+        (1..=5).try_for_each(|i| -> Result<()> {
             let filename = format!("secret-{}.age", i);
             assert!(all_files.contains(&filename));
 
             let keys = get_public_keys(temp_file.path().to_str().unwrap(), &filename)?;
             assert_eq!(keys.len(), 1);
             assert_eq!(keys[0], format!("age1level{}...", i));
-        }
+            Ok(())
+        })?;
 
         Ok(())
     }

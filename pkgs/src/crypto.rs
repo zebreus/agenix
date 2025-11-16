@@ -169,21 +169,15 @@ fn load_identities_from_file(path: &str) -> Result<Vec<Box<dyn Identity>>> {
 
 /// Get default SSH identity files
 pub fn get_default_identities() -> Vec<String> {
-    let mut identities = Vec::new();
-
-    if let Ok(home) = std::env::var("HOME") {
-        let id_rsa = format!("{home}/.ssh/id_rsa");
-        let id_ed25519 = format!("{home}/.ssh/id_ed25519");
-
-        if Path::new(&id_rsa).exists() {
-            identities.push(id_rsa);
-        }
-        if Path::new(&id_ed25519).exists() {
-            identities.push(id_ed25519);
-        }
-    }
-
-    identities
+    std::env::var("HOME")
+        .map(|home| {
+            ["id_rsa", "id_ed25519"]
+                .iter()
+                .map(|key_type| format!("{home}/.ssh/{key_type}"))
+                .filter(|path| Path::new(path).exists())
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// Check if two files have the same content
