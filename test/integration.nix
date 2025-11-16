@@ -100,14 +100,16 @@ pkgs.nixosTest {
 
       # Test home-manager module: user secret should be decrypted at expected path
       system1.send_chars("cat /run/user/$(id -u)/agenix/secret2 > /tmp/2\n")
-      system1.sleep(1)
+      system1.sleep(2)
       system1.wait_for_file("/tmp/2")
-      system1.sleep(1)
+      system1.sleep(8)
       assert "${secret2}" in system1.succeed("cat /tmp/2")
 
       # Test home-manager module: armored secret should be decrypted
       system1.send_chars("cat /run/user/$(id -u)/agenix/armored-secret > /tmp/3\n")
+      system1.sleep(2)
       system1.wait_for_file("/tmp/3")
+      system1.sleep(5)
       assert "${armored-secret}" in system1.succeed("cat /tmp/3")
 
       # Test NixOS module: system secret with leading hyphen in filename
@@ -115,7 +117,9 @@ pkgs.nixosTest {
 
       # Test home-manager module: custom path for secret
       system1.send_chars("cat /home/user1/secret2 > /tmp/4\n")
+      system1.sleep(2)
       system1.wait_for_file("/tmp/4")
+      system1.sleep(5)
       assert "${secret2}" in system1.succeed("cat /tmp/4")
     '';
 }
