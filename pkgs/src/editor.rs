@@ -4,7 +4,7 @@ use std::path::Path;
 use std::process::Command;
 use tempfile::TempDir;
 
-use crate::crypto::{decrypt_to_file, decrypt_to_stdout, encrypt_from_file, files_equal};
+use crate::crypto::{decrypt_to_file, encrypt_from_file, files_equal};
 use crate::nix::NIX_INSTANTIATE;
 use crate::nix::{get_all_files, get_public_keys, should_armor};
 
@@ -86,7 +86,7 @@ pub fn decrypt_file(
 
     match output {
         Some(out_file) => decrypt_to_file(file, Path::new(out_file), identity)?,
-        None => decrypt_to_stdout(file, identity)?,
+        None => decrypt_to_file(file, Path::new("/dev/stdout"), identity)?,
     }
 
     Ok(())

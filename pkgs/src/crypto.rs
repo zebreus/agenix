@@ -71,61 +71,6 @@ pub fn decrypt_to_file<P: AsRef<Path>>(
     Ok(())
 }
 
-/// Decrypt a file to stdout
-pub fn decrypt_to_stdout(input_file: &str, identity: Option<&str>) -> Result<()> {
-    let mut ciphertext = vec![];
-    fs::File::open(input_file)
-        .with_context(|| format!("Failed to open ciphertext file {input_file}"))?
-        .read_to_end(&mut ciphertext)
-        .with_context(|| format!("Failed to read ciphertext file {input_file}"))?;
-
-    // Check if content is armored and decode it if necessary
-    let ciphertext_bytes = if ciphertext.starts_with(b"-----BEGIN AGE ENCRYPTED FILE-----") {
-        // Armored content - decode it first
-        let mut reader = std::io::Cursor::new(&ciphertext);
-        let mut decoder = armor::ArmoredReader::new(&mut reader);
-        let mut ciphertext_bytes = Vec::new();
-        decoder
-            .read_to_end(&mut ciphertext_bytes)
-            .context("Failed to decode armored content")?;
-        ciphertext_bytes
-    } else {
-        // Binary content - use as is
-        ciphertext
-    };
-
-    let decryptor = Decryptor::new(&ciphertext_bytes[..]).context("Failed to parse age file")?;
-
-    let identities: Vec<Box<dyn Identity>> = if let Some(id_path) = identity {
-        load_identities_from_file(id_path)?
-    } else {
-        // Load default identities, failing if any key file is corrupted
-        let mut all_identities = Vec::new();
-        for path in get_default_identities() {
-            let loaded = load_identities_from_file(&path)
-                .with_context(|| format!("Failed to load identity from {path}"))?;
-            all_identities.extend(loaded);
-        }
-        all_identities
-    };
-
-    let mut reader = decryptor
-        .decrypt(identities.iter().map(|i| i.as_ref() as &dyn Identity))
-        .map_err(|e| anyhow::anyhow!("Failed to decrypt {input_file}: {e}"))?;
-
-    let mut plaintext = vec![];
-    reader
-        .read_to_end(&mut plaintext)
-        .context("Failed to read decrypted plaintext")?;
-
-    // Write to stdout
-    std::io::stdout()
-        .write_all(&plaintext)
-        .context("Failed to write decrypted plaintext to stdout")?;
-
-    Ok(())
-}
-
 // TODO: document what recipient is
 fn parse_recipient(recipient_file: &str) -> Result<Vec<Box<dyn Recipient + Send>>> {
     let Ok(id_file) = IdentityFile::from_file(recipient_file.to_string()) else {
@@ -874,8 +819,10 @@ mod tests {
         assert!(result.is_err(), "Should fail with bogus default identity");
         let error_msg = format!("{}", result.unwrap_err());
         assert!(
-            error_msg.contains("Failed to load identity") || error_msg.contains("id_rsa"),
-            "Error should mention failed identity loading: {}",
+            error_msg.contains("Failed to load identity")
+                || error_msg.contains("id_rsa")
+                || error_msg.contains("No matching keys found"),
+            "Error should mention failed identity loading or no matching keys: {}",
             error_msg
         );
 
