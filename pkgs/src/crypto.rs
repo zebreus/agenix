@@ -19,10 +19,23 @@ pub fn decrypt_to_file<P: AsRef<Path>>(
         .read_to_end(&mut ciphertext)
         .with_context(|| format!("Failed to read ciphertext file {input_file}"))?;
 
-    eprintln!("Ciphertext size: {} bytes", ciphertext.len());
-    eprintln!("Cipertext content: {:?}", &ciphertext[..]);
     // Parse decryptor (auto-detect armored)
-    let decryptor = Decryptor::new(&ciphertext[..]).context("Failed to parse age file")?;
+    // Check if content is armored and decode it if necessary
+    let ciphertext_bytes = if ciphertext.starts_with(b"-----BEGIN AGE ENCRYPTED FILE-----") {
+        // Armored content - decode it first
+        let mut reader = std::io::Cursor::new(&ciphertext);
+        let mut decoder = armor::ArmoredReader::new(&mut reader);
+        let mut decoded = Vec::new();
+        decoder
+            .read_to_end(&mut decoded)
+            .context("Failed to decode armored content")?;
+        decoded
+    } else {
+        // Binary content - use as is
+        ciphertext
+    };
+
+    let decryptor = Decryptor::new(&ciphertext_bytes[..]).context("Failed to parse age file")?;
 
     // Collect identities
     let identities: Vec<Box<dyn Identity>> = if let Some(id_path) = identity {
@@ -61,7 +74,22 @@ pub fn decrypt_to_stdout(input_file: &str, identity: Option<&str>) -> Result<()>
         .read_to_end(&mut ciphertext)
         .with_context(|| format!("Failed to read ciphertext file {input_file}"))?;
 
-    let decryptor = Decryptor::new(&ciphertext[..]).context("Failed to parse age file")?;
+    // Check if content is armored and decode it if necessary
+    let ciphertext_bytes = if ciphertext.starts_with(b"-----BEGIN AGE ENCRYPTED FILE-----") {
+        // Armored content - decode it first
+        let mut reader = std::io::Cursor::new(&ciphertext);
+        let mut decoder = armor::ArmoredReader::new(&mut reader);
+        let mut decoded = Vec::new();
+        decoder
+            .read_to_end(&mut decoded)
+            .context("Failed to decode armored content")?;
+        decoded
+    } else {
+        // Binary content - use as is
+        ciphertext
+    };
+
+    let decryptor = Decryptor::new(&ciphertext_bytes[..]).context("Failed to parse age file")?;
 
     let identities: Vec<Box<dyn Identity>> = if let Some(id_path) = identity {
         load_identities_from_file(id_path)?
@@ -218,6 +246,9 @@ pub fn files_equal(file1: &str, file2: &str) -> Result<bool> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use age::secrecy::ExposeSecret;
+    use std::io::Write;
+    use tempfile::NamedTempFile;
 
     #[test]
     fn test_get_default_identities() {
@@ -235,9 +266,6 @@ mod tests {
 
     #[test]
     fn test_files_equal_same_content() -> Result<()> {
-        use std::io::Write;
-        use tempfile::NamedTempFile;
-
         let mut file1 = NamedTempFile::new()?;
         let mut file2 = NamedTempFile::new()?;
 
@@ -255,9 +283,6 @@ mod tests {
 
     #[test]
     fn test_files_equal_different_content() -> Result<()> {
-        use std::io::Write;
-        use tempfile::NamedTempFile;
-
         let mut file1 = NamedTempFile::new()?;
         let mut file2 = NamedTempFile::new()?;
 
@@ -269,6 +294,235 @@ mod tests {
             file2.path().to_str().unwrap(),
         )?;
         assert!(!result);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_encrypt_decrypt_armored_roundtrip() -> Result<()> {
+        // Generate a test key pair
+        let secret_key = age::x25519::Identity::generate();
+        let public_key = secret_key.to_public();
+
+        // Create temporary files
+        let mut plaintext_file = NamedTempFile::new()?;
+        let encrypted_file = NamedTempFile::new()?;
+        let decrypted_file = NamedTempFile::new()?;
+        let mut identity_file = NamedTempFile::new()?;
+
+        // Write test content
+        let test_content = "Hello, armored world!\nThis is a test.";
+        plaintext_file.write_all(test_content.as_bytes())?;
+        plaintext_file.flush()?;
+
+        // Write identity to file
+        writeln!(identity_file, "{}", secret_key.to_string().expose_secret())?;
+        identity_file.flush()?;
+
+        // Test armored encryption
+        encrypt_from_file(
+            plaintext_file.path().to_str().unwrap(),
+            encrypted_file.path().to_str().unwrap(),
+            &[public_key.to_string()],
+            true, // armor = true
+        )?;
+
+        // Verify the encrypted file contains ASCII armor
+        let encrypted_content = fs::read_to_string(encrypted_file.path())?;
+        assert!(encrypted_content.contains("-----BEGIN AGE ENCRYPTED FILE-----"));
+        assert!(encrypted_content.contains("-----END AGE ENCRYPTED FILE-----"));
+
+        // Test decryption
+        decrypt_to_file(
+            encrypted_file.path().to_str().unwrap(),
+            decrypted_file.path(),
+            Some(identity_file.path().to_str().unwrap()),
+        )?;
+
+        // Verify content matches
+        let decrypted_content = fs::read_to_string(decrypted_file.path())?;
+        assert_eq!(test_content, decrypted_content);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_encrypt_decrypt_binary_roundtrip() -> Result<()> {
+        // Generate a test key pair
+        let secret_key = age::x25519::Identity::generate();
+        let public_key = secret_key.to_public();
+
+        // Create temporary files
+        let mut plaintext_file = NamedTempFile::new()?;
+        let encrypted_file = NamedTempFile::new()?;
+        let decrypted_file = NamedTempFile::new()?;
+        let mut identity_file = NamedTempFile::new()?;
+
+        // Write test content (including binary data)
+        let test_content = b"Binary test \x00\x01\x02\xFF\xFE\xFD";
+        plaintext_file.write_all(test_content)?;
+        plaintext_file.flush()?;
+
+        // Write identity to file
+        writeln!(identity_file, "{}", secret_key.to_string().expose_secret())?;
+        identity_file.flush()?;
+
+        // Test binary encryption
+        encrypt_from_file(
+            plaintext_file.path().to_str().unwrap(),
+            encrypted_file.path().to_str().unwrap(),
+            &[public_key.to_string()],
+            false, // armor = false
+        )?;
+
+        // Verify the encrypted file is binary (no ASCII armor)
+        let encrypted_content = fs::read(encrypted_file.path())?;
+        let encrypted_str = String::from_utf8_lossy(&encrypted_content);
+        assert!(!encrypted_str.contains("-----BEGIN AGE ENCRYPTED FILE-----"));
+
+        // Test decryption
+        decrypt_to_file(
+            encrypted_file.path().to_str().unwrap(),
+            decrypted_file.path(),
+            Some(identity_file.path().to_str().unwrap()),
+        )?;
+
+        // Verify content matches
+        let decrypted_content = fs::read(decrypted_file.path())?;
+        assert_eq!(test_content, &decrypted_content[..]);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_multiple_recipients_armored() -> Result<()> {
+        // Generate multiple key pairs
+        let secret_key1 = age::x25519::Identity::generate();
+        let public_key1 = secret_key1.to_public();
+        let secret_key2 = age::x25519::Identity::generate();
+        let public_key2 = secret_key2.to_public();
+
+        // Create temporary files
+        let mut plaintext_file = NamedTempFile::new()?;
+        let encrypted_file = NamedTempFile::new()?;
+        let decrypted_file1 = NamedTempFile::new()?;
+        let decrypted_file2 = NamedTempFile::new()?;
+        let mut identity_file1 = NamedTempFile::new()?;
+        let mut identity_file2 = NamedTempFile::new()?;
+
+        // Write test content
+        let test_content = "Multi-recipient armored test";
+        plaintext_file.write_all(test_content.as_bytes())?;
+        plaintext_file.flush()?;
+
+        // Write identities to files
+        writeln!(
+            identity_file1,
+            "{}",
+            secret_key1.to_string().expose_secret()
+        )?;
+        identity_file1.flush()?;
+        writeln!(
+            identity_file2,
+            "{}",
+            secret_key2.to_string().expose_secret()
+        )?;
+        identity_file2.flush()?;
+
+        // Encrypt for both recipients with armor
+        encrypt_from_file(
+            plaintext_file.path().to_str().unwrap(),
+            encrypted_file.path().to_str().unwrap(),
+            &[public_key1.to_string(), public_key2.to_string()],
+            true,
+        )?;
+
+        // Verify armored format
+        let encrypted_content = fs::read_to_string(encrypted_file.path())?;
+        assert!(encrypted_content.contains("-----BEGIN AGE ENCRYPTED FILE-----"));
+        assert!(encrypted_content.contains("-----END AGE ENCRYPTED FILE-----"));
+
+        // Test decryption with first key
+        decrypt_to_file(
+            encrypted_file.path().to_str().unwrap(),
+            decrypted_file1.path(),
+            Some(identity_file1.path().to_str().unwrap()),
+        )?;
+
+        // Test decryption with second key
+        decrypt_to_file(
+            encrypted_file.path().to_str().unwrap(),
+            decrypted_file2.path(),
+            Some(identity_file2.path().to_str().unwrap()),
+        )?;
+
+        // Verify both decryptions match original
+        let decrypted_content1 = fs::read_to_string(decrypted_file1.path())?;
+        let decrypted_content2 = fs::read_to_string(decrypted_file2.path())?;
+        assert_eq!(test_content, decrypted_content1);
+        assert_eq!(test_content, decrypted_content2);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_armored_vs_binary_same_decryption() -> Result<()> {
+        // Generate a test key pair
+        let secret_key = age::x25519::Identity::generate();
+        let public_key = secret_key.to_public();
+
+        // Create temporary files
+        let mut plaintext_file = NamedTempFile::new()?;
+        let armored_file = NamedTempFile::new()?;
+        let binary_file = NamedTempFile::new()?;
+        let decrypted_armored = NamedTempFile::new()?;
+        let decrypted_binary = NamedTempFile::new()?;
+        let mut identity_file = NamedTempFile::new()?;
+
+        // Write test content
+        let test_content = "Same content, different encoding";
+        plaintext_file.write_all(test_content.as_bytes())?;
+        plaintext_file.flush()?;
+
+        // Write identity to file
+        writeln!(identity_file, "{}", secret_key.to_string().expose_secret())?;
+        identity_file.flush()?;
+
+        // Encrypt as armored
+        encrypt_from_file(
+            plaintext_file.path().to_str().unwrap(),
+            armored_file.path().to_str().unwrap(),
+            &[public_key.to_string()],
+            true,
+        )?;
+
+        // Encrypt as binary
+        encrypt_from_file(
+            plaintext_file.path().to_str().unwrap(),
+            binary_file.path().to_str().unwrap(),
+            &[public_key.to_string()],
+            false,
+        )?;
+
+        // Decrypt both versions
+        decrypt_to_file(
+            armored_file.path().to_str().unwrap(),
+            decrypted_armored.path(),
+            Some(identity_file.path().to_str().unwrap()),
+        )?;
+
+        decrypt_to_file(
+            binary_file.path().to_str().unwrap(),
+            decrypted_binary.path(),
+            Some(identity_file.path().to_str().unwrap()),
+        )?;
+
+        // Both should decrypt to the same content
+        let armored_result = fs::read_to_string(decrypted_armored.path())?;
+        let binary_result = fs::read_to_string(decrypted_binary.path())?;
+        assert_eq!(test_content, armored_result);
+        assert_eq!(test_content, binary_result);
+        assert_eq!(armored_result, binary_result);
 
         Ok(())
     }
