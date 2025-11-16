@@ -28,19 +28,18 @@
       in
       {
         imports = [
+          home-manager.darwinModules.home-manager
           ./install_ssh_host_keys_darwin.nix
           ../modules/age.nix
-
-          (home-manager.darwinModules.home-manager {
-            home-manager = {
-              verbose = true;
-              useGlobalPkgs = true;
-              useUserPackages = true;
-              backupFileExtension = "hmbak";
-              users.runner = ./integration_hm_darwin.nix;
-            };
-          })
         ];
+
+        home-manager = {
+          verbose = true;
+          useGlobalPkgs = true;
+          useUserPackages = true;
+          backupFileExtension = "hmbak";
+          users.runner = ./integration_hm_darwin.nix;
+        };
 
         age = {
           identityPaths = options.age.identityPaths.default ++ [ "/etc/ssh/this_key_wont_exist" ];
