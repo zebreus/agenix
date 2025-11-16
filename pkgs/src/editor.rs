@@ -9,7 +9,12 @@ use crate::nix::NIX_INSTANTIATE;
 use crate::nix::{get_all_files, get_public_keys, should_armor};
 
 /// Edit a file with encryption/decryption
-pub fn edit_file(rules_path: &str, file: &str, editor_cmd: &str, identity: Option<&str>) -> Result<()> {
+pub fn edit_file(
+    rules_path: &str,
+    file: &str,
+    editor_cmd: &str,
+    identity: Option<&str>,
+) -> Result<()> {
     let public_keys = get_public_keys(NIX_INSTANTIATE, rules_path, file)?;
     let armor = should_armor(NIX_INSTANTIATE, rules_path, file)?;
 
@@ -68,7 +73,12 @@ pub fn edit_file(rules_path: &str, file: &str, editor_cmd: &str, identity: Optio
 }
 
 /// Decrypt a file to stdout or another location
-pub fn decrypt_file(rules_path: &str, file: &str, output: Option<&str>, identity: Option<&str>) -> Result<()> {
+pub fn decrypt_file(
+    rules_path: &str,
+    file: &str,
+    output: Option<&str>,
+    identity: Option<&str>,
+) -> Result<()> {
     let public_keys = get_public_keys(NIX_INSTANTIATE, rules_path, file)?;
     if public_keys.is_empty() {
         return Err(anyhow!("No public keys found for file: {file}"));
@@ -132,7 +142,12 @@ mod tests {
         // Create an empty file so decrypt_to_file won't run (no existence of keys) but backup logic proceeds.
         File::create(&secret_path).unwrap();
         // Call edit_file expecting an error due to no keys; ensures we reach key check early.
-        let res = edit_file("./test_secrets.nix", secret_path.to_str().unwrap(), ":", None);
+        let res = edit_file(
+            "./test_secrets.nix",
+            secret_path.to_str().unwrap(),
+            ":",
+            None,
+        );
         assert!(res.is_err());
     }
 }

@@ -16,7 +16,8 @@ AAAEDxt5gC/s53IxiKAjfZJVCCcFIsdeERdIgbYhLO719+Kb0idNvgGiucWgup/mP78zyC
 -----END OPENSSH PRIVATE KEY-----
 "#;
 
-const TEST_PUB_KEY: &str = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH";
+const TEST_PUB_KEY: &str =
+    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH";
 
 #[test]
 fn integration_encrypt_then_decrypt_secret() {
