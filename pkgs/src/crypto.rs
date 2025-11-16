@@ -1,5 +1,6 @@
 use age::{Decryptor, Encryptor, Identity, IdentityFile, Recipient, armor};
 use anyhow::{Context, Result};
+use itertools::Itertools;
 use std::fs;
 use std::io::{Read, Write};
 use std::path::Path;
@@ -18,6 +19,8 @@ pub fn decrypt_to_file<P: AsRef<Path>>(
         .read_to_end(&mut ciphertext)
         .with_context(|| format!("Failed to read ciphertext file {input_file}"))?;
 
+    eprintln!("Ciphertext size: {} bytes", ciphertext.len());
+    eprintln!("Cipertext content: {:?}", &ciphertext[..]);
     // Parse decryptor (auto-detect armored)
     let decryptor = Decryptor::new(&ciphertext[..]).context("Failed to parse age file")?;
 
@@ -86,6 +89,25 @@ pub fn decrypt_to_stdout(input_file: &str, identity: Option<&str>) -> Result<()>
     Ok(())
 }
 
+// TODO: document what recipient is
+fn parse_recipient(recipient_file: &str) -> Result<Vec<Box<dyn Recipient + Send>>> {
+    let Ok(id_file) = IdentityFile::from_file(recipient_file.to_string()) else {
+        // Fallback: treat as single recipient string (e.g., age1.. or ssh-ed25519 AAAA...)
+        let Ok(recipient) = age::ssh::Recipient::from_str(recipient_file) else {
+            // Try as x25519 recipient
+            let Ok(recipient) = age::x25519::Recipient::from_str(recipient_file) else {
+                return Err(anyhow::anyhow!("Invalid recipient: {recipient_file}"));
+            };
+            return Ok(vec![Box::new(recipient)]);
+        };
+        return Ok(vec![Box::new(recipient)]);
+    };
+
+    id_file
+        .to_recipients()
+        .with_context(|| format!("Failed to parse recipients from file: {recipient_file}"))
+}
+
 /// Encrypt from a file to another file
 pub fn encrypt_from_file(
     input_file: &str,
@@ -93,34 +115,19 @@ pub fn encrypt_from_file(
     recipients: &[String],
     armor: bool,
 ) -> Result<()> {
-    // Load recipients (support ssh keys and age public keys)
-    let mut parsed_recipients: Vec<Box<dyn Recipient>> = Vec::new();
-    for r in recipients {
-        // Try to parse as a recipients file (contains multiple recipients) first
-        if Path::new(r).exists()
-            && let Ok(id_file) = IdentityFile::from_file(r.clone())
-        {
-            // Convert identities to recipients
-            if let Ok(recs) = id_file.to_recipients() {
-                parsed_recipients.extend(recs.into_iter().map(|r| r as Box<dyn Recipient>));
-                continue;
-            }
-        }
-        // Fallback: treat as single recipient string (e.g., age1.. or ssh-ed25519 AAAA...)
-        match age::ssh::Recipient::from_str(r) {
-            Ok(ssh_recipient) => parsed_recipients.push(Box::new(ssh_recipient)),
-            Err(_) => {
-                // Try x25519 recipient
-                match age::x25519::Recipient::from_str(r) {
-                    Ok(x_recipient) => parsed_recipients.push(Box::new(x_recipient)),
-                    Err(_) => return Err(anyhow::anyhow!("Invalid recipient: {r}")),
-                }
-            }
-        }
-    }
+    // Parse recipients using a helper to keep this function small
+    let parsed_recipients = recipients
+        .iter()
+        .map(|r| parse_recipient(r))
+        .flatten_ok()
+        .collect::<Result<Vec<_>>>()?;
 
-    let encryptor = Encryptor::with_recipients(parsed_recipients.iter().map(AsRef::as_ref))
-        .context("Failed to build encryptor with recipients")?;
+    let encryptor = Encryptor::with_recipients(
+        parsed_recipients
+            .iter()
+            .map(|r| r.as_ref() as &dyn Recipient),
+    )
+    .context("Failed to build encryptor with recipients")?;
 
     let mut input = vec![];
     fs::File::open(input_file)
