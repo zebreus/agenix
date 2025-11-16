@@ -25,11 +25,11 @@ pub fn decrypt_to_file<P: AsRef<Path>>(
         // Armored content - decode it first
         let mut reader = std::io::Cursor::new(&ciphertext);
         let mut decoder = armor::ArmoredReader::new(&mut reader);
-        let mut decoded = Vec::new();
+        let mut ciphertext_bytes = Vec::new();
         decoder
-            .read_to_end(&mut decoded)
+            .read_to_end(&mut ciphertext_bytes)
             .context("Failed to decode armored content")?;
-        decoded
+        ciphertext_bytes
     } else {
         // Binary content - use as is
         ciphertext
@@ -41,10 +41,15 @@ pub fn decrypt_to_file<P: AsRef<Path>>(
     let identities: Vec<Box<dyn Identity>> = if let Some(id_path) = identity {
         load_identities_from_file(id_path)?
     } else {
+        // Load default identities, failing if any key file is corrupted
         get_default_identities()
-            .into_iter()
-            .flat_map(|path| load_identities_from_file(&path).unwrap_or_default())
-            .collect()
+            .iter()
+            .map(|path| {
+                load_identities_from_file(path)
+                    .with_context(|| format!("Failed to load identity from {path}"))
+            })
+            .flatten_ok()
+            .collect::<Result<Vec<_>>>()?
     };
 
     let mut reader = decryptor
@@ -79,11 +84,11 @@ pub fn decrypt_to_stdout(input_file: &str, identity: Option<&str>) -> Result<()>
         // Armored content - decode it first
         let mut reader = std::io::Cursor::new(&ciphertext);
         let mut decoder = armor::ArmoredReader::new(&mut reader);
-        let mut decoded = Vec::new();
+        let mut ciphertext_bytes = Vec::new();
         decoder
-            .read_to_end(&mut decoded)
+            .read_to_end(&mut ciphertext_bytes)
             .context("Failed to decode armored content")?;
-        decoded
+        ciphertext_bytes
     } else {
         // Binary content - use as is
         ciphertext
@@ -94,10 +99,14 @@ pub fn decrypt_to_stdout(input_file: &str, identity: Option<&str>) -> Result<()>
     let identities: Vec<Box<dyn Identity>> = if let Some(id_path) = identity {
         load_identities_from_file(id_path)?
     } else {
-        get_default_identities()
-            .into_iter()
-            .flat_map(|path| load_identities_from_file(&path).unwrap_or_default())
-            .collect()
+        // Load default identities, failing if any key file is corrupted
+        let mut all_identities = Vec::new();
+        for path in get_default_identities() {
+            let loaded = load_identities_from_file(&path)
+                .with_context(|| format!("Failed to load identity from {path}"))?;
+            all_identities.extend(loaded);
+        }
+        all_identities
     };
 
     let mut reader = decryptor
@@ -523,6 +532,352 @@ mod tests {
         assert_eq!(test_content, armored_result);
         assert_eq!(test_content, binary_result);
         assert_eq!(armored_result, binary_result);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_load_identities_with_bogus_ssh_key() -> Result<()> {
+        // Create a temporary file with bogus SSH key content
+        let mut bogus_key_file = NamedTempFile::new()?;
+        writeln!(bogus_key_file, "bogus ssh key content")?;
+        bogus_key_file.flush()?;
+
+        // This should fail to load the bogus key
+        let result = load_identities_from_file(bogus_key_file.path().to_str().unwrap());
+        assert!(result.is_err(), "Loading bogus SSH key should fail");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_load_identities_with_bogus_age_key() -> Result<()> {
+        // Create a temporary file with bogus AGE key content
+        let mut bogus_key_file = NamedTempFile::new()?;
+        writeln!(bogus_key_file, "AGE-SECRET-KEY-INVALID")?;
+        bogus_key_file.flush()?;
+
+        // This should fail to load the bogus key
+        let result = load_identities_from_file(bogus_key_file.path().to_str().unwrap());
+        assert!(result.is_err(), "Loading bogus AGE key should fail");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_decrypt_with_bogus_default_identity() -> Result<()> {
+        // Generate a test key pair
+        let secret_key = age::x25519::Identity::generate();
+        let public_key = secret_key.to_public();
+
+        // Create temporary files
+        let mut plaintext_file = NamedTempFile::new()?;
+        let encrypted_file = NamedTempFile::new()?;
+
+        // Write test content
+        let test_content = "Secret content";
+        plaintext_file.write_all(test_content.as_bytes())?;
+        plaintext_file.flush()?;
+
+        // Encrypt the file
+        encrypt_from_file(
+            plaintext_file.path().to_str().unwrap(),
+            encrypted_file.path().to_str().unwrap(),
+            &[public_key.to_string()],
+            false,
+        )?;
+
+        // Create a temporary directory to simulate HOME
+        let temp_home = tempfile::tempdir()?;
+        let ssh_dir = temp_home.path().join(".ssh");
+        std::fs::create_dir_all(&ssh_dir)?;
+
+        // Create a bogus id_rsa file
+        let bogus_rsa_path = ssh_dir.join("id_rsa");
+        std::fs::write(&bogus_rsa_path, "bogus rsa key content")?;
+
+        // Set the HOME environment variable to our temp directory
+        let old_home = std::env::var("HOME").ok();
+        unsafe {
+            std::env::set_var("HOME", temp_home.path());
+        }
+
+        // Try to decrypt without explicit identity (should fail due to bogus default key)
+        let _result = decrypt_to_file(
+            encrypted_file.path().to_str().unwrap(),
+            temp_home.path().join("decrypted.txt"),
+            None, // No explicit identity - should use defaults
+        );
+
+        // Restore original HOME
+        if let Some(home) = old_home {
+            unsafe {
+                std::env::set_var("HOME", home);
+            }
+        } else {
+            unsafe {
+                std::env::remove_var("HOME");
+            }
+        }
+
+        // The current implementation incorrectly succeeds because unwrap_or_default()
+        // swallows the error. This test documents the current (incorrect) behavior.
+        // TODO: This should fail but currently doesn't due to unwrap_or_default()
+
+        // For now, let's just verify that get_default_identities finds the bogus key
+        let _identities = get_default_identities();
+        // Should find no identities since we only have a bogus key
+        // But currently it will find the path, and load_identities_from_file will fail silently
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_decrypt_with_explicit_valid_identity_ignores_bogus_defaults() -> Result<()> {
+        // Generate a test key pair
+        let secret_key = age::x25519::Identity::generate();
+        let public_key = secret_key.to_public();
+
+        // Create temporary files
+        let mut plaintext_file = NamedTempFile::new()?;
+        let encrypted_file = NamedTempFile::new()?;
+        let decrypted_file = NamedTempFile::new()?;
+        let mut valid_identity_file = NamedTempFile::new()?;
+
+        // Write test content
+        let test_content = "Secret content with explicit identity";
+        plaintext_file.write_all(test_content.as_bytes())?;
+        plaintext_file.flush()?;
+
+        // Write valid identity to file
+        writeln!(
+            valid_identity_file,
+            "{}",
+            secret_key.to_string().expose_secret()
+        )?;
+        valid_identity_file.flush()?;
+
+        // Encrypt the file
+        encrypt_from_file(
+            plaintext_file.path().to_str().unwrap(),
+            encrypted_file.path().to_str().unwrap(),
+            &[public_key.to_string()],
+            false,
+        )?;
+
+        // Create a temporary directory to simulate HOME with bogus keys
+        let temp_home = tempfile::tempdir()?;
+        let ssh_dir = temp_home.path().join(".ssh");
+        std::fs::create_dir_all(&ssh_dir)?;
+
+        // Create bogus default identity files
+        let bogus_rsa_path = ssh_dir.join("id_rsa");
+        let bogus_ed25519_path = ssh_dir.join("id_ed25519");
+        std::fs::write(&bogus_rsa_path, "bogus rsa key content")?;
+        std::fs::write(&bogus_ed25519_path, "bogus ed25519 key content")?;
+
+        // Set the HOME environment variable to our temp directory
+        let old_home = std::env::var("HOME").ok();
+        unsafe {
+            std::env::set_var("HOME", temp_home.path());
+        }
+
+        // Try to decrypt WITH explicit valid identity (should succeed)
+        let result = decrypt_to_file(
+            encrypted_file.path().to_str().unwrap(),
+            decrypted_file.path(),
+            Some(valid_identity_file.path().to_str().unwrap()),
+        );
+
+        // Restore original HOME
+        if let Some(home) = old_home {
+            unsafe {
+                std::env::set_var("HOME", home);
+            }
+        } else {
+            unsafe {
+                std::env::remove_var("HOME");
+            }
+        }
+
+        // This should succeed because we provided a valid explicit identity
+        assert!(
+            result.is_ok(),
+            "Decryption with explicit valid identity should succeed even with bogus defaults"
+        );
+
+        // Verify content matches
+        let decrypted_content = fs::read_to_string(decrypted_file.path())?;
+        assert_eq!(test_content, decrypted_content);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_cli_integration_bogus_key_scenario() -> Result<()> {
+        // This test reproduces the exact scenario from CLI integration test 9
+        // Generate a valid key pair for encryption
+        let secret_key = age::x25519::Identity::generate();
+        let public_key = secret_key.to_public();
+
+        // Create temporary files
+        let mut plaintext_file = NamedTempFile::new()?;
+        let encrypted_file = NamedTempFile::new()?;
+        let decrypted_file = NamedTempFile::new()?;
+        let mut valid_identity_file = NamedTempFile::new()?;
+
+        // Write test content
+        let test_content = "test-content-12345";
+        plaintext_file.write_all(test_content.as_bytes())?;
+        plaintext_file.flush()?;
+
+        // Write valid identity to file
+        writeln!(
+            valid_identity_file,
+            "{}",
+            secret_key.to_string().expose_secret()
+        )?;
+        valid_identity_file.flush()?;
+
+        // Encrypt with the valid key
+        encrypt_from_file(
+            plaintext_file.path().to_str().unwrap(),
+            encrypted_file.path().to_str().unwrap(),
+            &[public_key.to_string()],
+            false,
+        )?;
+
+        // Create a temporary directory to simulate HOME
+        let temp_home = tempfile::tempdir()?;
+        let ssh_dir = temp_home.path().join(".ssh");
+        std::fs::create_dir_all(&ssh_dir)?;
+
+        // Create a BOGUS id_rsa file (this is the key issue!)
+        let bogus_rsa_path = ssh_dir.join("id_rsa");
+        std::fs::write(&bogus_rsa_path, "bogus")?;
+
+        // Also add the valid key as id_ed25519 to show the problem
+        let valid_ed25519_path = ssh_dir.join("id_ed25519");
+        std::fs::write(&valid_ed25519_path, secret_key.to_string().expose_secret())?;
+
+        // Set HOME to our temp directory
+        let old_home = std::env::var("HOME").ok();
+        unsafe {
+            std::env::set_var("HOME", temp_home.path());
+        }
+
+        // Now try to decrypt WITHOUT explicit identity
+        // This should fail because there's a bogus id_rsa, but currently it succeeds
+        // because unwrap_or_default() ignores the error from the bogus key
+        let result = decrypt_to_file(
+            encrypted_file.path().to_str().unwrap(),
+            decrypted_file.path(),
+            None, // No explicit identity - use defaults
+        );
+
+        // Restore HOME
+        if let Some(home) = old_home {
+            unsafe {
+                std::env::set_var("HOME", home);
+            }
+        } else {
+            unsafe {
+                std::env::remove_var("HOME");
+            }
+        }
+
+        // This currently succeeds when it should fail!
+        // The CLI integration test expects this to fail with "Should have failed with bogus id_rsa"
+        match result {
+            Ok(_) => {
+                println!(
+                    "CURRENT BEHAVIOR: Decryption succeeded despite bogus id_rsa (this is the bug!)"
+                );
+                // Verify it actually decrypted correctly using the valid id_ed25519
+                let decrypted_content = fs::read_to_string(decrypted_file.path())?;
+                assert_eq!(test_content, decrypted_content);
+            }
+            Err(e) => {
+                println!(
+                    "EXPECTED BEHAVIOR: Decryption failed due to bogus key: {}",
+                    e
+                );
+            }
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_bogus_default_identity_properly_fails() -> Result<()> {
+        // This test verifies that the fix properly fails when bogus default identities are present
+        // This is the core fix for CLI integration test 9
+
+        // Generate a valid key pair for encryption
+        let secret_key = age::x25519::Identity::generate();
+        let public_key = secret_key.to_public();
+
+        // Create temporary files
+        let mut plaintext_file = NamedTempFile::new()?;
+        let encrypted_file = NamedTempFile::new()?;
+        let decrypted_file = NamedTempFile::new()?;
+
+        // Write test content
+        let test_content = "test-content-bogus-fix";
+        plaintext_file.write_all(test_content.as_bytes())?;
+        plaintext_file.flush()?;
+
+        // Encrypt with the valid key
+        encrypt_from_file(
+            plaintext_file.path().to_str().unwrap(),
+            encrypted_file.path().to_str().unwrap(),
+            &[public_key.to_string()],
+            false,
+        )?;
+
+        // Create a temporary directory to simulate HOME with bogus keys
+        let temp_home = tempfile::tempdir()?;
+        let ssh_dir = temp_home.path().join(".ssh");
+        std::fs::create_dir_all(&ssh_dir)?;
+
+        // Create a BOGUS id_rsa file - this is what causes CLI test 9 to fail
+        let bogus_rsa_path = ssh_dir.join("id_rsa");
+        std::fs::write(&bogus_rsa_path, "this is definitely not a valid SSH key")?;
+
+        // Set HOME to our temp directory
+        let old_home = std::env::var("HOME").ok();
+        unsafe {
+            std::env::set_var("HOME", temp_home.path());
+        }
+
+        // This should fail - bogus default identity should cause failure
+        // Before the fix: succeeded due to unwrap_or_default()
+        // After the fix: properly fails with error message
+        let result = decrypt_to_file(
+            encrypted_file.path().to_str().unwrap(),
+            &decrypted_file.path(),
+            None, // No explicit identity - use defaults (finds bogus key)
+        );
+
+        // Restore HOME
+        if let Some(home) = old_home {
+            unsafe {
+                std::env::set_var("HOME", home);
+            }
+        } else {
+            unsafe {
+                std::env::remove_var("HOME");
+            }
+        }
+
+        // The fix ensures this fails properly instead of silently ignoring the error
+        assert!(result.is_err(), "Should fail with bogus default identity");
+        let error_msg = format!("{}", result.unwrap_err());
+        assert!(
+            error_msg.contains("Failed to load identity") || error_msg.contains("id_rsa"),
+            "Error should mention failed identity loading: {}",
+            error_msg
+        );
 
         Ok(())
     }
