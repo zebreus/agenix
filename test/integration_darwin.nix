@@ -48,8 +48,22 @@
 
         environment.systemPackages = [ testScript ];
 
-        # Allow new-style nix commands in CI
-        nix.extraOptions = "experimental-features = nix-command flakes";
+        # We activate this system in CI so we want to ensure the same features are
+        # enabled there as well.
+        nix.settings = {
+          system-features = [
+            "nixos-test"
+            "recursive-nix"
+            "benchmark"
+            "big-parallel"
+            "kvm"
+          ];
+          experimental-features = [
+            "recursive-nix"
+            "nix-command"
+            "flakes"
+          ];
+        };
 
         system.stateVersion = 6;
       }
