@@ -11,7 +11,12 @@ rustPlatform.buildRustPackage rec {
   pname = "agenix";
   version = "0.1.0";
   src = ./.;
-  cargoLock.lockFile = ./Cargo.lock;
+  cargoLock = {
+    lockFile = ./Cargo.lock;
+    outputHashes = {
+      "snix-eval-0.1.0" = "sha256-Y/nbqO7LbQA83K/FD093D6MdVuAk/9JqiccPImNWumw=";
+    };
+  };
   doInstallCheck = true;
 
   buildInputs = [

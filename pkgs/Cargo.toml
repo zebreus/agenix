@@ -16,5 +16,6 @@ anyhow = "1.0"
 tempfile = "3.8"
 serde_json = "1.0"
 itertools = "0.14.0"
-snix-eval = { git = "https://cl.snix.dev/snix" }
+# Head commit of the main branch as of 16.11.2025
+snix-eval = { git = "https://cl.snix.dev/snix", rev = "6b08b3382f68417111a15721be2c79e75b0d0c23" }
 rnix = "0.12.0"
