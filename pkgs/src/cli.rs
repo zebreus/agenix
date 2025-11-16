@@ -179,8 +179,7 @@ mod tests {
         let expected_version_line = format!("agenix version: {}", env!("CARGO_PKG_VERSION"));
         assert!(
             help.contains(&expected_version_line),
-            "Help output should contain version line: {}",
-            expected_version_line
+            "Help output should contain version line: {expected_version_line}",
         );
 
         // Also verify it's near the end (after the options section)

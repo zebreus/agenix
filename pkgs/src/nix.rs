@@ -165,14 +165,9 @@ mod tests {
         let result = should_armor(nix, rules, "test.age");
 
         // This will likely fail in test environments, but shouldn't panic
-        match result {
-            Ok(armor) => {
-                // If it works, armor should be a boolean
-                assert!(armor || !armor);
-            }
-            Err(_) => {
-                // Expected in most test environments without nix-instantiate
-            }
+        if let Ok(armor) = result {
+            // If it works, armor should be a boolean
+            assert!(matches!(armor, true | false));
         }
     }
 
@@ -180,17 +175,6 @@ mod tests {
     fn test_nix_expr_format_get_all_files() {
         let nix = create_nix();
         let rules = "./test_secrets.nix";
-        let result = get_all_files(nix, rules);
-
-        // This will likely fail in test environments, but shouldn't panic
-        match result {
-            Ok(_files) => {
-                // If it works, should return a vector (may be empty)
-                // No assertion needed - just test that it doesn't panic
-            }
-            Err(_) => {
-                // Expected in most test environments without nix-instantiate
-            }
-        }
+        let _ = get_all_files(nix, rules);
     }
 }

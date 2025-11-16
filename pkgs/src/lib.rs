@@ -25,7 +25,13 @@ fn validate_dependencies() -> Result<(), Vec<String>> {
     }
 }
 
-/// Single public entrypoint: parse CLI args and execute
+/// Parse CLI arguments and execute the requested action.
+///
+/// This is the single public entrypoint used by the binary and tests.
+///
+/// # Errors
+/// Returns an error if required dependencies (`age`, `nix-instantiate`) are missing,
+/// if parsing arguments fails, or if any operation (rekey, decrypt, edit) fails.
 pub fn run<I, T>(iter: I) -> Result<()>
 where
     I: IntoIterator<Item = T>,

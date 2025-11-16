@@ -14,16 +14,13 @@ pub fn decrypt_to_file<P: AsRef<Path>>(
 ) -> Result<()> {
     let mut args = vec!["--decrypt".to_string()];
 
-    match identity {
-        Some(id) => {
-            args.extend_from_slice(&["--identity".to_string(), id.to_string()]);
-        }
-        None => {
-            // Add default identities
-            let identities = get_default_identities();
-            for identity in identities {
-                args.extend_from_slice(&["--identity".to_string(), identity]);
-            }
+    if let Some(id) = identity {
+        args.extend_from_slice(&["--identity".to_string(), id.to_string()]);
+    } else {
+        // Add default identities
+        let identities = get_default_identities();
+        for identity in identities {
+            args.extend_from_slice(&["--identity".to_string(), identity]);
         }
     }
 
@@ -50,16 +47,13 @@ pub fn decrypt_to_file<P: AsRef<Path>>(
 pub fn decrypt_to_stdout(input_file: &str, identity: Option<&str>) -> Result<()> {
     let mut args = vec!["--decrypt".to_string()];
 
-    match identity {
-        Some(id) => {
-            args.extend_from_slice(&["--identity".to_string(), id.to_string()]);
-        }
-        None => {
-            // Add default identities
-            let identities = get_default_identities();
-            for identity in identities {
-                args.extend_from_slice(&["--identity".to_string(), identity]);
-            }
+    if let Some(id) = identity {
+        args.extend_from_slice(&["--identity".to_string(), id.to_string()]);
+    } else {
+        // Add default identities
+        let identities = get_default_identities();
+        for identity in identities {
+            args.extend_from_slice(&["--identity".to_string(), identity]);
         }
     }
 
