@@ -9,7 +9,7 @@ use crate::nix::NIX_INSTANTIATE;
 use crate::nix::{get_all_files, get_public_keys, should_armor};
 
 /// Edit a file with encryption/decryption
-pub fn edit_file(rules_path: &str, file: &str, editor_cmd: &str) -> Result<()> {
+pub fn edit_file(rules_path: &str, file: &str, editor_cmd: &str, identity: Option<&str>) -> Result<()> {
     let public_keys = get_public_keys(NIX_INSTANTIATE, rules_path, file)?;
     let armor = should_armor(NIX_INSTANTIATE, rules_path, file)?;
 
@@ -23,7 +23,7 @@ pub fn edit_file(rules_path: &str, file: &str, editor_cmd: &str) -> Result<()> {
 
     // Decrypt if file exists
     if Path::new(file).exists() {
-        decrypt_to_file(file, &cleartext_file)?;
+        decrypt_to_file(file, &cleartext_file, identity)?;
     }
 
     // Create backup
@@ -68,27 +68,27 @@ pub fn edit_file(rules_path: &str, file: &str, editor_cmd: &str) -> Result<()> {
 }
 
 /// Decrypt a file to stdout or another location
-pub fn decrypt_file(rules_path: &str, file: &str, output: Option<&str>) -> Result<()> {
+pub fn decrypt_file(rules_path: &str, file: &str, output: Option<&str>, identity: Option<&str>) -> Result<()> {
     let public_keys = get_public_keys(NIX_INSTANTIATE, rules_path, file)?;
     if public_keys.is_empty() {
         return Err(anyhow!("No public keys found for file: {file}"));
     }
 
     match output {
-        Some(out_file) => decrypt_to_file(file, Path::new(out_file))?,
-        None => decrypt_to_stdout(file)?,
+        Some(out_file) => decrypt_to_file(file, Path::new(out_file), identity)?,
+        None => decrypt_to_stdout(file, identity)?,
     }
 
     Ok(())
 }
 
 /// Rekey all files in the rules (no-op editor used to avoid launching an editor)
-pub fn rekey_all_files(rules_path: &str) -> Result<()> {
+pub fn rekey_all_files(rules_path: &str, identity: Option<&str>) -> Result<()> {
     let files = get_all_files(NIX_INSTANTIATE, rules_path)?;
 
     for file in files {
         eprintln!("Rekeying {file}...");
-        edit_file(rules_path, &file, ":")?;
+        edit_file(rules_path, &file, ":", identity)?;
     }
 
     Ok(())
@@ -103,14 +103,14 @@ mod tests {
     #[test]
     fn test_edit_file_no_keys() {
         let rules = "./test_secrets.nix";
-        let result = edit_file(rules, "nonexistent.age", "vi");
+        let result = edit_file(rules, "nonexistent.age", "vi", None);
         assert!(result.is_err());
     }
 
     #[test]
     fn test_decrypt_file_no_keys() {
         let rules = "./test_secrets.nix";
-        let result = decrypt_file(rules, "nonexistent.age", None);
+        let result = decrypt_file(rules, "nonexistent.age", None, None);
         assert!(result.is_err());
     }
 
@@ -119,7 +119,7 @@ mod tests {
         // With nonexistent rules this will early error if keys empty; simulate empty by pointing to test file
         let rules = "./test_secrets.nix";
         // Should error, but specifically via missing keys, not editor invocation failure.
-        let result = rekey_all_files(rules);
+        let result = rekey_all_files(rules, None);
         assert!(result.is_err());
     }
 
@@ -132,7 +132,7 @@ mod tests {
         // Create an empty file so decrypt_to_file won't run (no existence of keys) but backup logic proceeds.
         File::create(&secret_path).unwrap();
         // Call edit_file expecting an error due to no keys; ensures we reach key check early.
-        let res = edit_file("./test_secrets.nix", secret_path.to_str().unwrap(), ":");
+        let res = edit_file("./test_secrets.nix", secret_path.to_str().unwrap(), ":", None);
         assert!(res.is_err());
     }
 }
