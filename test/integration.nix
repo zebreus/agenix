@@ -100,7 +100,9 @@ pkgs.nixosTest {
 
       # Test home-manager module: user secret should be decrypted at expected path
       system1.send_chars("cat /run/user/$(id -u)/agenix/secret2 > /tmp/2\n")
+      system1.sleep(1)
       system1.wait_for_file("/tmp/2")
+      system1.sleep(1)
       assert "${secret2}" in system1.succeed("cat /tmp/2")
 
       # Test home-manager module: armored secret should be decrypted
