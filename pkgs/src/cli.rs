@@ -1,9 +1,11 @@
 use clap::Parser;
-use isatty::stdin_isatty;
-use std::env;
+use std::{
+    env,
+    io::{IsTerminal, stdin},
+};
 
 fn default_editor() -> String {
-    if stdin_isatty() {
+    if stdin().is_terminal() {
         "vi".to_string()
     } else {
         "cat >".to_string()
