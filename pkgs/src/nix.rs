@@ -1,15 +1,51 @@
 use anyhow::{Context, Result, anyhow};
 use snix_eval::EvaluationBuilder;
 use snix_eval::Value;
+use snix_eval::builtin_macros;
 use std::env::current_dir;
 use std::path::Path;
 
-fn eval_nix_expression(expr: &str, path: &Path) -> Result<Value> {
-    let path = std::path::absolute(path)
-        .with_context(|| format!("Failed to get absolute path for evaluation at {:?}", path))?;
+#[builtin_macros::builtins]
+mod impure_builtins {
+    use rand::Rng;
+    use rand::distr::Alphanumeric;
+    use rand::rng;
+    use snix_eval::ErrorKind;
+    use snix_eval::NixString;
+    use snix_eval::Value;
+    use snix_eval::generators::Gen;
+    use snix_eval::generators::GenCo;
+
+    /// Generates a random alphanumeric string of given length
+    #[builtin("randomString")]
+    async fn builtin_random_string(co: GenCo, var: Value) -> Result<Value, ErrorKind> {
+        let length = var.as_int()?;
+        if length < 0 && length > 2i64.pow(16) {
+            // TODO use better error kind
+            return Err(ErrorKind::Abort(
+                "Length for randomString must be between 0 and 2^16".to_string(),
+            ));
+        }
+
+        let random_string: String = rng()
+            .sample_iter(&Alphanumeric)
+            .take(usize::try_from(length).unwrap())
+            .map(char::from)
+            .collect();
+        Ok(Value::String(NixString::from(random_string.as_bytes())))
+    }
+}
+
+pub fn eval_nix_expression(expr: &str, path: &Path) -> Result<Value> {
+    let path = std::path::absolute(path).with_context(|| {
+        format!(
+            "Failed to get absolute path for evaluation at {}",
+            path.display()
+        )
+    })?;
 
     let builder = EvaluationBuilder::new_impure();
-    let evaluation = builder.build();
+    let evaluation = builder.add_builtins(impure_builtins::builtins()).build();
     let sourcemap = evaluation.source_map();
 
     let result = evaluation.evaluate(expr, Some(path));
@@ -18,7 +54,7 @@ fn eval_nix_expression(expr: &str, path: &Path) -> Result<Value> {
     let error_messages: Vec<String> = result
         .errors
         .iter()
-        .map(|error| error.fancy_format_str())
+        .map(snix_eval::Error::fancy_format_str)
         .collect();
 
     let warning_messages: Vec<String> = result
@@ -41,7 +77,7 @@ fn eval_nix_expression(expr: &str, path: &Path) -> Result<Value> {
             error_msg.push_str(&warning_messages.join("\n"));
         }
 
-        return Err(anyhow!("{}", error_msg));
+        return Err(anyhow!("{error_msg}"));
     };
 
     // If there are warnings but evaluation succeeded, we could optionally log them
@@ -56,10 +92,10 @@ fn value_to_string_array(value: Value) -> Result<Vec<String>> {
             .into_iter()
             .map(|v| {
                 match v {
-                    Value::String(s) => Ok(s.as_str().map(|s| s.to_string())?),
+                    Value::String(s) => Ok(s.as_str().map(std::string::ToString::to_string)?),
                     Value::Thunk(thunk) => {
                         // Try to extract the value from the thunk
-                        let debug_str = format!("{:?}", thunk);
+                        let debug_str = format!("{thunk:?}");
                         // Look for pattern: Thunk(RefCell { value: Evaluated(String("...")) })
                         if let Some(start) = debug_str.find("Evaluated(String(\"") {
                             let start = start + "Evaluated(String(\"".len();
@@ -68,27 +104,49 @@ fn value_to_string_array(value: Value) -> Result<Vec<String>> {
                                 return Ok(extracted.to_string());
                             }
                         }
-                        return Err(anyhow!("Could not extract string from thunk: {:?}", thunk));
+                        Err(anyhow!("Could not extract string from thunk: {thunk:?}"))
                     }
-                    _ => {
-                        return Err(anyhow!("Expected string public key, got: {:?}", v));
-                    }
+                    _ => Err(anyhow!("Expected string public key, got: {v:?}")),
                 }
             })
             .collect::<Result<Vec<_>, _>>(),
-        _ => {
-            return Err(anyhow!(
-                "Expected JSON array for public keys, got: {:?}",
-                value
-            ));
-        }
+        _ => Err(anyhow!(
+            "Expected JSON array for public keys, got: {value:?}"
+        )),
     }
 }
 
-fn value_to_bool(value: Value) -> Result<bool> {
+fn value_to_string(v: Value) -> Result<String> {
+    match v {
+        Value::String(s) => Ok(s.as_str().map(std::string::ToString::to_string)?),
+        Value::Thunk(thunk) => {
+            // Try to extract the value from the thunk
+            let debug_str = format!("{thunk:?}");
+            // Look for pattern: Thunk(RefCell { value: Evaluated(String("...")) })
+            if let Some(start) = debug_str.find("Evaluated(String(\"") {
+                let start = start + "Evaluated(String(\"".len();
+                if let Some(end) = debug_str[start..].find("\"))") {
+                    let extracted = &debug_str[start..start + end];
+                    return Ok(extracted.to_string());
+                }
+            }
+            Err(anyhow!("Could not extract string from thunk: {thunk:?}"))
+        }
+        _ => Err(anyhow!("Expected string public key, got: {v:?}")),
+    }
+}
+
+fn value_to_bool(value: &Value) -> Result<bool> {
     match value {
-        Value::Bool(b) => Ok(b),
-        _ => Err(anyhow!("Expected boolean value, got: {:?}", value)),
+        Value::Bool(b) => Ok(*b),
+        _ => Err(anyhow!("Expected boolean value, got: {value:?}")),
+    }
+}
+
+fn value_to_optional_string(value: Value) -> Result<Option<String>> {
+    match value {
+        Value::Null => Ok(None),
+        _ => value_to_string(value).map(Some),
     }
 }
 
@@ -115,7 +173,19 @@ pub fn should_armor(rules_path: &str, file: &str) -> Result<bool> {
     let current_dir = current_dir()?;
     let output = eval_nix_expression(nix_expr.as_str(), &current_dir)?;
 
-    value_to_bool(output)
+    value_to_bool(&output)
+}
+
+/// Check if a file should be armored (ASCII-armored output)
+pub fn generate_secret(rules_path: &str, file: &str) -> Result<Option<String>> {
+    let nix_expr = format!(
+        "(let rules = import {rules_path}; in if builtins.hasAttr \"generator\" rules.\"{file}\" then (rules.\"{file}\".generator {{}}) else null)",
+    );
+
+    let current_dir = current_dir()?;
+    let output = eval_nix_expression(nix_expr.as_str(), &current_dir)?;
+
+    value_to_optional_string(output)
 }
 
 /// Get all file names from the rules
@@ -1149,5 +1219,67 @@ mod tests {
                 panic!("Expected an error but got success");
             }
         }
+    }
+
+    // #[test]
+    // fn funky_test() {
+    //     let invalid_content = "{result = let x = 8; in y: x + y;}"; // Invalid because 'y' is undefined
+
+    //     let result = eval_nix_expression(
+    //         "{result = let x = 8; in y: x + y;}.result",
+    //         current_dir().unwrap().as_path(),
+    //     );
+    //     let result = result.unwrap();
+    //     let func_result = result.as_closure().unwrap();
+    //     // func_result.
+    //     let mut lambda = func_result.lambda.clone();
+    //     let chunk = func_result.chunk();
+    //     eprintln!("{:?}", chunk.disassemble_op(writer, source, width, idx));
+    // }
+
+    #[test]
+    fn test_basic_generator_functionality() -> Result<()> {
+        let rules_content = r#"
+        {
+          "secret1.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+            generator = { }: "generated-secret";
+          };
+          "secret2.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+          };
+        }
+        "#;
+        let temp_file = create_test_rules_file(rules_content)?;
+
+        let result = generate_secret(temp_file.path().to_str().unwrap(), "secret1.age")?;
+
+        assert_eq!(result, Some("generated-secret".to_string()));
+        let result2 = generate_secret(temp_file.path().to_str().unwrap(), "secret2.age")?;
+        assert_eq!(result2, None);
+        // Note: Nix attribute names might not preserve order
+        Ok(())
+    }
+
+    #[test]
+    fn test_secret_generator_builtins() -> Result<()> {
+        let rules_content = r#"
+        {
+          "secret1.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+            generator = { }: builtins.randomString 16;
+          };
+        }
+        "#;
+        let temp_file = create_test_rules_file(rules_content)?;
+
+        let result = generate_secret(temp_file.path().to_str().unwrap(), "secret1.age")?;
+        let result1 = result.unwrap();
+        assert_eq!(result1.len(), 16);
+        let result = generate_secret(temp_file.path().to_str().unwrap(), "secret1.age")?;
+        let result2 = result.unwrap();
+        assert_eq!(result2.len(), 16);
+        assert_ne!(result1, result2); // Should be different random strings
+        Ok(())
     }
 }
