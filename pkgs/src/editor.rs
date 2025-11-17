@@ -5,7 +5,7 @@ use std::process::Command;
 use tempfile::TempDir;
 
 use crate::crypto::{decrypt_to_file, encrypt_from_file, files_equal};
-use crate::nix::{get_all_files, get_public_keys, should_armor};
+use crate::nix::{generate_secret, get_all_files, get_public_keys, should_armor};
 
 /// Edit a file with encryption/decryption
 pub fn edit_file(
@@ -103,6 +103,51 @@ pub fn rekey_all_files(rules_path: &str, identity: Option<&str>) -> Result<()> {
     Ok(())
 }
 
+/// Generate secrets using generator functions from rules
+/// Only generates secrets if:
+/// 1. The file has a generator function defined
+/// 2. The secret file doesn't already exist
+pub fn generate_secrets(rules_path: &str) -> Result<()> {
+    let files = get_all_files(rules_path)?;
+
+    for file in files {
+        // Skip if the file already exists
+        if Path::new(&file).exists() {
+            if let Ok(Some(_)) = generate_secret(rules_path, &file) {
+                eprintln!("Skipping {file}: already exists");
+            }
+            continue;
+        }
+
+        // Check if there's a generator for this file
+        if let Some(generated_content) = generate_secret(rules_path, &file)? {
+            eprintln!("Generating {file}...");
+
+            let public_keys = get_public_keys(rules_path, &file)?;
+            let armor = should_armor(rules_path, &file)?;
+
+            if public_keys.is_empty() {
+                eprintln!("Warning: No public keys found for {file}, skipping");
+                continue;
+            }
+
+            // Create temporary file with the generated content
+            let temp_dir = TempDir::new().context("Failed to create temporary directory")?;
+            let temp_file = temp_dir.path().join("generated_secret");
+            fs::write(&temp_file, generated_content)
+                .context("Failed to write generated content to temporary file")?;
+
+            // Encrypt the generated content
+            encrypt_from_file(&temp_file.to_string_lossy(), &file, &public_keys, armor)
+                .with_context(|| format!("Failed to encrypt generated secret {file}"))?;
+
+            eprintln!("Generated and encrypted {file}");
+        }
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -148,5 +193,174 @@ mod tests {
             None,
         );
         assert!(res.is_err());
+    }
+
+    #[test]
+    fn test_generate_secrets_with_nonexistent_rules() {
+        // Use the CLI interface via the run function
+        let args = vec![
+            "agenix".to_string(),
+            "--generate".to_string(),
+            "--rules".to_string(),
+            "./nonexistent_rules.nix".to_string(),
+        ];
+
+        let result = crate::run(args);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_generate_secrets_functionality() -> Result<()> {
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+
+        // Create a temporary directory for the generated secrets
+        let temp_dir = tempdir()?;
+
+        // Create the rules file with absolute paths to avoid race conditions with parallel tests
+        let rules_content_with_abs_paths = format!(
+            r#"
+{{
+  "{}/static-secret.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {{ }}: "static-password-123";
+  }};
+  "{}/random-secret.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {{ }}: builtins.randomString 16;
+  }};
+  "{}/no-generator.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+  }};
+}}
+"#,
+            temp_dir.path().to_str().unwrap(),
+            temp_dir.path().to_str().unwrap(),
+            temp_dir.path().to_str().unwrap()
+        );
+
+        let mut temp_rules_abs = NamedTempFile::new()?;
+        writeln!(temp_rules_abs, "{}", rules_content_with_abs_paths)?;
+        temp_rules_abs.flush()?;
+
+        // Use the CLI interface via the run function instead of calling generate_secrets directly
+        let args = vec![
+            "agenix".to_string(),
+            "--generate".to_string(),
+            "--rules".to_string(),
+            temp_rules_abs.path().to_str().unwrap().to_string(),
+        ];
+
+        let result = crate::run(args);
+
+        // Check that the files with generators were created
+        let static_secret_path = temp_dir.path().join("static-secret.age");
+        let random_secret_path = temp_dir.path().join("random-secret.age");
+        let no_generator_path = temp_dir.path().join("no-generator.age");
+
+        let static_exists = static_secret_path.exists();
+        let random_exists = random_secret_path.exists();
+        let no_generator_exists = no_generator_path.exists();
+
+        // Read file contents
+        let static_content = if static_exists {
+            Some(fs::read(&static_secret_path)?)
+        } else {
+            None
+        };
+        let random_content = if random_exists {
+            Some(fs::read(&random_secret_path)?)
+        } else {
+            None
+        };
+
+        // Should succeed
+        assert!(
+            result.is_ok(),
+            "CLI generate should succeed: {:?}",
+            result.err()
+        );
+
+        assert!(static_exists, "static-secret.age should be created");
+        assert!(random_exists, "random-secret.age should be created");
+        assert!(
+            !no_generator_exists,
+            "no-generator.age should not be created"
+        );
+
+        // Verify the files are not empty (they contain encrypted data)
+        let static_data = static_content.unwrap();
+        let random_data = random_content.unwrap();
+
+        assert!(
+            !static_data.is_empty(),
+            "static-secret.age should not be empty"
+        );
+        assert!(
+            !random_data.is_empty(),
+            "random-secret.age should not be empty"
+        );
+
+        // The encrypted files should be different (different content/randomness)
+        assert_ne!(
+            static_data, random_data,
+            "Generated files should have different encrypted content"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_generate_secrets_skip_existing_files() -> Result<()> {
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+
+        // Create a temporary directory with an existing file
+        let temp_dir = tempdir()?;
+
+        // Create the rules file with absolute paths
+        let rules_content = format!(
+            r#"
+{{
+  "{}/existing-secret.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {{ }}: "should-not-overwrite";
+  }};
+}}
+"#,
+            temp_dir.path().to_str().unwrap()
+        );
+
+        let mut temp_rules = NamedTempFile::new()?;
+        writeln!(temp_rules, "{}", rules_content)?;
+        temp_rules.flush()?;
+
+        let existing_file_path = temp_dir.path().join("existing-secret.age");
+        fs::write(&existing_file_path, b"existing content")?;
+
+        let original_content = fs::read(&existing_file_path)?;
+
+        // Use the CLI interface via the run function instead of calling generate_secrets directly
+        let args = vec![
+            "agenix".to_string(),
+            "--generate".to_string(),
+            "--rules".to_string(),
+            temp_rules.path().to_str().unwrap().to_string(),
+        ];
+
+        let result = crate::run(args);
+
+        // Should succeed
+        assert!(result.is_ok());
+
+        // File should still exist with original content (not overwritten)
+        assert!(existing_file_path.exists());
+        let current_content = fs::read(&existing_file_path)?;
+        assert_eq!(
+            original_content, current_content,
+            "Existing file should not be overwritten"
+        );
+
+        Ok(())
     }
 }

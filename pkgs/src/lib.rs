@@ -24,6 +24,9 @@ where
         return editor::rekey_all_files(&args.rules, args.identity.as_deref())
             .context("Failed to rekey files");
     }
+    if args.generate {
+        return editor::generate_secrets(&args.rules).context("Failed to generate secrets");
+    }
     if let Some(file) = &args.decrypt {
         return editor::decrypt_file(
             &args.rules,

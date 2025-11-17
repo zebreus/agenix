@@ -59,4 +59,29 @@ mod tests {
         let result = agenix::run(args);
         assert!(result.is_err());
     }
+
+    #[test]
+    fn test_handle_generate_nonexistent_rules() {
+        let args = vec![
+            "agenix".to_string(),
+            "-g".to_string(),
+            "--rules".to_string(),
+            "./test_secrets.nix".to_string(),
+        ];
+        let result = agenix::run(args);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_handle_generate_flag_parsing() {
+        let args = vec!["agenix".to_string(), "--generate".to_string()];
+        let result = agenix::run(args);
+        // Should error due to nonexistent default rules file, but flag should be parsed correctly
+        assert!(result.is_err());
+
+        // Test short flag
+        let args = vec!["agenix".to_string(), "-g".to_string()];
+        let result = agenix::run(args);
+        assert!(result.is_err());
+    }
 }

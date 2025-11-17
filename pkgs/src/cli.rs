@@ -52,6 +52,10 @@ pub struct Args {
     #[arg(long, env = "EDITOR", value_name = "EDITOR", default_value_t = default_editor())]
     pub editor: String,
 
+    /// Generate secrets using generator functions from rules
+    #[arg(short, long)]
+    pub generate: bool,
+
     /// Verbose output
     #[arg(short, long)]
     pub verbose: bool,
@@ -168,6 +172,14 @@ mod tests {
             Some(val) => unsafe { env::set_var("RULES", val) },
             None => unsafe { env::remove_var("RULES") },
         }
+    }
+
+    #[test]
+    fn test_generate_flag() {
+        let args = Args::try_parse_from(["agenix", "-g"]).unwrap();
+        assert!(args.generate);
+        assert_eq!(args.edit, None);
+        assert!(!args.rekey);
     }
 
     #[test]
