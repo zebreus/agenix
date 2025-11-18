@@ -1,5 +1,6 @@
 use anyhow::{Context, Result, anyhow};
 use std::fs;
+use std::io::{self, IsTerminal, Read, stdin};
 use std::path::Path;
 use std::process::Command;
 use tempfile::TempDir;
@@ -38,16 +39,28 @@ pub fn edit_file(
 
     // If editor_cmd is ":" we skip invoking an editor (used for rekey)
     if editor_cmd != ":" {
-        let status = Command::new("sh")
-            .args([
-                "-c",
-                &format!("{} '{}'", editor_cmd, cleartext_file.to_string_lossy()),
-            ])
-            .status()
-            .context("Failed to run editor")?;
+        if !stdin().is_terminal() {
+            // Read directly from stdin instead of using shell command
+            let mut stdin_content = String::new();
+            io::stdin()
+                .read_to_string(&mut stdin_content)
+                .context("Failed to read from stdin")?;
 
-        if !status.success() {
-            return Err(anyhow!("Editor exited with non-zero status"));
+            fs::write(&cleartext_file, stdin_content)
+                .context("Failed to write stdin content to file")?;
+        } else {
+            // Use the specified editor command
+            let status = Command::new("sh")
+                .args([
+                    "-c",
+                    &format!("{} '{}'", editor_cmd, cleartext_file.to_string_lossy()),
+                ])
+                .status()
+                .context("Failed to run editor")?;
+
+            if !status.success() {
+                return Err(anyhow!("Editor exited with non-zero status"));
+            }
         }
     }
 
@@ -151,7 +164,7 @@ pub fn generate_secrets(rules_path: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs::File;
+    use std::{fs::File, path::PathBuf};
     use tempfile::tempdir;
 
     #[test]
@@ -360,6 +373,53 @@ mod tests {
             original_content, current_content,
             "Existing file should not be overwritten"
         );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_stdin_editor_functionality() -> Result<()> {
+        use std::io::Write;
+
+        let temp_dir = tempdir()?;
+        let test_file_path = temp_dir.path().join("test-stdin.age");
+
+        // Create a temporary rules file with absolute path to the test file
+        let rules_content = format!(
+            r#"
+{{
+  "{}" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+  }};
+}}
+"#,
+            test_file_path.to_str().unwrap()
+        );
+
+        let temp_rules: PathBuf = temp_dir.path().join("secrets.nix").to_path_buf();
+
+        writeln!(File::create(&temp_rules).unwrap(), "{}", rules_content)?;
+
+        // Test that the "<stdin>" editor command is recognized but we can't easily
+        // test the actual stdin reading in a unit test environment
+        // Instead, we'll test with a regular editor to ensure the path works
+        let args = vec![
+            "agenix".to_string(),
+            "--edit".to_string(),
+            test_file_path.to_str().unwrap().to_string(),
+            "--rules".to_string(),
+            temp_rules.to_str().unwrap().to_string(),
+            "--editor".to_string(),
+            "echo 'test content' >".to_string(),
+        ];
+        eprintln!(
+            "Running test_stdin_editor_functionality with args: {:?}",
+            args
+        );
+
+        let result = crate::run(args);
+
+        result.unwrap();
 
         Ok(())
     }

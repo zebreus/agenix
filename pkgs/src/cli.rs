@@ -1,16 +1,5 @@
 use clap::Parser;
-use std::{
-    env,
-    io::{IsTerminal, stdin},
-};
-
-fn default_editor() -> String {
-    if stdin().is_terminal() {
-        "vi".to_string()
-    } else {
-        "cat >".to_string()
-    }
-}
+use std::env;
 
 #[derive(Parser, Debug)]
 #[command(
@@ -48,8 +37,11 @@ pub struct Args {
     )]
     pub rules: String,
 
-    /// Editor to use (can also be set via EDITOR env var; defaults depend on TTY)
-    #[arg(long, env = "EDITOR", value_name = "EDITOR", default_value_t = default_editor())]
+    /// Editor to use when editing secrets.
+    ///
+    /// This setting is only used when stdin is a terminal, otherwise we always read from stdin.
+    /// A special case is ":" which means ???
+    #[arg(long, env = "EDITOR", value_name = "EDITOR", default_value_t = String::from("vi"))]
     pub editor: String,
 
     /// Generate secrets using generator functions from rules
@@ -108,7 +100,7 @@ mod tests {
         unsafe { env::remove_var("EDITOR") };
         let args = Args::try_parse_from(["agenix", "-e", "test.age"]).unwrap();
         assert_eq!(args.edit, Some("test.age".to_string()));
-        assert_eq!(args.editor, default_editor());
+        assert_eq!(args.editor, "vi");
         match orig {
             Some(v) => unsafe { env::set_var("EDITOR", v) },
             None => unsafe { env::remove_var("EDITOR") },
