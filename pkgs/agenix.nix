@@ -1,7 +1,5 @@
 {
   lib,
-  age,
-  nix,
   rustPlatform,
 }:
 let
@@ -10,7 +8,7 @@ in
 rustPlatform.buildRustPackage rec {
   pname = "agenix";
   version = "0.1.0";
-  src = ./.;
+  src = lib.cleanSource ./.;
   cargoLock = {
     lockFile = ./Cargo.lock;
     outputHashes = {
@@ -18,18 +16,6 @@ rustPlatform.buildRustPackage rec {
     };
   };
   doInstallCheck = true;
-
-  buildInputs = [
-    age
-    nix
-  ];
-
-  postPatch = ''
-    # Hardcode dependencies into the rust code, until we use
-    # the respective pure rust implementations.
-    sed -i 's|= "nix-instantiate"|= "${nix}/bin/nix-instantiate"|' src/nix.rs
-    sed -i 's|= "age"|= "${lib.getExe age}"|' src/crypto.rs
-  '';
 
   postInstallCheck = ''
     ${bin} -h | grep ${version}
