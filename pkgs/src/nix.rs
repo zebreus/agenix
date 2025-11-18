@@ -5,7 +5,7 @@ use snix_eval::builtin_macros;
 use std::env::current_dir;
 use std::path::Path;
 
-fn generate_ssh_keypair() -> Result<(String, String)> {
+pub fn generate_ssh_keypair() -> Result<(String, String)> {
     use ed25519_dalek::SigningKey;
     use ed25519_dalek::VerifyingKey;
     use ed25519_dalek::ed25519::signature::rand_core::OsRng;
@@ -68,6 +68,31 @@ mod impure_builtins {
             .map(char::from)
             .collect();
         Ok(Value::String(NixString::from(random_string.as_bytes())))
+    }
+
+    /// Generates an SSH Ed25519 keypair
+    #[builtin("sshKey")]
+    async fn builtin_ssh_key(co: GenCo, _var: Value) -> Result<Value, ErrorKind> {
+        use super::generate_ssh_keypair;
+        use snix_eval::NixAttrs;
+        use std::collections::BTreeMap;
+
+        // Generate the SSH keypair
+        let (private_key, public_key) = generate_ssh_keypair()
+            .map_err(|e| ErrorKind::Abort(format!("Failed to generate SSH keypair: {}", e)))?;
+
+        // Create a Nix attribute set with `private` and `public`
+        let mut attrs: BTreeMap<NixString, Value> = BTreeMap::new();
+        attrs.insert(
+            NixString::from("private".as_bytes()),
+            Value::String(NixString::from(private_key.as_bytes())),
+        );
+        attrs.insert(
+            NixString::from("public".as_bytes()),
+            Value::String(NixString::from(public_key.as_bytes())),
+        );
+
+        Ok(Value::Attrs(Box::new(NixAttrs::from(attrs))))
     }
 }
 
@@ -1315,6 +1340,106 @@ mod tests {
         let result2 = result.unwrap();
         assert_eq!(result2.len(), 16);
         assert_ne!(result1, result2); // Should be different random strings
+        Ok(())
+    }
+
+    #[test]
+    fn test_generate_ssh_key_builtin() -> Result<()> {
+        let rules_content = r#"
+        {
+          "ssh-key.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+            generator = { }: (builtins.sshKey {}).private;
+          };
+        }
+        "#;
+        let temp_file = create_test_rules_file(rules_content)?;
+
+        let result = generate_secret(temp_file.path().to_str().unwrap(), "ssh-key.age")?;
+        let private_key = result.unwrap();
+
+        // Verify it's a PEM private key
+        assert!(private_key.starts_with("-----BEGIN PRIVATE KEY-----"));
+        assert!(private_key.ends_with("-----END PRIVATE KEY-----\n"));
+        assert!(private_key.len() > 100);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_generate_ssh_key_builtin_public_key() -> Result<()> {
+        // Test accessing the public key from the SSH key builtin
+        let nix_expr = "(builtins.sshKey {}).public";
+        let current_dir = current_dir()?;
+        let output = eval_nix_expression(nix_expr, &current_dir)?;
+
+        let public_key = value_to_string(output)?;
+
+        // Verify it's an SSH public key
+        assert!(public_key.starts_with("ssh-ed25519 "));
+        assert!(!public_key.contains('\n'));
+        assert!(public_key.len() > 50);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_generate_ssh_key_builtin_consistency() -> Result<()> {
+        // Test that multiple calls generate different keys
+        let nix_expr1 = "builtins.sshKey {}";
+        let nix_expr2 = "builtins.sshKey {}";
+        let current_dir = current_dir()?;
+
+        let output1 = eval_nix_expression(nix_expr1, &current_dir)?;
+        let output2 = eval_nix_expression(nix_expr2, &current_dir)?;
+
+        // Extract the values as attribute sets
+        let attrs1 = match output1 {
+            Value::Attrs(attrs) => attrs,
+            _ => panic!("Expected attribute set"),
+        };
+        let attrs2 = match output2 {
+            Value::Attrs(attrs) => attrs,
+            _ => panic!("Expected attribute set"),
+        };
+
+        let (private1, public1) =
+            attrs1
+                .into_iter_sorted()
+                .fold((String::new(), String::new()), |mut acc, (k, v)| {
+                    let key = k.as_str().unwrap().to_owned();
+                    let value = value_to_string(v.clone()).unwrap();
+                    if key == "private" {
+                        acc.0 = value;
+                    } else if key == "public" {
+                        acc.1 = value;
+                    }
+                    acc
+                });
+        let (private2, public2) =
+            attrs2
+                .into_iter_sorted()
+                .fold((String::new(), String::new()), |mut acc, (k, v)| {
+                    let key = k.as_str().unwrap().to_owned();
+                    let value = value_to_string(v.clone()).unwrap();
+                    if key == "private" {
+                        acc.0 = value;
+                    } else if key == "public" {
+                        acc.1 = value;
+                    }
+                    acc
+                });
+        // Get public keys from both calls
+
+        // Keys should be different each time
+        assert_ne!(public1, public2);
+        assert_ne!(private1, private2);
+        eprintln!("public1: {}", public1);
+
+        // Both should be valid SSH keys
+        assert!(public1.starts_with("ssh-ed25519 "));
+        assert!(public2.starts_with("ssh-ed25519 "));
+
         Ok(())
     }
 
