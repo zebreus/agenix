@@ -5,6 +5,41 @@ use snix_eval::builtin_macros;
 use std::env::current_dir;
 use std::path::Path;
 
+fn generate_ssh_keypair() -> Result<(String, String)> {
+    use ed25519_dalek::SigningKey;
+    use ed25519_dalek::VerifyingKey;
+    use ed25519_dalek::ed25519::signature::rand_core::OsRng;
+    use ed25519_dalek::pkcs8;
+    use ed25519_dalek::pkcs8::EncodePrivateKey;
+
+    let mut csprng = OsRng;
+    let signing_key: SigningKey = SigningKey::generate(&mut csprng);
+    let verifying_key: VerifyingKey = signing_key.verifying_key();
+
+    // Generate private key in PEM format
+    let private_key_pem = signing_key.to_pkcs8_pem(pkcs8::spki::der::pem::LineEnding::LF)?;
+
+    // Generate public key in SSH format (ssh-ed25519 AAAAC3Nza...)
+    // SSH ed25519 public key format includes algorithm identifier + key data
+    let mut ssh_key_data = Vec::new();
+
+    // SSH wire format: length(algorithm) + algorithm + length(public_key) + public_key
+    let algorithm = b"ssh-ed25519";
+    ssh_key_data.extend_from_slice(&(algorithm.len() as u32).to_be_bytes());
+    ssh_key_data.extend_from_slice(algorithm);
+
+    let public_key_bytes = verifying_key.as_bytes();
+    ssh_key_data.extend_from_slice(&(public_key_bytes.len() as u32).to_be_bytes());
+    ssh_key_data.extend_from_slice(public_key_bytes);
+
+    // Base64 encoding using the base64 crate
+    use base64::{Engine as _, engine::general_purpose};
+    let base64_encoded = general_purpose::STANDARD.encode(&ssh_key_data);
+    let public_key_ssh = format!("ssh-ed25519 {}", base64_encoded);
+
+    Ok((private_key_pem.to_string(), public_key_ssh))
+}
+
 #[builtin_macros::builtins]
 mod impure_builtins {
     use rand::Rng;
@@ -1280,6 +1315,126 @@ mod tests {
         let result2 = result.unwrap();
         assert_eq!(result2.len(), 16);
         assert_ne!(result1, result2); // Should be different random strings
+        Ok(())
+    }
+
+    #[test]
+    fn test_generate_ssh_keypair() -> Result<()> {
+        let (private_key, public_key) = generate_ssh_keypair()?;
+
+        // Verify private key format (still PEM)
+        assert!(private_key.starts_with("-----BEGIN PRIVATE KEY-----"));
+        assert!(private_key.ends_with("-----END PRIVATE KEY-----\n"));
+        assert!(private_key.contains('\n'));
+
+        // Verify public key format (now SSH format)
+        assert!(public_key.starts_with("ssh-ed25519 "));
+        assert!(!public_key.contains('\n')); // SSH format is single line
+        assert!(!public_key.contains("-----")); // No PEM headers
+
+        // Verify they're not empty or just headers
+        assert!(private_key.len() > 100); // Should be substantial content
+        assert!(public_key.len() > 50); // Should be substantial content
+
+        // The base64 part should be valid base64
+        let base64_part = &public_key[12..]; // Skip "ssh-ed25519 "
+        assert!(
+            base64_part
+                .chars()
+                .all(|c| c.is_alphanumeric() || c == '+' || c == '/' || c == '=')
+        );
+
+        // Generate another keypair and verify they're different
+        let (private_key2, public_key2) = generate_ssh_keypair()?;
+
+        assert_ne!(private_key, private_key2);
+        assert_ne!(public_key, public_key2);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_generate_ssh_keypair_validity() -> Result<()> {
+        let (private_key, public_key) = generate_ssh_keypair()?;
+
+        // Test that we can parse the generated keys back using the same library
+        use ed25519_dalek::pkcs8::DecodePrivateKey;
+        use ed25519_dalek::{SigningKey, VerifyingKey};
+
+        // Parse private key (still PEM format)
+        let parsed_private_key = SigningKey::from_pkcs8_pem(&private_key)?;
+
+        // Parse SSH public key manually
+        assert!(public_key.starts_with("ssh-ed25519 "));
+        let base64_part = &public_key[12..]; // Skip "ssh-ed25519 "
+
+        // Decode the SSH wire format
+        use base64::{Engine as _, engine::general_purpose};
+        let decoded_data = general_purpose::STANDARD
+            .decode(base64_part)
+            .map_err(|e| anyhow!("Base64 decode error: {}", e))?;
+
+        // Parse SSH wire format: length(algorithm) + algorithm + length(key) + key
+        let mut pos = 0;
+
+        // Read algorithm length and algorithm
+        let algo_len = u32::from_be_bytes([
+            decoded_data[pos],
+            decoded_data[pos + 1],
+            decoded_data[pos + 2],
+            decoded_data[pos + 3],
+        ]) as usize;
+        pos += 4;
+
+        let algorithm = &decoded_data[pos..pos + algo_len];
+        assert_eq!(algorithm, b"ssh-ed25519");
+        pos += algo_len;
+
+        // Read key length and key
+        let key_len = u32::from_be_bytes([
+            decoded_data[pos],
+            decoded_data[pos + 1],
+            decoded_data[pos + 2],
+            decoded_data[pos + 3],
+        ]) as usize;
+        pos += 4;
+
+        let key_bytes = &decoded_data[pos..pos + key_len];
+        let parsed_public_key = VerifyingKey::from_bytes(key_bytes.try_into()?)?;
+
+        // Verify that the public key derived from private key matches the parsed SSH public key
+        let derived_public_key = parsed_private_key.verifying_key();
+        assert_eq!(derived_public_key.as_bytes(), parsed_public_key.as_bytes());
+
+        // Test signing and verification to ensure the keypair works
+        use ed25519_dalek::{Signer, Verifier};
+
+        let message = b"test message for signing";
+        let signature = parsed_private_key.sign(message);
+
+        // Verify the signature with the public key
+        assert!(parsed_public_key.verify(message, &signature).is_ok());
+
+        // Verify that a different message fails verification
+        let wrong_message = b"wrong message";
+        assert!(parsed_public_key.verify(wrong_message, &signature).is_err());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_base64_roundtrip() -> Result<()> {
+        let test_data = b"Hello, World! This is a test string for base64 encoding.";
+
+        // Use the same base64 implementation as our SSH key generation
+        use base64::{Engine as _, engine::general_purpose};
+        let encoded = general_purpose::STANDARD.encode(test_data);
+        let decoded = general_purpose::STANDARD
+            .decode(&encoded)
+            .map_err(|e| anyhow!("Base64 decode error: {}", e))?;
+
+        assert_eq!(test_data.as_slice(), decoded.as_slice());
+
         Ok(())
     }
 }
