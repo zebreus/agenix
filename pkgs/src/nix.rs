@@ -296,12 +296,51 @@ pub fn generate_secret(rules_path: &str, file: &str) -> Result<Option<String>> {
 }
 
 /// Get the generator output for a file, handling both string and attrset outputs
+/// If no explicit generator is provided, automatically selects a generator based on the file ending:
+/// - Files ending with "ed25519", "ssh", or "ssh_key" use builtins.sshKey
+/// - Files ending with "password" or "passphrase" use builtins.randomString 32
 pub fn generate_secret_with_public(
     rules_path: &str,
     file: &str,
 ) -> Result<Option<GeneratorOutput>> {
+    // Build Nix expression that checks for explicit generator or uses automatic selection
     let nix_expr = format!(
-        "(let rules = import {rules_path}; result = if builtins.hasAttr \"generator\" rules.\"{file}\" then (rules.\"{file}\".generator {{}}) else null; in builtins.deepSeq result result)",
+        r#"(let 
+          rules = import {rules_path}; 
+          # Extract the base name without .age extension
+          fileName = "{file}";
+          baseName = if builtins.match "(.*)\.age$" fileName != null 
+                     then builtins.head (builtins.match "(.*)\.age$" fileName)
+                     else fileName;
+          
+          # Check if baseName ends with specific suffixes (case-insensitive)
+          lowerBaseName = builtins.replaceStrings 
+            ["A" "B" "C" "D" "E" "F" "G" "H" "I" "J" "K" "L" "M" "N" "O" "P" "Q" "R" "S" "T" "U" "V" "W" "X" "Y" "Z"]
+            ["a" "b" "c" "d" "e" "f" "g" "h" "i" "j" "k" "l" "m" "n" "o" "p" "q" "r" "s" "t" "u" "v" "w" "x" "y" "z"]
+            baseName;
+          
+          # Helper function to check if string ends with suffix
+          endsWith = suffix: str: 
+            let suffixLen = builtins.stringLength suffix;
+                strLen = builtins.stringLength str;
+            in if strLen < suffixLen then false
+               else builtins.substring (strLen - suffixLen) suffixLen str == suffix;
+          
+          # Determine automatic generator based on filename
+          autoGenerator = 
+            if endsWith "ed25519" lowerBaseName || endsWith "ssh" lowerBaseName || endsWith "ssh_key" lowerBaseName 
+            then (args: let keypair = builtins.sshKey args; in {{ secret = keypair.private; public = keypair.public; }})
+            else if endsWith "password" lowerBaseName || endsWith "passphrase" lowerBaseName
+            then (args: builtins.randomString 32)
+            else null;
+          
+          # Use explicit generator if provided, otherwise use automatic generator
+          result = if builtins.hasAttr "generator" rules."{file}" 
+                   then (rules."{file}".generator {{}})
+                   else if autoGenerator != null 
+                   then (autoGenerator {{}})
+                   else null;
+        in builtins.deepSeq result result)"#,
     );
 
     let current_dir = current_dir()?;
@@ -1894,8 +1933,8 @@ mod tests {
         let rules_content = r#"
         {
           "age-key.age" = {
-            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
-            generator = { }: (builtins.ageKey {}).private;
+          publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+          generator = { }: (builtins.ageKey {}).private;
           };
         }
         "#;
@@ -1995,10 +2034,10 @@ mod tests {
         let rules_content = r#"
         {
           "age-key.age" = {
-            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
-            generator = { }: 
-              let keypair = builtins.ageKey {};
-              in { secret = keypair.private; public = keypair.public; };
+          publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+          generator = { }: 
+            let keypair = builtins.ageKey {};
+            in { secret = keypair.private; public = keypair.public; };
           };
         }
         "#;
@@ -2023,6 +2062,32 @@ mod tests {
         Ok(())
     }
 
+    // Tests for automatic generator selection based on file endings
+    #[test]
+    fn test_auto_generator_ed25519_ending() -> Result<()> {
+        let rules_content = r#"
+        {
+          "my-key-ed25519.age" = {
+          publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+          };
+        }
+        "#;
+        let temp_file = create_test_rules_file(rules_content)?;
+
+        let result =
+            generate_secret_with_public(temp_file.path().to_str().unwrap(), "my-key-ed25519.age")?;
+
+        assert!(result.is_some());
+        let output = result.unwrap();
+
+        // Should generate an SSH keypair automatically
+        assert!(output.secret.starts_with("-----BEGIN PRIVATE KEY-----"));
+        assert!(output.public.is_some());
+        let public = output.public.unwrap();
+        assert!(public.starts_with("ssh-ed25519 "));
+
+        Ok(())
+    }
     #[test]
     fn test_age_key_can_encrypt_decrypt() -> Result<()> {
         use std::io::Write;
@@ -2087,6 +2152,188 @@ mod tests {
         // Verify content matches
         let decrypted_content = std::fs::read_to_string(decrypted_file.path())?;
         assert_eq!(test_content, decrypted_content);
+        Ok(())
+    }
+
+    fn test_auto_generator_ssh_ending() -> Result<()> {
+        let rules_content = r#"
+        {
+          "deployment-ssh.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+          };
+        }
+        "#;
+        let temp_file = create_test_rules_file(rules_content)?;
+
+        let result =
+            generate_secret_with_public(temp_file.path().to_str().unwrap(), "deployment-ssh.age")?;
+
+        assert!(result.is_some());
+        let output = result.unwrap();
+
+        // Should generate an SSH keypair automatically
+        assert!(output.secret.starts_with("-----BEGIN PRIVATE KEY-----"));
+        assert!(output.public.is_some());
+        let public = output.public.unwrap();
+        assert!(public.starts_with("ssh-ed25519 "));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_auto_generator_ssh_key_ending() -> Result<()> {
+        let rules_content = r#"
+        {
+          "server_ssh_key.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+          };
+        }
+        "#;
+        let temp_file = create_test_rules_file(rules_content)?;
+
+        let result =
+            generate_secret_with_public(temp_file.path().to_str().unwrap(), "server_ssh_key.age")?;
+
+        assert!(result.is_some());
+        let output = result.unwrap();
+
+        // Should generate an SSH keypair automatically
+        assert!(output.secret.starts_with("-----BEGIN PRIVATE KEY-----"));
+        assert!(output.public.is_some());
+        let public = output.public.unwrap();
+        assert!(public.starts_with("ssh-ed25519 "));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_auto_generator_password_ending() -> Result<()> {
+        let rules_content = r#"
+        {
+          "database-password.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+          };
+        }
+        "#;
+        let temp_file = create_test_rules_file(rules_content)?;
+
+        let result = generate_secret_with_public(
+            temp_file.path().to_str().unwrap(),
+            "database-password.age",
+        )?;
+
+        assert!(result.is_some());
+        let output = result.unwrap();
+
+        // Should generate a 32-character random string
+        assert_eq!(output.secret.len(), 32);
+        assert!(output.public.is_none()); // Random string doesn't have public output
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_auto_generator_passphrase_ending() -> Result<()> {
+        let rules_content = r#"
+        {
+          "backup-passphrase.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+          };
+        }
+        "#;
+        let temp_file = create_test_rules_file(rules_content)?;
+
+        let result = generate_secret_with_public(
+            temp_file.path().to_str().unwrap(),
+            "backup-passphrase.age",
+        )?;
+
+        assert!(result.is_some());
+        let output = result.unwrap();
+
+        // Should generate a 32-character random string
+        assert_eq!(output.secret.len(), 32);
+        assert!(output.public.is_none()); // Random string doesn't have public output
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_auto_generator_case_insensitive() -> Result<()> {
+        let rules_content = r#"
+        {
+          "MyKey-ED25519.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+          };
+          "Database-PASSWORD.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+          };
+        }
+        "#;
+        let temp_file = create_test_rules_file(rules_content)?;
+
+        // Test uppercase ED25519
+        let result1 =
+            generate_secret_with_public(temp_file.path().to_str().unwrap(), "MyKey-ED25519.age")?;
+        assert!(result1.is_some());
+        let output1 = result1.unwrap();
+        assert!(output1.secret.starts_with("-----BEGIN PRIVATE KEY-----"));
+        assert!(output1.public.is_some());
+
+        // Test uppercase PASSWORD
+        let result2 = generate_secret_with_public(
+            temp_file.path().to_str().unwrap(),
+            "Database-PASSWORD.age",
+        )?;
+        assert!(result2.is_some());
+        let output2 = result2.unwrap();
+        assert_eq!(output2.secret.len(), 32);
+        assert!(output2.public.is_none());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_auto_generator_no_match() -> Result<()> {
+        let rules_content = r#"
+        {
+          "random-secret.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+          };
+        }
+        "#;
+        let temp_file = create_test_rules_file(rules_content)?;
+
+        let result =
+            generate_secret_with_public(temp_file.path().to_str().unwrap(), "random-secret.age")?;
+
+        // Should return None when no matching ending and no explicit generator
+        assert_eq!(result, None);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_explicit_generator_overrides_auto() -> Result<()> {
+        let rules_content = r#"
+        {
+          "my-password.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+            generator = { }: "custom-fixed-value";
+          };
+        }
+        "#;
+        let temp_file = create_test_rules_file(rules_content)?;
+
+        let result =
+            generate_secret_with_public(temp_file.path().to_str().unwrap(), "my-password.age")?;
+
+        assert!(result.is_some());
+        let output = result.unwrap();
+
+        // Should use explicit generator, not auto-generated random string
+        assert_eq!(output.secret, "custom-fixed-value");
+        assert!(output.public.is_none());
 
         Ok(())
     }
