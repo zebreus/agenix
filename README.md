@@ -789,6 +789,63 @@ RULES environment variable with path to Nix file specifying recipient public key
 Defaults to './secrets.nix'
 ```
 
+#### Referencing generated public keys
+
+You can reference a generated public key in the `publicKeys` field of another secret
+by using the secret name. This is useful when you want to use a generated SSH keypair
+to encrypt other secrets.
+
+When you reference a secret name (without the `ssh-` or `age1` prefix), agenix will
+automatically read the corresponding `.pub` file and use it as a public key.
+
+Example in `secrets.nix`:
+
+```nix
+{
+  # Generate an SSH keypair
+  "host-key.age" = {
+    publicKeys = [ 
+      "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAdminKey..."
+    ];
+    generator = {}: 
+      let keypair = builtins.sshKey {};
+      in { 
+        secret = keypair.private; 
+        public = keypair.public; 
+      };
+  };
+  
+  # Reference the generated public key in another secret
+  "backup.age" = {
+    publicKeys = [ 
+      "host-key"  # References host-key.age.pub
+      "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAdminKey..."
+    ];
+    generator = {}: "backup-data";
+  };
+  
+  # You can also use the .age extension
+  "another-secret.age" = {
+    publicKeys = [ "host-key.age" ];  # Also works
+  };
+}
+```
+
+Generate the secrets (order doesn't matter - agenix will resolve dependencies):
+
+```ShellSession
+$ agenix --generate
+```
+
+This will:
+1. Generate `host-key.age` and `host-key.age.pub` first
+2. Use the public key from `host-key.age.pub` to encrypt `backup.age`
+3. The backup can be decrypted using either the admin key or the host private key
+
+**Note:** Make sure to generate the referenced secret (with a generator that produces
+public output) before using it as a reference. The `.pub` file must exist for the
+reference to be resolved.
+
 #### Generating secrets with public output
 
 Generator functions can produce public output alongside the encrypted secret.
