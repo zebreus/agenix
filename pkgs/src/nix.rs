@@ -1,12 +1,12 @@
 use anyhow::{Context, Result, anyhow};
 use snix_eval::EvaluationBuilder;
-use snix_eval::Value;
 use snix_eval::NixString;
+use snix_eval::Value;
 use snix_eval::builtin_macros;
 use std::env::current_dir;
 use std::path::Path;
 
-pub fn generate_ssh_keypair() -> Result<(String, String)> {
+pub fn generate_ed25519_keypair() -> Result<(String, String)> {
     use ed25519_dalek::SigningKey;
     use ed25519_dalek::VerifyingKey;
     use ed25519_dalek::ed25519::signature::rand_core::OsRng;
@@ -74,12 +74,12 @@ mod impure_builtins {
     /// Generates an SSH Ed25519 keypair
     #[builtin("sshKey")]
     async fn builtin_ssh_key(co: GenCo, _var: Value) -> Result<Value, ErrorKind> {
-        use super::generate_ssh_keypair;
+        use super::generate_ed25519_keypair;
         use snix_eval::NixAttrs;
         use std::collections::BTreeMap;
 
         // Generate the SSH keypair
-        let (private_key, public_key) = generate_ssh_keypair()
+        let (private_key, public_key) = generate_ed25519_keypair()
             .map_err(|e| ErrorKind::Abort(format!("Failed to generate SSH keypair: {}", e)))?;
 
         // Create a Nix attribute set with `private` and `public`
@@ -257,7 +257,10 @@ pub fn generate_secret(rules_path: &str, file: &str) -> Result<Option<String>> {
 }
 
 /// Get the generator output for a file, handling both string and attrset outputs
-pub fn generate_secret_with_public(rules_path: &str, file: &str) -> Result<Option<GeneratorOutput>> {
+pub fn generate_secret_with_public(
+    rules_path: &str,
+    file: &str,
+) -> Result<Option<GeneratorOutput>> {
     let nix_expr = format!(
         "(let rules = import {rules_path}; result = if builtins.hasAttr \"generator\" rules.\"{file}\" then (rules.\"{file}\".generator {{}}) else null; in builtins.deepSeq result result)",
     );
@@ -1499,7 +1502,7 @@ mod tests {
 
     #[test]
     fn test_generate_ssh_keypair() -> Result<()> {
-        let (private_key, public_key) = generate_ssh_keypair()?;
+        let (private_key, public_key) = generate_ed25519_keypair()?;
 
         // Verify private key format (still PEM)
         assert!(private_key.starts_with("-----BEGIN PRIVATE KEY-----"));
@@ -1524,7 +1527,7 @@ mod tests {
         );
 
         // Generate another keypair and verify they're different
-        let (private_key2, public_key2) = generate_ssh_keypair()?;
+        let (private_key2, public_key2) = generate_ed25519_keypair()?;
 
         assert_ne!(private_key, private_key2);
         assert_ne!(public_key, public_key2);
@@ -1534,7 +1537,7 @@ mod tests {
 
     #[test]
     fn test_generate_ssh_keypair_validity() -> Result<()> {
-        let (private_key, public_key) = generate_ssh_keypair()?;
+        let (private_key, public_key) = generate_ed25519_keypair()?;
 
         // Test that we can parse the generated keys back using the same library
         use ed25519_dalek::pkcs8::DecodePrivateKey;
@@ -1630,7 +1633,8 @@ mod tests {
         "#;
         let temp_file = create_test_rules_file(rules_content)?;
 
-        let result = generate_secret_with_public(temp_file.path().to_str().unwrap(), "secret1.age")?;
+        let result =
+            generate_secret_with_public(temp_file.path().to_str().unwrap(), "secret1.age")?;
 
         assert!(result.is_some());
         let output = result.unwrap();
@@ -1651,7 +1655,8 @@ mod tests {
         "#;
         let temp_file = create_test_rules_file(rules_content)?;
 
-        let result = generate_secret_with_public(temp_file.path().to_str().unwrap(), "secret1.age")?;
+        let result =
+            generate_secret_with_public(temp_file.path().to_str().unwrap(), "secret1.age")?;
 
         assert!(result.is_some());
         let output = result.unwrap();
@@ -1672,7 +1677,8 @@ mod tests {
         "#;
         let temp_file = create_test_rules_file(rules_content)?;
 
-        let result = generate_secret_with_public(temp_file.path().to_str().unwrap(), "secret1.age")?;
+        let result =
+            generate_secret_with_public(temp_file.path().to_str().unwrap(), "secret1.age")?;
 
         assert!(result.is_some());
         let output = result.unwrap();
@@ -1696,7 +1702,12 @@ mod tests {
         let result = generate_secret_with_public(temp_file.path().to_str().unwrap(), "secret1.age");
 
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("must have 'secret' key"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("must have 'secret' key")
+        );
         Ok(())
     }
 
@@ -1711,7 +1722,8 @@ mod tests {
         "#;
         let temp_file = create_test_rules_file(rules_content)?;
 
-        let result = generate_secret_with_public(temp_file.path().to_str().unwrap(), "secret1.age")?;
+        let result =
+            generate_secret_with_public(temp_file.path().to_str().unwrap(), "secret1.age")?;
 
         assert_eq!(result, None);
         Ok(())
@@ -1731,21 +1743,22 @@ mod tests {
         "#;
         let temp_file = create_test_rules_file(rules_content)?;
 
-        let result = generate_secret_with_public(temp_file.path().to_str().unwrap(), "ssh-key.age")?;
+        let result =
+            generate_secret_with_public(temp_file.path().to_str().unwrap(), "ssh-key.age")?;
 
         assert!(result.is_some());
         let output = result.unwrap();
-        
+
         // Verify it's a PEM private key
         assert!(output.secret.starts_with("-----BEGIN PRIVATE KEY-----"));
         assert!(output.secret.contains("-----END PRIVATE KEY-----"));
-        
+
         // Verify the public key is in SSH format
         assert!(output.public.is_some());
         let public = output.public.unwrap();
         assert!(public.starts_with("ssh-ed25519 "));
         assert!(!public.contains('\n'));
-        
+
         Ok(())
     }
 
@@ -1763,20 +1776,20 @@ mod tests {
         "#;
         let temp_file = create_test_rules_file(rules_content)?;
 
-        let result = generate_secret_with_public(temp_file.path().to_str().unwrap(), "secret1.age")?;
+        let result =
+            generate_secret_with_public(temp_file.path().to_str().unwrap(), "secret1.age")?;
 
         assert!(result.is_some());
         let output = result.unwrap();
-        
+
         // Verify secret is the expected length
         assert_eq!(output.secret.len(), 32);
-        
+
         // Verify public contains the reference to the secret
         assert!(output.public.is_some());
         let public = output.public.unwrap();
         assert!(public.starts_with("metadata-for-"));
-        
+
         Ok(())
     }
 }
-
