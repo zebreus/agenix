@@ -123,9 +123,11 @@ let
         public = {
           path = mkOption {
             type = types.nullOr types.str;
-            default = 
-              let pubFile = "${toString config.file}.pub";
-              in if builtins.pathExists pubFile then pubFile else null;
+            default =
+              let
+                pubFile = "${toString config.file}.pub";
+              in
+              if builtins.pathExists pubFile then pubFile else null;
             defaultText = literalExpression ''
               if builtins.pathExists "''${config.file}.pub" then "''${config.file}.pub" else null
             '';
@@ -137,9 +139,11 @@ let
           };
           content = mkOption {
             type = types.nullOr types.str;
-            default = 
-              let pubFile = "${toString config.file}.pub";
-              in if builtins.pathExists pubFile then builtins.readFile pubFile else null;
+            default =
+              let
+                pubFile = "${toString config.file}.pub";
+              in
+              if builtins.pathExists pubFile then builtins.readFile pubFile else null;
             defaultText = literalExpression ''
               if builtins.pathExists "''${config.file}.pub" then builtins.readFile "''${config.file}.pub" else null
             '';

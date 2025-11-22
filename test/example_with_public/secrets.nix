@@ -4,14 +4,22 @@ let
 in
 {
   "with-public.age" = {
-    publicKeys = [ user1 system1 ];
-    generator = {}: { 
-      secret = "my-secret-value"; 
-      public = "my-public-key-content"; 
-    };
+    publicKeys = [
+      user1
+      system1
+    ];
+    generator =
+      { }:
+      {
+        secret = "my-secret-value";
+        public = "my-public-key-content";
+      };
   };
   "string-only.age" = {
-    publicKeys = [ user1 system1 ];
-    generator = {}: "just-a-secret";
+    publicKeys = [
+      user1
+      system1
+    ];
+    generator = { }: "just-a-secret";
   };
 }
