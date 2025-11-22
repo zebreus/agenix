@@ -6,7 +6,7 @@ use std::process::Command;
 use tempfile::TempDir;
 
 use crate::crypto::{decrypt_to_file, encrypt_from_file, files_equal};
-use crate::nix::{generate_secret, get_all_files, get_public_keys, should_armor};
+use crate::nix::{generate_secret, generate_secret_with_public, get_all_files, get_public_keys, should_armor};
 
 /// Edit a file with encryption/decryption
 pub fn edit_file(
@@ -126,14 +126,14 @@ pub fn generate_secrets(rules_path: &str) -> Result<()> {
     for file in files {
         // Skip if the file already exists
         if Path::new(&file).exists() {
-            if let Ok(Some(_)) = generate_secret(rules_path, &file) {
+            if let Ok(Some(_)) = generate_secret_with_public(rules_path, &file) {
                 eprintln!("Skipping {file}: already exists");
             }
             continue;
         }
 
         // Check if there's a generator for this file
-        if let Some(generated_content) = generate_secret(rules_path, &file)? {
+        if let Some(generator_output) = generate_secret_with_public(rules_path, &file)? {
             eprintln!("Generating {file}...");
 
             let public_keys = get_public_keys(rules_path, &file)?;
@@ -144,17 +144,25 @@ pub fn generate_secrets(rules_path: &str) -> Result<()> {
                 continue;
             }
 
-            // Create temporary file with the generated content
+            // Create temporary file with the generated secret content
             let temp_dir = TempDir::new().context("Failed to create temporary directory")?;
             let temp_file = temp_dir.path().join("generated_secret");
-            fs::write(&temp_file, generated_content)
+            fs::write(&temp_file, &generator_output.secret)
                 .context("Failed to write generated content to temporary file")?;
 
-            // Encrypt the generated content
+            // Encrypt the generated secret content
             encrypt_from_file(&temp_file.to_string_lossy(), &file, &public_keys, armor)
                 .with_context(|| format!("Failed to encrypt generated secret {file}"))?;
 
             eprintln!("Generated and encrypted {file}");
+
+            // If there's public content, write it to a .pub file
+            if let Some(public_content) = &generator_output.public {
+                let pub_file = format!("{}.pub", file);
+                fs::write(&pub_file, public_content)
+                    .with_context(|| format!("Failed to write public file {pub_file}"))?;
+                eprintln!("Generated public file {pub_file}");
+            }
         }
     }
 

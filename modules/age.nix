@@ -162,6 +162,34 @@ let
             Path where the decrypted secret is installed.
           '';
         };
+        publicPath = mkOption {
+          type = types.nullOr types.str;
+          default = 
+            let pubFile = "${toString config.file}.pub";
+            in if builtins.pathExists pubFile then pubFile else null;
+          defaultText = literalExpression ''
+            if builtins.pathExists "''${config.file}.pub" then "''${config.file}.pub" else null
+          '';
+          description = ''
+            Path to the public file associated with this secret, if it exists.
+            This file is created when the generator function returns an attrset
+            with both `secret` and `public` keys.
+          '';
+        };
+        publicContent = mkOption {
+          type = types.nullOr types.str;
+          default = 
+            let pubFile = "${toString config.file}.pub";
+            in if builtins.pathExists pubFile then builtins.readFile pubFile else null;
+          defaultText = literalExpression ''
+            if builtins.pathExists "''${config.file}.pub" then builtins.readFile "''${config.file}.pub" else null
+          '';
+          description = ''
+            Content of the public file associated with this secret, if it exists.
+            This is the content of the `.pub` file created when the generator
+            function returns an attrset with both `secret` and `public` keys.
+          '';
+        };
         mode = mkOption {
           type = types.str;
           default = "0400";
