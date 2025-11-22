@@ -265,24 +265,28 @@ pub fn generate_secret_with_public(rules_path: &str, file: &str) -> Result<Optio
     let current_dir = current_dir()?;
     let output = eval_nix_expression(nix_expr.as_str(), &current_dir)?;
 
+    // Commonly used attribute names as constants
+    const SECRET_KEY: &[u8] = b"secret";
+    const PUBLIC_KEY: &[u8] = b"public";
+
     match output {
         Value::Null => Ok(None),
         Value::String(s) => {
             // Generator returned just a string - this is the secret
             Ok(Some(GeneratorOutput {
-                secret: s.as_str().map(std::string::ToString::to_string)?,
+                secret: s.as_str()?.to_owned(),
                 public: None,
             }))
         }
         Value::Attrs(attrs) => {
             // Generator returned an attrset - extract secret and public
             let secret = attrs
-                .select(NixString::from("secret".as_bytes()).as_ref())
+                .select(NixString::from(SECRET_KEY).as_ref())
                 .ok_or_else(|| anyhow!("Generator attrset must have 'secret' key"))?;
             let secret_str = value_to_string(secret.clone())?;
 
             let public = attrs
-                .select(NixString::from("public".as_bytes()).as_ref())
+                .select(NixString::from(PUBLIC_KEY).as_ref())
                 .map(|v| value_to_string(v.clone()))
                 .transpose()?;
 

@@ -6,7 +6,7 @@ use std::process::Command;
 use tempfile::TempDir;
 
 use crate::crypto::{decrypt_to_file, encrypt_from_file, files_equal};
-use crate::nix::{generate_secret, generate_secret_with_public, get_all_files, get_public_keys, should_armor};
+use crate::nix::{generate_secret_with_public, get_all_files, get_public_keys, should_armor};
 
 /// Edit a file with encryption/decryption
 pub fn edit_file(
