@@ -297,7 +297,8 @@ pub fn generate_secret(rules_path: &str, file: &str) -> Result<Option<String>> {
 
 /// Get the generator output for a file, handling both string and attrset outputs
 /// If no explicit generator is provided, automatically selects a generator based on the file ending:
-/// - Files ending with "ed25519", "ssh", or "ssh_key" use builtins.sshKey
+/// - Files ending with "ed25519", "ssh", or "ssh_key" use builtins.sshKey (SSH Ed25519 keypair)
+/// - Files ending with "x25519" use builtins.ageKey (age x25519 keypair)
 /// - Files ending with "password" or "passphrase" use builtins.randomString 32
 pub fn generate_secret_with_public(
     rules_path: &str,
@@ -312,6 +313,8 @@ pub fn generate_secret_with_public(
           auto = 
             if hasSuffix "ed25519" || hasSuffix "ssh" || hasSuffix "ssh_key" 
             then (_: let k = builtins.sshKey {{}}; in {{ secret = k.private; public = k.public; }})
+            else if hasSuffix "x25519"
+            then (_: let k = builtins.ageKey {{}}; in {{ secret = k.private; public = k.public; }})
             else if hasSuffix "password" || hasSuffix "passphrase"
             then (_: builtins.randomString 32)
             else null;
@@ -2180,6 +2183,32 @@ mod tests {
         assert!(output.public.is_some());
         let public = output.public.unwrap();
         assert!(public.starts_with("ssh-ed25519 "));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_auto_generator_x25519_ending() -> Result<()> {
+        let rules_content = r#"
+        {
+          "identity-x25519.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+          };
+        }
+        "#;
+        let temp_file = create_test_rules_file(rules_content)?;
+
+        let result =
+            generate_secret_with_public(temp_file.path().to_str().unwrap(), "identity-x25519.age")?;
+
+        assert!(result.is_some());
+        let output = result.unwrap();
+
+        // Should generate an age x25519 keypair automatically
+        assert!(output.secret.starts_with("AGE-SECRET-KEY-"));
+        assert!(output.public.is_some());
+        let public = output.public.unwrap();
+        assert!(public.starts_with("age1"));
 
         Ok(())
     }

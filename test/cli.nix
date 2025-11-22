@@ -422,6 +422,9 @@ pkgs.runCommand "agenix-cli-test"
       "id_ssh_key.age" = {
         publicKeys = [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH" ];
       };
+      "identity-x25519.age" = {
+        publicKeys = [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH" ];
+      };
       "database-password.age" = {
         publicKeys = [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH" ];
       };
@@ -459,6 +462,13 @@ pkgs.runCommand "agenix-cli-test"
           exit 1
         fi
         
+        if [ -f "identity-x25519.age" ] && [ -f "identity-x25519.age.pub" ]; then
+          echo "✓ identity-x25519.age generated with public key"
+        else
+          echo "✗ identity-x25519.age or its public key not generated"
+          exit 1
+        fi
+        
         # Check that password files were created without .pub files
         if [ -f "database-password.age" ] && [ ! -f "database-password.age.pub" ]; then
           echo "✓ database-password.age generated without public key"
@@ -491,12 +501,29 @@ pkgs.runCommand "agenix-cli-test"
           exit 1
         fi
 
+        # Verify age x25519 key has correct format
+        age_pub=$(cat "identity-x25519.age.pub")
+        if echo "$age_pub" | grep -q "^age1"; then
+          echo "✓ age x25519 public key has correct format"
+        else
+          echo "✗ age x25519 public key format incorrect: got '$age_pub'"
+          exit 1
+        fi
+
         # Verify we can decrypt the auto-generated secrets
         decrypted_ssh=$(agenix -d server-ed25519.age --rules "$TMPDIR/auto-generate-test/auto-generate-secrets.nix" -i ${./example_keys/user1})
         if echo "$decrypted_ssh" | grep -q "BEGIN PRIVATE KEY"; then
           echo "✓ Auto-generated SSH key decrypts correctly"
         else
           echo "✗ Auto-generated SSH key decryption failed"
+          exit 1
+        fi
+        
+        decrypted_x25519=$(agenix -d identity-x25519.age --rules "$TMPDIR/auto-generate-test/auto-generate-secrets.nix" -i ${./example_keys/user1})
+        if echo "$decrypted_x25519" | grep -q "^AGE-SECRET-KEY-"; then
+          echo "✓ Auto-generated x25519 key decrypts correctly"
+        else
+          echo "✓ Auto-generated x25519 key decryption failed"
           exit 1
         fi
         
