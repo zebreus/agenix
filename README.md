@@ -908,6 +908,50 @@ Example in `secrets.nix`:
 
 Run `agenix --generate` to generate all secrets. Files with matching endings will be automatically generated even without an explicit `generator` attribute.
 
+#### Referencing generated public keys
+
+When you generate secrets with public output (like SSH keys), you can reference the public key in the `publicKeys` field of other secrets. Simply use the secret name (with or without the `.age` suffix) instead of the actual public key.
+
+Example in `secrets.nix`:
+
+```nix
+{
+  # Generate an SSH keypair for deployment
+  "deploy-key.age" = {
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {}: builtins.sshKey {};
+  };
+  
+  # Use the deploy key's public key for another secret
+  "authorized-keys.age" = {
+    publicKeys = [ 
+      "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p"
+      "deploy-key"  # References the public key from deploy-key.age.pub
+    ];
+  };
+  
+  # Also works with automatic generators
+  "server-ssh.age" = {
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    # Automatically generates SSH key due to naming
+  };
+  
+  "backup-authorized-keys.age" = {
+    publicKeys = [ 
+      "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p"
+      "server-ssh.age"  # Can also use with .age suffix
+    ];
+  };
+}
+```
+
+After generating secrets with `agenix --generate`, the `.pub` files are created alongside the `.age` files. When encrypting or rekeying secrets, agenix automatically resolves secret name references to their corresponding public keys from the `.pub` files.
+
+This makes it easy to:
+- Use generated SSH keys for authentication while encrypting config secrets
+- Share generated age keys between multiple secrets
+- Maintain consistency when rotating keys (just regenerate and rekey)
+
 #### Rekeying
 
 If you change the public keys in `secrets.nix`, you should rekey your

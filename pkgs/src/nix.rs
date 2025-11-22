@@ -250,6 +250,49 @@ fn value_to_optional_string(value: Value) -> Result<Option<String>> {
     }
 }
 
+/// Resolve a potential secret reference to a public key
+/// If the key_str looks like a public key (starts with ssh-, age1, etc.), return it as-is
+/// If it looks like a secret name, try to read the corresponding .pub file
+#[cfg_attr(test, allow(dead_code))]
+pub(crate) fn resolve_public_key(rules_dir: &Path, key_str: &str) -> Result<String> {
+    // Check if this looks like an actual public key
+    if key_str.starts_with("ssh-") || key_str.starts_with("age1") || key_str.starts_with("sk-") {
+        return Ok(key_str.to_string());
+    }
+
+    // Try to resolve as a secret reference
+    // Remove .age suffix if present to get the base secret name
+    let secret_name = if key_str.ends_with(".age") {
+        &key_str[..key_str.len() - 4]
+    } else {
+        key_str
+    };
+
+    // Try both with and without .age suffix for the pub file
+    let pub_file_paths = [
+        rules_dir.join(format!("{}.age.pub", secret_name)),
+        rules_dir.join(format!("{}.pub", secret_name)),
+    ];
+
+    for pub_file_path in &pub_file_paths {
+        if pub_file_path.exists() {
+            let public_key = std::fs::read_to_string(pub_file_path)
+                .with_context(|| {
+                    format!(
+                        "Failed to read public key file: {}",
+                        pub_file_path.display()
+                    )
+                })?
+                .trim()
+                .to_string();
+            return Ok(public_key);
+        }
+    }
+
+    // If no .pub file found, return the original string (might be a public key we don't recognize)
+    Ok(key_str.to_string())
+}
+
 /// Get public keys for a file from the rules
 pub fn get_public_keys(rules_path: &str, file: &str) -> Result<Vec<String>> {
     let nix_expr = format!(
@@ -261,7 +304,16 @@ pub fn get_public_keys(rules_path: &str, file: &str) -> Result<Vec<String>> {
 
     let keys = value_to_string_array(output)?;
 
-    Ok(keys)
+    // Resolve any secret references to actual public keys
+    let rules_path_obj = Path::new(rules_path);
+    let rules_dir = rules_path_obj.parent().unwrap_or_else(|| Path::new("."));
+
+    let resolved_keys: Result<Vec<String>> = keys
+        .into_iter()
+        .map(|key| resolve_public_key(rules_dir, &key))
+        .collect();
+
+    resolved_keys
 }
 
 /// Check if a file should be armored (ASCII-armored output)
@@ -2341,6 +2393,214 @@ mod tests {
         // Should use explicit generator, not auto-generated random string
         assert_eq!(output.secret, "custom-fixed-value");
         assert!(output.public.is_none());
+
+        Ok(())
+    }
+
+    // Tests for secret reference resolution
+    #[test]
+    fn test_resolve_public_key_actual_ssh_key() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let rules_dir = temp_dir.path();
+
+        let ssh_key =
+            "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqiXi9DyVJGcL8pE4+bKqe3FP8";
+        let result = resolve_public_key(rules_dir, ssh_key)?;
+
+        // Should return the key unchanged
+        assert_eq!(result, ssh_key);
+        Ok(())
+    }
+
+    #[test]
+    fn test_resolve_public_key_actual_age_key() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let rules_dir = temp_dir.path();
+
+        let age_key = "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p";
+        let result = resolve_public_key(rules_dir, age_key)?;
+
+        // Should return the key unchanged
+        assert_eq!(result, age_key);
+        Ok(())
+    }
+
+    #[test]
+    fn test_resolve_public_key_secret_reference_with_age_suffix() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let rules_dir = temp_dir.path();
+
+        // Create a .pub file for the secret
+        let pub_file = rules_dir.join("my-ssh-key.age.pub");
+        let public_key =
+            "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqiXi9DyVJGcL8pE4+bKqe3FP8";
+        std::fs::write(&pub_file, format!("{}\n", public_key))?;
+
+        // Reference with .age suffix
+        let result = resolve_public_key(rules_dir, "my-ssh-key.age")?;
+
+        // Should resolve to the public key
+        assert_eq!(result, public_key);
+        Ok(())
+    }
+
+    #[test]
+    fn test_resolve_public_key_secret_reference_without_age_suffix() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let rules_dir = temp_dir.path();
+
+        // Create a .pub file for the secret
+        let pub_file = rules_dir.join("my-ssh-key.age.pub");
+        let public_key =
+            "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqiXi9DyVJGcL8pE4+bKqe3FP8";
+        std::fs::write(&pub_file, format!("{}\n", public_key))?;
+
+        // Reference without .age suffix
+        let result = resolve_public_key(rules_dir, "my-ssh-key")?;
+
+        // Should resolve to the public key
+        assert_eq!(result, public_key);
+        Ok(())
+    }
+
+    #[test]
+    fn test_resolve_public_key_nonexistent_reference() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let rules_dir = temp_dir.path();
+
+        // Reference to a non-existent secret
+        let result = resolve_public_key(rules_dir, "nonexistent-key")?;
+
+        // Should return the original string
+        assert_eq!(result, "nonexistent-key");
+        Ok(())
+    }
+
+    #[test]
+    fn test_get_public_keys_with_secret_reference() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+
+        // Create a public key file
+        let pub_file = temp_dir.path().join("deploy-key.age.pub");
+        let deploy_public_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDeployKeyPublicKeyExample";
+        std::fs::write(&pub_file, format!("{}\n", deploy_public_key))?;
+
+        // Create a rules file that references the secret
+        let rules_path = temp_dir.path().join("secrets.nix");
+        let rules_content = r#"
+        {
+          "deploy-key.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+          };
+          "secret-using-deploy-key.age" = {
+            publicKeys = [ 
+              "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p"
+              "deploy-key"
+            ];
+          };
+        }
+        "#;
+        std::fs::write(&rules_path, rules_content)?;
+
+        let result = get_public_keys(rules_path.to_str().unwrap(), "secret-using-deploy-key.age")?;
+
+        assert_eq!(result.len(), 2);
+        assert_eq!(
+            result[0],
+            "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p"
+        );
+        assert_eq!(result[1], deploy_public_key);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_get_public_keys_with_mixed_keys_and_references() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+
+        // Create multiple public key files
+        let ssh_key_pub = temp_dir.path().join("server-ssh.age.pub");
+        let ssh_public_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIServerSSHKey";
+        std::fs::write(&ssh_key_pub, format!("{}\n", ssh_public_key))?;
+
+        let age_key_pub = temp_dir.path().join("backup-key.age.pub");
+        let age_public_key = "age1abcdefghijklmnopqrstuvwxyz1234567890abcdefghijklmnopqrstuv";
+        std::fs::write(&age_key_pub, format!("{}\n", age_public_key))?;
+
+        // Create a rules file with mixed public keys and references
+        let rules_path = temp_dir.path().join("secrets.nix");
+        let rules_content = r#"
+        {
+          "server-ssh.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+          };
+          "backup-key.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+          };
+          "app-secret.age" = {
+            publicKeys = [ 
+              "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDirectPublicKey"
+              "server-ssh"
+              "age1directagekey1234567890abcdefghijklmnopqrstuvwxyz12345678"
+              "backup-key.age"
+            ];
+          };
+        }
+        "#;
+        std::fs::write(&rules_path, rules_content)?;
+
+        let result = get_public_keys(rules_path.to_str().unwrap(), "app-secret.age")?;
+
+        assert_eq!(result.len(), 4);
+        assert_eq!(
+            result[0],
+            "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDirectPublicKey"
+        ); // Direct SSH key
+        assert_eq!(result[1], ssh_public_key); // Resolved from server-ssh
+        assert_eq!(
+            result[2],
+            "age1directagekey1234567890abcdefghijklmnopqrstuvwxyz12345678"
+        ); // Direct age key
+        assert_eq!(result[3], age_public_key); // Resolved from backup-key.age
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_get_public_keys_reference_with_generated_ssh_key() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+
+        // Simulate a generated SSH keypair (only the .pub file would exist)
+        let ssh_key_pub = temp_dir.path().join("generated-deploy-key.age.pub");
+        let ssh_public_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGeneratedDeployKey";
+        std::fs::write(&ssh_key_pub, format!("{}\n", ssh_public_key))?;
+
+        // Create a rules file where one secret uses another's public key
+        let rules_path = temp_dir.path().join("secrets.nix");
+        let rules_content = r#"
+        {
+          "generated-deploy-key.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+            generator = { }: builtins.sshKey {};
+          };
+          "authorized-keys.age" = {
+            publicKeys = [ 
+              "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p"
+              "generated-deploy-key"
+            ];
+          };
+        }
+        "#;
+        std::fs::write(&rules_path, rules_content)?;
+
+        let result = get_public_keys(rules_path.to_str().unwrap(), "authorized-keys.age")?;
+
+        assert_eq!(result.len(), 2);
+        assert_eq!(
+            result[0],
+            "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p"
+        );
+        assert_eq!(result[1], ssh_public_key);
 
         Ok(())
     }
