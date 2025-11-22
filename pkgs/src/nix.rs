@@ -1,6 +1,7 @@
 use anyhow::{Context, Result, anyhow};
 use snix_eval::EvaluationBuilder;
 use snix_eval::Value;
+use snix_eval::NixString;
 use snix_eval::builtin_macros;
 use std::env::current_dir;
 use std::path::Path;
@@ -236,6 +237,13 @@ pub fn should_armor(rules_path: &str, file: &str) -> Result<bool> {
     value_to_bool(&output)
 }
 
+/// Represents the output of a generator function
+#[derive(Debug, Clone, PartialEq)]
+pub struct GeneratorOutput {
+    pub secret: String,
+    pub public: Option<String>,
+}
+
 /// Check if a file should be armored (ASCII-armored output)
 pub fn generate_secret(rules_path: &str, file: &str) -> Result<Option<String>> {
     let nix_expr = format!(
@@ -246,6 +254,48 @@ pub fn generate_secret(rules_path: &str, file: &str) -> Result<Option<String>> {
     let output = eval_nix_expression(nix_expr.as_str(), &current_dir)?;
 
     value_to_optional_string(output)
+}
+
+/// Get the generator output for a file, handling both string and attrset outputs
+pub fn generate_secret_with_public(rules_path: &str, file: &str) -> Result<Option<GeneratorOutput>> {
+    let nix_expr = format!(
+        "(let rules = import {rules_path}; in if builtins.hasAttr \"generator\" rules.\"{file}\" then (rules.\"{file}\".generator {{}}) else null)",
+    );
+
+    let current_dir = current_dir()?;
+    let output = eval_nix_expression(nix_expr.as_str(), &current_dir)?;
+
+    match output {
+        Value::Null => Ok(None),
+        Value::String(s) => {
+            // Generator returned just a string - this is the secret
+            Ok(Some(GeneratorOutput {
+                secret: s.as_str().map(std::string::ToString::to_string)?,
+                public: None,
+            }))
+        }
+        Value::Attrs(attrs) => {
+            // Generator returned an attrset - extract secret and public
+            let secret = attrs
+                .select(NixString::from("secret".as_bytes()).as_ref())
+                .ok_or_else(|| anyhow!("Generator attrset must have 'secret' key"))?;
+            let secret_str = value_to_string(secret.clone())?;
+
+            let public = attrs
+                .select(NixString::from("public".as_bytes()).as_ref())
+                .map(|v| value_to_string(v.clone()))
+                .transpose()?;
+
+            Ok(Some(GeneratorOutput {
+                secret: secret_str,
+                public,
+            }))
+        }
+        _ => Err(anyhow!(
+            "Generator must return either a string or an attrset with 'secret' and optional 'public' keys, got: {:?}",
+            output
+        )),
+    }
 }
 
 /// Get all file names from the rules
@@ -1562,4 +1612,167 @@ mod tests {
 
         Ok(())
     }
+
+    // Tests for generate_secret_with_public function
+    #[test]
+    fn test_generate_secret_with_public_string_only() -> Result<()> {
+        let rules_content = r#"
+        {
+          "secret1.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+            generator = { }: "just-a-secret";
+          };
+        }
+        "#;
+        let temp_file = create_test_rules_file(rules_content)?;
+
+        let result = generate_secret_with_public(temp_file.path().to_str().unwrap(), "secret1.age")?;
+
+        assert!(result.is_some());
+        let output = result.unwrap();
+        assert_eq!(output.secret, "just-a-secret");
+        assert_eq!(output.public, None);
+        Ok(())
+    }
+
+    #[test]
+    fn test_generate_secret_with_public_attrset() -> Result<()> {
+        let rules_content = r#"
+        {
+          "secret1.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+            generator = { }: { secret = "my-secret"; public = "my-public-key"; };
+          };
+        }
+        "#;
+        let temp_file = create_test_rules_file(rules_content)?;
+
+        let result = generate_secret_with_public(temp_file.path().to_str().unwrap(), "secret1.age")?;
+
+        assert!(result.is_some());
+        let output = result.unwrap();
+        assert_eq!(output.secret, "my-secret");
+        assert_eq!(output.public, Some("my-public-key".to_string()));
+        Ok(())
+    }
+
+    #[test]
+    fn test_generate_secret_with_public_attrset_secret_only() -> Result<()> {
+        let rules_content = r#"
+        {
+          "secret1.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+            generator = { }: { secret = "only-secret"; };
+          };
+        }
+        "#;
+        let temp_file = create_test_rules_file(rules_content)?;
+
+        let result = generate_secret_with_public(temp_file.path().to_str().unwrap(), "secret1.age")?;
+
+        assert!(result.is_some());
+        let output = result.unwrap();
+        assert_eq!(output.secret, "only-secret");
+        assert_eq!(output.public, None);
+        Ok(())
+    }
+
+    #[test]
+    fn test_generate_secret_with_public_attrset_missing_secret() -> Result<()> {
+        let rules_content = r#"
+        {
+          "secret1.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+            generator = { }: { public = "only-public"; };
+          };
+        }
+        "#;
+        let temp_file = create_test_rules_file(rules_content)?;
+
+        let result = generate_secret_with_public(temp_file.path().to_str().unwrap(), "secret1.age");
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("must have 'secret' key"));
+        Ok(())
+    }
+
+    #[test]
+    fn test_generate_secret_with_public_no_generator() -> Result<()> {
+        let rules_content = r#"
+        {
+          "secret1.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+          };
+        }
+        "#;
+        let temp_file = create_test_rules_file(rules_content)?;
+
+        let result = generate_secret_with_public(temp_file.path().to_str().unwrap(), "secret1.age")?;
+
+        assert_eq!(result, None);
+        Ok(())
+    }
+
+    #[test]
+    fn test_generate_secret_with_public_ssh_key() -> Result<()> {
+        let rules_content = r#"
+        {
+          "ssh-key.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+            generator = { }: 
+              let keypair = builtins.sshKey {};
+              in { secret = keypair.private; public = keypair.public; };
+          };
+        }
+        "#;
+        let temp_file = create_test_rules_file(rules_content)?;
+
+        let result = generate_secret_with_public(temp_file.path().to_str().unwrap(), "ssh-key.age")?;
+
+        assert!(result.is_some());
+        let output = result.unwrap();
+        
+        // Verify it's a PEM private key
+        assert!(output.secret.starts_with("-----BEGIN PRIVATE KEY-----"));
+        assert!(output.secret.ends_with("-----END PRIVATE KEY-----\n"));
+        
+        // Verify the public key is in SSH format
+        assert!(output.public.is_some());
+        let public = output.public.unwrap();
+        assert!(public.starts_with("ssh-ed25519 "));
+        assert!(!public.contains('\n'));
+        
+        Ok(())
+    }
+
+    #[test]
+    fn test_generate_secret_with_public_random_string() -> Result<()> {
+        let rules_content = r#"
+        {
+          "secret1.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+            generator = { }: 
+              let secret = builtins.randomString 32;
+              in { secret = secret; public = "metadata-for-${secret}"; };
+          };
+        }
+        "#;
+        let temp_file = create_test_rules_file(rules_content)?;
+
+        let result = generate_secret_with_public(temp_file.path().to_str().unwrap(), "secret1.age")?;
+
+        assert!(result.is_some());
+        let output = result.unwrap();
+        
+        // Verify secret is the expected length
+        assert_eq!(output.secret.len(), 32);
+        
+        // Verify public contains the reference to the secret
+        assert!(output.public.is_some());
+        let public = output.public.unwrap();
+        assert!(public.starts_with("metadata-for-"));
+        
+        Ok(())
+    }
 }
+
