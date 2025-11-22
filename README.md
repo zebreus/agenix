@@ -861,6 +861,94 @@ You can access the public files in your NixOS configuration:
 }
 ```
 
+#### Using generated public keys in publicKeys field
+
+When generating SSH keypairs or other secrets with public components, you often want to use the generated public key in the `publicKeys` field of other secrets. The `lib.nix` helper library provides an ergonomic way to do this.
+
+Import the library in your `secrets.nix`:
+
+```nix
+let
+  # Import the agenix helper library
+  agenixLib = import <agenix/lib.nix>;
+  
+  # Define your admin/system keys
+  adminKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5...";
+  systemKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5...";
+  
+  # Generate an SSH keypair - evaluated once and reused
+  deployKey = builtins.sshKey {};
+in
+{
+  # Store the SSH private key
+  "deploy-key.age" = {
+    publicKeys = [ adminKey systemKey ];
+    generator = { }: {
+      secret = deployKey.private;
+      public = deployKey.public;
+    };
+  };
+  
+  # Use the generated public key in another secret's publicKeys
+  "server-config.age" = {
+    publicKeys = [ 
+      adminKey 
+      systemKey
+      (agenixLib.publicKeyOf deployKey)  # Reference the generated public key!
+    ];
+    generator = { }: ''
+      ssh_authorized_key=${agenixLib.publicKeyOf deployKey}
+      deploy_user=deployer
+    '';
+  };
+  
+  # You can use the same generated key in multiple secrets
+  "authorized-keys.age" = {
+    publicKeys = [ 
+      adminKey
+      (agenixLib.publicKeyOf deployKey)
+    ];
+  };
+}
+```
+
+The `publicKeyOf` function extracts the public key from a generator result at Nix evaluation time, allowing you to reference it before the secret files are generated.
+
+**Available helper functions:**
+
+- `agenixLib.publicKeyOf generatorResult` - Extracts the public key from a generator result (attrset with `public` field)
+- `agenixLib.secretOf generatorResult` - Extracts the secret from a generator result (attrset with `secret` field, or a plain string)
+
+**With flakes:**
+
+```nix
+let
+  # Assuming you have agenix as an input in your flake
+  agenixLib = agenix.lib;
+in
+# ... rest of secrets.nix
+```
+
+Or if using in a standalone secrets.nix file:
+
+```nix
+let
+  agenix = builtins.getFlake "github:ryantm/agenix";
+  agenixLib = agenix.lib;
+in
+# ... rest of secrets.nix
+```
+
+**With niv:**
+
+```nix
+let
+  sources = import ./nix/sources.nix;
+  agenixLib = import "${sources.agenix}/lib.nix";
+in
+# ... rest of secrets.nix
+```
+
 #### Rekeying
 
 If you change the public keys in `secrets.nix`, you should rekey your

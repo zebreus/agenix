@@ -3,7 +3,7 @@
 
 {
   # Extract the public key from a generator function result
-  # 
+  #
   # This is useful when you want to use a generated public SSH key
   # in the publicKeys field of another secret.
   #
