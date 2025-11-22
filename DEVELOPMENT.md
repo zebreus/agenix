@@ -1,6 +1,6 @@
 # Development Guide
 
-This guide provides information for developers and automated tools (like GitHub Copilot) working on the agenix project.
+This guide provides information for developers and automated tools working on the agenix project.
 
 ## Code Formatting
 
