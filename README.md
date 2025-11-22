@@ -570,6 +570,54 @@ Example:
 }
 ```
 
+#### `age.secrets.<name>.publicPath`
+
+`age.secrets.<name>.publicPath` is the path to the public file associated
+with this secret, if it exists. When using generator functions that return
+an attrset with both `secret` and `public` keys, a `.pub` file is created
+alongside the `.age` file. This option provides the path to that public file.
+Defaults to `null` if no `.pub` file exists.
+
+Example using publicPath:
+
+```nix
+{
+  age.secrets.ssh-key = {
+    file = ../secrets/ssh-key.age;
+  };
+  
+  # Use the public key file
+  users.users.myuser.openssh.authorizedKeys.keyFiles = 
+    lib.optional (config.age.secrets.ssh-key.publicPath != null)
+      config.age.secrets.ssh-key.publicPath;
+}
+```
+
+#### `age.secrets.<name>.publicContent`
+
+`age.secrets.<name>.publicContent` is the content of the public file
+associated with this secret as a string, if it exists. When using generator
+functions that return an attrset with both `secret` and `public` keys, a
+`.pub` file is created alongside the `.age` file. This option provides the
+content of that public file. Defaults to `null` if no `.pub` file exists.
+
+Example using publicContent:
+
+```nix
+{
+  age.secrets.api-token = {
+    file = ../secrets/api-token.age;
+  };
+  
+  # Use the public metadata from the generator
+  environment.etc."api-token-metadata".text = 
+    config.age.secrets.api-token.publicContent or "";
+}
+```
+
+For information on how to create secrets with public output, see the generator
+functions documentation in the CLI reference section.
+
 #### `age.secrets.<name>.name`
 
 `age.secrets.<name>.name` is the string of the name of the file after
@@ -678,6 +726,22 @@ in a format understood by chmod.
 secrets are symlinked to `age.secrets.<name>.path`. If false, secrets
 are copied to `age.secrets.<name>.path`.
 
+#### `age.secrets.<name>.publicPath`
+
+`age.secrets.<name>.publicPath` is the path to the public file associated
+with this secret, if it exists. When using generator functions that return
+an attrset with both `secret` and `public` keys, a `.pub` file is created
+alongside the `.age` file. This option provides the path to that public file.
+Defaults to `null` if no `.pub` file exists.
+
+#### `age.secrets.<name>.publicContent`
+
+`age.secrets.<name>.publicContent` is the content of the public file
+associated with this secret as a string, if it exists. When using generator
+functions that return an attrset with both `secret` and `public` keys, a
+`.pub` file is created alongside the `.age` file. This option provides the
+content of that public file. Defaults to `null` if no `.pub` file exists.
+
 #### `age.identityPaths`
 
 `age.identityPaths` is a list of paths to SSH private keys to use for decryption.
@@ -702,12 +766,14 @@ agenix - edit and rekey age secret files
 
 agenix -e FILE [-i PRIVATE_KEY]
 agenix -r [-i PRIVATE_KEY]
+agenix -g [--rules RULES_FILE]
 
 options:
 -h, --help                show help
 -e, --edit FILE           edits FILE using $EDITOR
 -r, --rekey               re-encrypts all secrets with specified recipients
 -d, --decrypt FILE        decrypts FILE to STDOUT
+-g, --generate            generates secrets using generator functions from rules file
 -i, --identity            identity to use when decrypting
 -v, --verbose             verbose output
 
@@ -721,6 +787,78 @@ If STDIN is not interactive, EDITOR will be set to "cp /dev/stdin"
 
 RULES environment variable with path to Nix file specifying recipient public keys.
 Defaults to './secrets.nix'
+```
+
+#### Generating secrets with public output
+
+Generator functions can produce public output alongside the encrypted secret.
+This is useful for generating SSH keypairs or other scenarios where you need
+both a private secret and a public value.
+
+When a generator function returns an attrset with both `secret` and `public`
+keys, the secret is encrypted to a `.age` file and the public value is written
+to a `.pub` file.
+
+Example in `secrets.nix`:
+
+```nix
+{
+  # Simple generator - just returns a string
+  "api-token.age" = {
+    publicKeys = [ ... ];
+    generator = {}: builtins.randomString 32;
+  };
+  
+  # Generator with public output - returns an attrset
+  "ssh-key.age" = {
+    publicKeys = [ ... ];
+    generator = {}: 
+      let keypair = builtins.sshKey {};
+      in { 
+        secret = keypair.private; 
+        public = keypair.public; 
+      };
+  };
+  
+  # Generator with metadata
+  "database-password.age" = {
+    publicKeys = [ ... ];
+    generator = {}: 
+      let password = builtins.randomString 32;
+      in {
+        secret = password;
+        public = "Generated on $(date)";
+      };
+  };
+}
+```
+
+Generate the secrets:
+
+```ShellSession
+$ agenix --generate
+```
+
+This will create:
+- `api-token.age` (encrypted secret only)
+- `ssh-key.age` (encrypted private key) and `ssh-key.age.pub` (public key)
+- `database-password.age` (encrypted password) and `database-password.age.pub` (metadata)
+
+You can access the public files in your NixOS configuration:
+
+```nix
+{
+  age.secrets.ssh-key.file = ../secrets/ssh-key.age;
+  
+  # Use the public key
+  users.users.myuser.openssh.authorizedKeys.keyFiles = 
+    lib.optional (config.age.secrets.ssh-key.publicPath != null)
+      config.age.secrets.ssh-key.publicPath;
+      
+  # Or access the content directly
+  environment.etc."ssh-key.pub".text = 
+    config.age.secrets.ssh-key.publicContent or "";
+}
 ```
 
 #### Rekeying
