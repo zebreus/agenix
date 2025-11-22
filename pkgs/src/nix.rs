@@ -41,6 +41,20 @@ pub fn generate_ed25519_keypair() -> Result<(String, String)> {
     Ok((private_key_pem.to_string(), public_key_ssh))
 }
 
+pub fn generate_age_x25519_keypair() -> Result<(String, String)> {
+    use age::secrecy::ExposeSecret;
+
+    // Generate age x25519 keypair
+    let secret_key = age::x25519::Identity::generate();
+    let public_key = secret_key.to_public();
+
+    // Convert to strings
+    let private_key = secret_key.to_string().expose_secret().to_string();
+    let public_key = public_key.to_string();
+
+    Ok((private_key, public_key))
+}
+
 #[builtin_macros::builtins]
 mod impure_builtins {
     use rand::Rng;
@@ -81,6 +95,31 @@ mod impure_builtins {
         // Generate the SSH keypair
         let (private_key, public_key) = generate_ed25519_keypair()
             .map_err(|e| ErrorKind::Abort(format!("Failed to generate SSH keypair: {}", e)))?;
+
+        // Create a Nix attribute set with `private` and `public`
+        let mut attrs: BTreeMap<NixString, Value> = BTreeMap::new();
+        attrs.insert(
+            NixString::from("private".as_bytes()),
+            Value::String(NixString::from(private_key.as_bytes())),
+        );
+        attrs.insert(
+            NixString::from("public".as_bytes()),
+            Value::String(NixString::from(public_key.as_bytes())),
+        );
+
+        Ok(Value::Attrs(Box::new(NixAttrs::from(attrs))))
+    }
+
+    /// Generates an age x25519 keypair
+    #[builtin("ageKey")]
+    async fn builtin_age_key(co: GenCo, _var: Value) -> Result<Value, ErrorKind> {
+        use super::generate_age_x25519_keypair;
+        use snix_eval::NixAttrs;
+        use std::collections::BTreeMap;
+
+        // Generate the age x25519 keypair
+        let (private_key, public_key) = generate_age_x25519_keypair()
+            .map_err(|e| ErrorKind::Abort(format!("Failed to generate age keypair: {}", e)))?;
 
         // Create a Nix attribute set with `private` and `public`
         let mut attrs: BTreeMap<NixString, Value> = BTreeMap::new();
@@ -1789,6 +1828,265 @@ mod tests {
         assert!(output.public.is_some());
         let public = output.public.unwrap();
         assert!(public.starts_with("metadata-for-"));
+
+        Ok(())
+    }
+
+    // Tests for age x25519 keypair generation
+    #[test]
+    fn test_generate_age_x25519_keypair() -> Result<()> {
+        let (private_key, public_key) = generate_age_x25519_keypair()?;
+
+        // Verify private key format (age secret key format)
+        assert!(private_key.starts_with("AGE-SECRET-KEY-1"));
+        assert!(!private_key.contains('\n')); // Single line
+        assert!(!private_key.contains(' ')); // No spaces
+
+        // Verify public key format (age public key format)
+        assert!(public_key.starts_with("age1"));
+        assert!(!public_key.contains('\n')); // Single line
+        assert!(!public_key.contains(' ')); // No spaces
+
+        // Verify they're not empty or just prefixes
+        assert!(private_key.len() > 20); // Should be substantial content
+        assert!(public_key.len() > 10); // Should be substantial content
+
+        // Generate another keypair and verify they're different
+        let (private_key2, public_key2) = generate_age_x25519_keypair()?;
+
+        assert_ne!(private_key, private_key2);
+        assert_ne!(public_key, public_key2);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_generate_age_keypair_format() -> Result<()> {
+        let (private_key, public_key) = generate_age_x25519_keypair()?;
+
+        // Private key should be exactly the right format (bech32 with AGE-SECRET-KEY-1 prefix)
+        // Expected format: AGE-SECRET-KEY-1 + 58 bech32 characters
+        assert_eq!(private_key.len(), 74); // "AGE-SECRET-KEY-1" (16) + 58 chars = 74
+
+        // Public key should be exactly the right format (bech32 with age1 prefix)
+        // Expected format: age1 + 58 bech32 characters
+        assert_eq!(public_key.len(), 62); // "age1" (4) + 58 chars = 62
+
+        // Verify character set (bech32 uses alphanumeric)
+        // Private key suffix can have uppercase letters
+        let private_suffix = &private_key[16..]; // Skip "AGE-SECRET-KEY-1"
+        assert!(private_suffix.chars().all(|c| c.is_ascii_alphanumeric()));
+
+        // Public key suffix uses lowercase only
+        let public_suffix = &public_key[4..]; // Skip "age1"
+        assert!(
+            public_suffix
+                .chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_age_key_builtin() -> Result<()> {
+        // Test the ageKey builtin function
+        let rules_content = r#"
+        {
+          "age-key.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+            generator = { }: (builtins.ageKey {}).private;
+          };
+        }
+        "#;
+        let temp_file = create_test_rules_file(rules_content)?;
+
+        let result = generate_secret(temp_file.path().to_str().unwrap(), "age-key.age")?;
+        let private_key = result.unwrap();
+
+        // Verify it's an age secret key
+        assert!(private_key.starts_with("AGE-SECRET-KEY-1"));
+        assert!(!private_key.contains('\n'));
+        assert!(private_key.len() == 74);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_age_key_builtin_public_key() -> Result<()> {
+        // Test accessing the public key from the age key builtin
+        let nix_expr = "(builtins.ageKey {}).public";
+        let current_dir = current_dir()?;
+        let output = eval_nix_expression(nix_expr, &current_dir)?;
+
+        let public_key = value_to_string(output)?;
+
+        // Verify it's an age public key
+        assert!(public_key.starts_with("age1"));
+        assert!(!public_key.contains('\n'));
+        assert_eq!(public_key.len(), 62);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_age_key_builtin_consistency() -> Result<()> {
+        // Test that multiple calls generate different keys
+        let nix_expr1 = "builtins.ageKey {}";
+        let nix_expr2 = "builtins.ageKey {}";
+        let current_dir = current_dir()?;
+
+        let output1 = eval_nix_expression(nix_expr1, &current_dir)?;
+        let output2 = eval_nix_expression(nix_expr2, &current_dir)?;
+
+        // Extract the values as attribute sets
+        let attrs1 = match output1 {
+            Value::Attrs(attrs) => attrs,
+            _ => panic!("Expected attribute set"),
+        };
+        let attrs2 = match output2 {
+            Value::Attrs(attrs) => attrs,
+            _ => panic!("Expected attribute set"),
+        };
+
+        let (private1, public1) =
+            attrs1
+                .into_iter_sorted()
+                .fold((String::new(), String::new()), |mut acc, (k, v)| {
+                    let key = k.as_str().unwrap().to_owned();
+                    let value = value_to_string(v.clone()).unwrap();
+                    if key == "private" {
+                        acc.0 = value;
+                    } else if key == "public" {
+                        acc.1 = value;
+                    }
+                    acc
+                });
+        let (private2, public2) =
+            attrs2
+                .into_iter_sorted()
+                .fold((String::new(), String::new()), |mut acc, (k, v)| {
+                    let key = k.as_str().unwrap().to_owned();
+                    let value = value_to_string(v.clone()).unwrap();
+                    if key == "private" {
+                        acc.0 = value;
+                    } else if key == "public" {
+                        acc.1 = value;
+                    }
+                    acc
+                });
+
+        // Keys should be different each time
+        assert_ne!(public1, public2);
+        assert_ne!(private1, private2);
+
+        // Both should be valid age keys
+        assert!(public1.starts_with("age1"));
+        assert!(public2.starts_with("age1"));
+        assert!(private1.starts_with("AGE-SECRET-KEY-1"));
+        assert!(private2.starts_with("AGE-SECRET-KEY-1"));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_generate_age_keypair_with_public() -> Result<()> {
+        // Test using ageKey in a generator that returns both secret and public
+        let rules_content = r#"
+        {
+          "age-key.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+            generator = { }: 
+              let keypair = builtins.ageKey {};
+              in { secret = keypair.private; public = keypair.public; };
+          };
+        }
+        "#;
+        let temp_file = create_test_rules_file(rules_content)?;
+
+        let result =
+            generate_secret_with_public(temp_file.path().to_str().unwrap(), "age-key.age")?;
+
+        assert!(result.is_some());
+        let output = result.unwrap();
+
+        // Verify it's an age secret key
+        assert!(output.secret.starts_with("AGE-SECRET-KEY-1"));
+        assert!(!output.secret.contains('\n'));
+
+        // Verify the public key is in age format
+        assert!(output.public.is_some());
+        let public = output.public.unwrap();
+        assert!(public.starts_with("age1"));
+        assert!(!public.contains('\n'));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_age_key_can_encrypt_decrypt() -> Result<()> {
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+
+        // Generate an age keypair using the builtin
+        let nix_expr = "builtins.ageKey {}";
+        let current_dir = current_dir()?;
+        let output = eval_nix_expression(nix_expr, &current_dir)?;
+
+        let attrs = match output {
+            Value::Attrs(attrs) => attrs,
+            _ => panic!("Expected attribute set"),
+        };
+
+        let (private_key, public_key) =
+            attrs
+                .into_iter_sorted()
+                .fold((String::new(), String::new()), |mut acc, (k, v)| {
+                    let key = k.as_str().unwrap().to_owned();
+                    let value = value_to_string(v.clone()).unwrap();
+                    if key == "private" {
+                        acc.0 = value;
+                    } else if key == "public" {
+                        acc.1 = value;
+                    }
+                    acc
+                });
+
+        // Create temporary files for testing encryption/decryption
+        let mut plaintext_file = NamedTempFile::new()?;
+        let encrypted_file = NamedTempFile::new()?;
+        let decrypted_file = NamedTempFile::new()?;
+        let mut identity_file = NamedTempFile::new()?;
+
+        // Write test content
+        let test_content = "Hello, age encryption!";
+        plaintext_file.write_all(test_content.as_bytes())?;
+        plaintext_file.flush()?;
+
+        // Write identity to file
+        writeln!(identity_file, "{}", private_key)?;
+        identity_file.flush()?;
+
+        // Encrypt with the public key
+        use crate::crypto::encrypt_from_file;
+        encrypt_from_file(
+            plaintext_file.path().to_str().unwrap(),
+            encrypted_file.path().to_str().unwrap(),
+            &[public_key.clone()],
+            false,
+        )?;
+
+        // Decrypt with the private key
+        use crate::crypto::decrypt_to_file;
+        decrypt_to_file(
+            encrypted_file.path().to_str().unwrap(),
+            decrypted_file.path(),
+            Some(identity_file.path().to_str().unwrap()),
+        )?;
+
+        // Verify content matches
+        let decrypted_content = std::fs::read_to_string(decrypted_file.path())?;
+        assert_eq!(test_content, decrypted_content);
 
         Ok(())
     }
