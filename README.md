@@ -570,15 +570,15 @@ Example:
 }
 ```
 
-#### `age.secrets.<name>.publicPath`
+#### `age.secrets.<name>.public.path`
 
-`age.secrets.<name>.publicPath` is the path to the public file associated
+`age.secrets.<name>.public.path` is the path to the public file associated
 with this secret, if it exists. When using generator functions that return
 an attrset with both `secret` and `public` keys, a `.pub` file is created
 alongside the `.age` file. This option provides the path to that public file.
 Defaults to `null` if no `.pub` file exists.
 
-Example using publicPath:
+Example using public.path:
 
 ```nix
 {
@@ -588,20 +588,20 @@ Example using publicPath:
   
   # Use the public key file
   users.users.myuser.openssh.authorizedKeys.keyFiles = 
-    lib.optional (config.age.secrets.ssh-key.publicPath != null)
-      config.age.secrets.ssh-key.publicPath;
+    lib.optional (config.age.secrets.ssh-key.public.path != null)
+      config.age.secrets.ssh-key.public.path;
 }
 ```
 
-#### `age.secrets.<name>.publicContent`
+#### `age.secrets.<name>.public.content`
 
-`age.secrets.<name>.publicContent` is the content of the public file
+`age.secrets.<name>.public.content` is the content of the public file
 associated with this secret as a string, if it exists. When using generator
 functions that return an attrset with both `secret` and `public` keys, a
 `.pub` file is created alongside the `.age` file. This option provides the
 content of that public file. Defaults to `null` if no `.pub` file exists.
 
-Example using publicContent:
+Example using public.content:
 
 ```nix
 {
@@ -611,7 +611,7 @@ Example using publicContent:
   
   # Use the public metadata from the generator
   environment.etc."api-token-metadata".text = 
-    config.age.secrets.api-token.publicContent or "";
+    config.age.secrets.api-token.public.content or "";
 }
 ```
 
@@ -726,17 +726,17 @@ in a format understood by chmod.
 secrets are symlinked to `age.secrets.<name>.path`. If false, secrets
 are copied to `age.secrets.<name>.path`.
 
-#### `age.secrets.<name>.publicPath`
+#### `age.secrets.<name>.public.path`
 
-`age.secrets.<name>.publicPath` is the path to the public file associated
+`age.secrets.<name>.public.path` is the path to the public file associated
 with this secret, if it exists. When using generator functions that return
 an attrset with both `secret` and `public` keys, a `.pub` file is created
 alongside the `.age` file. This option provides the path to that public file.
 Defaults to `null` if no `.pub` file exists.
 
-#### `age.secrets.<name>.publicContent`
+#### `age.secrets.<name>.public.content`
 
-`age.secrets.<name>.publicContent` is the content of the public file
+`age.secrets.<name>.public.content` is the content of the public file
 associated with this secret as a string, if it exists. When using generator
 functions that return an attrset with both `secret` and `public` keys, a
 `.pub` file is created alongside the `.age` file. This option provides the
@@ -852,12 +852,12 @@ You can access the public files in your NixOS configuration:
   
   # Use the public key
   users.users.myuser.openssh.authorizedKeys.keyFiles = 
-    lib.optional (config.age.secrets.ssh-key.publicPath != null)
-      config.age.secrets.ssh-key.publicPath;
+    lib.optional (config.age.secrets.ssh-key.public.path != null)
+      config.age.secrets.ssh-key.public.path;
       
   # Or access the content directly
   environment.etc."ssh-key.pub".text = 
-    config.age.secrets.ssh-key.publicContent or "";
+    config.age.secrets.ssh-key.public.content or "";
 }
 ```
 
