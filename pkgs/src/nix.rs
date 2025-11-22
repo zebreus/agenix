@@ -306,40 +306,18 @@ pub fn generate_secret_with_public(
     // Build Nix expression that checks for explicit generator or uses automatic selection
     let nix_expr = format!(
         r#"(let 
-          rules = import {rules_path}; 
-          # Extract the base name without .age extension
-          fileName = "{file}";
-          baseName = if builtins.match "(.*)\.age$" fileName != null 
-                     then builtins.head (builtins.match "(.*)\.age$" fileName)
-                     else fileName;
-          
-          # Check if baseName ends with specific suffixes (case-insensitive)
-          lowerBaseName = builtins.replaceStrings 
-            ["A" "B" "C" "D" "E" "F" "G" "H" "I" "J" "K" "L" "M" "N" "O" "P" "Q" "R" "S" "T" "U" "V" "W" "X" "Y" "Z"]
-            ["a" "b" "c" "d" "e" "f" "g" "h" "i" "j" "k" "l" "m" "n" "o" "p" "q" "r" "s" "t" "u" "v" "w" "x" "y" "z"]
-            baseName;
-          
-          # Helper function to check if string ends with suffix
-          endsWith = suffix: str: 
-            let suffixLen = builtins.stringLength suffix;
-                strLen = builtins.stringLength str;
-            in if strLen < suffixLen then false
-               else builtins.substring (strLen - suffixLen) suffixLen str == suffix;
-          
-          # Determine automatic generator based on filename
-          autoGenerator = 
-            if endsWith "ed25519" lowerBaseName || endsWith "ssh" lowerBaseName || endsWith "ssh_key" lowerBaseName 
-            then (args: let keypair = builtins.sshKey args; in {{ secret = keypair.private; public = keypair.public; }})
-            else if endsWith "password" lowerBaseName || endsWith "passphrase" lowerBaseName
-            then (args: builtins.randomString 32)
+          rules = import {rules_path};
+          name = builtins.replaceStrings ["A" "B" "C" "D" "E" "F" "G" "H" "I" "J" "K" "L" "M" "N" "O" "P" "Q" "R" "S" "T" "U" "V" "W" "X" "Y" "Z"] ["a" "b" "c" "d" "e" "f" "g" "h" "i" "j" "k" "l" "m" "n" "o" "p" "q" "r" "s" "t" "u" "v" "w" "x" "y" "z"] "{file}";
+          hasSuffix = s: builtins.match ".*${{s}}(\.age)?$" name != null;
+          auto = 
+            if hasSuffix "ed25519" || hasSuffix "ssh" || hasSuffix "ssh_key" 
+            then (_: let k = builtins.sshKey {{}}; in {{ secret = k.private; public = k.public; }})
+            else if hasSuffix "password" || hasSuffix "passphrase"
+            then (_: builtins.randomString 32)
             else null;
-          
-          # Use explicit generator if provided, otherwise use automatic generator
-          result = if builtins.hasAttr "generator" rules."{file}" 
-                   then (rules."{file}".generator {{}})
-                   else if autoGenerator != null 
-                   then (autoGenerator {{}})
-                   else null;
+          result = if builtins.hasAttr "generator" rules."{file}"
+                   then rules."{file}".generator {{}}
+                   else if auto != null then auto {{}} else null;
         in builtins.deepSeq result result)"#,
     );
 
