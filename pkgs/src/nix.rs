@@ -253,8 +253,8 @@ fn resolve_public_key_reference(key: &str, rules_path: &str) -> Result<String> {
         }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Err(anyhow!(
             "Cannot resolve secret reference '{}': public key file {} not found. \
-                 Make sure to generate the secret with a generator that produces public output, \
-                 or use an actual public key (starting with 'ssh-' or 'age1').",
+             Make sure to generate the secret with a generator that produces public output, \
+             or use an actual public key (starting with 'ssh-' or 'age1').",
             key,
             pub_file_path.display()
         )),

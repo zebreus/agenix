@@ -135,6 +135,7 @@ pub fn generate_secrets(rules_path: &str) -> Result<()> {
 
     while !pending.is_empty() && iteration < max_iterations {
         iteration += 1;
+        let prev_pending_count = pending.len();
         let mut still_pending = Vec::new();
         let current_pending = std::mem::take(&mut pending);
 
@@ -211,7 +212,6 @@ pub fn generate_secrets(rules_path: &str) -> Result<()> {
 
         // If we made no progress (still_pending has the same size as before),
         // we have a circular dependency or missing references
-        let prev_pending_count = pending.len();
         pending = still_pending;
         if !pending.is_empty() && pending.len() == prev_pending_count {
             return Err(anyhow!(

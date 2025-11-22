@@ -410,11 +410,14 @@ pkgs.runCommand "agenix-cli-test"
         mkdir -p "$TMPDIR/reference-test"
         cd "$TMPDIR/reference-test"
 
+        # Test user public key (reused across tests)
+        TEST_USER_KEY="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH"
+
         # Create a rules file with a generated SSH key and a secret that references it
-        cat > "reference-secrets.nix" << 'EOF'
+        cat > "reference-secrets.nix" << EOF
     {
       "host-key.age" = {
-        publicKeys = [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH" ];
+        publicKeys = [ "$TEST_USER_KEY" ];
         generator = {}: 
           let keypair = builtins.sshKey {};
           in { secret = keypair.private; public = keypair.public; };
@@ -422,7 +425,7 @@ pkgs.runCommand "agenix-cli-test"
       "backup.age" = {
         publicKeys = [ 
           "host-key"
-          "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH"
+          "$TEST_USER_KEY"
         ];
         generator = {}: "backup-data-12345";
       };
