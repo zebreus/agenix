@@ -863,91 +863,58 @@ You can access the public files in your NixOS configuration:
 
 #### Using generated public keys in publicKeys field
 
-When generating SSH keypairs or other secrets with public components, you often want to use the generated public key in the `publicKeys` field of other secrets. The `lib.nix` helper library provides an ergonomic way to do this.
+When you generate secrets with public output (like SSH keypairs), you can reference those public keys directly in the `publicKeys` field of other secrets by using the `.age` filename.
 
-Import the library in your `secrets.nix`:
+Example in `secrets.nix`:
 
 ```nix
-let
-  # Import the agenix helper library
-  agenixLib = import <agenix/lib.nix>;
-  
-  # Define your admin/system keys
-  adminKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5...";
-  systemKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5...";
-  
-  # Generate an SSH keypair - evaluated once and reused
-  deployKey = builtins.sshKey {};
-in
 {
-  # Store the SSH private key
-  "deploy-key.age" = {
-    publicKeys = [ adminKey systemKey ];
-    generator = { }: {
-      secret = deployKey.private;
-      public = deployKey.public;
-    };
-  };
-  
-  # Use the generated public key in another secret's publicKeys
-  "server-config.age" = {
+  # Generate an SSH keypair
+  "ssh-deploy-key.age" = {
     publicKeys = [ 
-      adminKey 
-      systemKey
-      (agenixLib.publicKeyOf deployKey)  # Reference the generated public key!
+      "age1admin..." 
+      "age1system..." 
     ];
-    generator = { }: ''
-      ssh_authorized_key=${agenixLib.publicKeyOf deployKey}
-      deploy_user=deployer
-    '';
+    generator = { }:
+      let keypair = builtins.sshKey {};
+      in {
+        secret = keypair.private;
+        public = keypair.public;
+      };
   };
   
-  # You can use the same generated key in multiple secrets
+  # Reference the public key from ssh-deploy-key.age
   "authorized-keys.age" = {
     publicKeys = [ 
-      adminKey
-      (agenixLib.publicKeyOf deployKey)
+      "age1admin..." 
+      "ssh-deploy-key.age"  # Automatically resolves to the generated public key
+    ];
+    generator = { }: "authorized keys content";
+  };
+  
+  # You can reference it in multiple secrets
+  "server-config.age" = {
+    publicKeys = [ 
+      "age1system..." 
+      "ssh-deploy-key.age"  # Reuse the same public key
     ];
   };
 }
 ```
 
-The `publicKeyOf` function extracts the public key from a generator result at Nix evaluation time, allowing you to reference it before the secret files are generated.
+**How it works:**
+- When you reference a `.age` file in the `publicKeys` array, agenix automatically:
+  1. Checks if the referenced secret has a `generator` function
+  2. Evaluates the generator to get its output
+  3. Extracts the `public` field from the generator's output
+  4. Uses that public key for encryption
 
-**Available helper functions:**
+**Requirements:**
+- The referenced secret must have a `generator` function
+- The generator must return an attrset with a `public` field (i.e., `{ secret = ...; public = ...; }`)
+- If these requirements aren't met, you'll get a clear error message
 
-- `agenixLib.publicKeyOf generatorResult` - Extracts the public key from a generator result (attrset with `public` field)
-- `agenixLib.secretOf generatorResult` - Extracts the secret from a generator result (attrset with `secret` field, or a plain string)
-
-**With flakes:**
-
-```nix
-let
-  # Assuming you have agenix as an input in your flake
-  agenixLib = agenix.lib;
-in
-# ... rest of secrets.nix
-```
-
-Or if using in a standalone secrets.nix file:
-
-```nix
-let
-  agenix = builtins.getFlake "github:ryantm/agenix";
-  agenixLib = agenix.lib;
-in
-# ... rest of secrets.nix
-```
-
-**With niv:**
-
-```nix
-let
-  sources = import ./nix/sources.nix;
-  agenixLib = import "${sources.agenix}/lib.nix";
-in
-# ... rest of secrets.nix
-```
+This feature makes it easy to generate SSH keys or other keypairs once and reuse their public keys across multiple secrets without duplication.
 
 #### Rekeying
 

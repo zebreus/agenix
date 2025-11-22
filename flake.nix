@@ -35,9 +35,6 @@
 
       overlays.default = import ./overlay.nix;
 
-      # Helper library for secrets.nix
-      lib = import ./lib.nix;
-
       formatter = eachSystem (system: nixpkgs.legacyPackages.${system}.nixfmt-tree);
 
       packages = eachSystem (system: {
@@ -64,9 +61,6 @@
           pkgs = nixpkgs.legacyPackages.${system};
           inherit system;
           agenixPkg = self.packages.${system}.agenix;
-        };
-        lib = import ./test/lib.nix {
-          pkgs = nixpkgs.legacyPackages.${system};
         };
       });
 
