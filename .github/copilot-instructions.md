@@ -12,8 +12,23 @@ Check formatting (CI):
 nix fmt . -- --ci
 ```
 
+## Rust (pkgs directory)
+
+Before committing changes to Rust code in the `pkgs` directory:
+
+Format Rust code:
+```bash
+cd pkgs && cargo fmt
+```
+
+Run tests:
+```bash
+cd pkgs && cargo test
+```
+
 ## Testing
 
+Run the full test suite after all other checks pass (this takes ~2 minutes):
 ```bash
 nix flake check
 ```
