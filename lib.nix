@@ -9,12 +9,15 @@
   #
   # Example usage:
   #   let
-  #     agenixLib = import <agenix-lib>;
+  #     agenixLib = agenix.lib;  # From flake input
   #     sshKeyPair = builtins.sshKey {};
   #   in {
   #     "ssh-key.age" = {
   #       publicKeys = [ "age1admin..." ];
-  #       generator = {}: sshKeyPair;
+  #       generator = {}: {
+  #         secret = sshKeyPair.private;
+  #         public = sshKeyPair.public;
+  #       };
   #     };
   #     "authorized-hosts.age" = {
   #       publicKeys = [ "age1admin..." (agenixLib.publicKeyOf sshKeyPair) ];
