@@ -861,6 +861,53 @@ You can access the public files in your NixOS configuration:
 }
 ```
 
+#### Automatic generator selection
+
+If no explicit `generator` is provided, agenix automatically selects an appropriate generator based on the secret file's ending (case-insensitive):
+
+| File ending | Generator | Output |
+|-------------|-----------|--------|
+| `*ed25519.age` | `builtins.sshKey` | SSH Ed25519 keypair with `.pub` file |
+| `*ssh.age` | `builtins.sshKey` | SSH Ed25519 keypair with `.pub` file |
+| `*ssh_key.age` | `builtins.sshKey` | SSH Ed25519 keypair with `.pub` file |
+| `*x25519.age` | `builtins.ageKey` | age x25519 keypair with `.pub` file |
+| `*password.age` | `builtins.randomString 32` | 32-character random password |
+| `*passphrase.age` | `builtins.randomString 32` | 32-character random password |
+
+Example in `secrets.nix`:
+
+```nix
+{
+  # Automatically generates SSH Ed25519 keypair
+  "server-ed25519.age" = {
+    publicKeys = [ ... ];
+  };
+  
+  # Automatically generates age x25519 keypair
+  "identity-x25519.age" = {
+    publicKeys = [ ... ];
+  };
+  
+  # Automatically generates 32-character random password
+  "database-password.age" = {
+    publicKeys = [ ... ];
+  };
+  
+  # No automatic generation (no matching ending)
+  "api-token.age" = {
+    publicKeys = [ ... ];
+  };
+  
+  # Explicit generator overrides automatic selection
+  "custom-password.age" = {
+    publicKeys = [ ... ];
+    generator = {}: "my-custom-value";
+  };
+}
+```
+
+Run `agenix --generate` to generate all secrets. Files with matching endings will be automatically generated even without an explicit `generator` attribute.
+
 #### Rekeying
 
 If you change the public keys in `secrets.nix`, you should rekey your
