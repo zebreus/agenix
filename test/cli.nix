@@ -405,6 +405,80 @@ pkgs.runCommand "agenix-cli-test"
 
         cd "$HOME/secrets"
 
+        echo "=== Test 11.6: Reference generated public keys in another secret ==="
+        # Create a temporary directory for this test
+        mkdir -p "$TMPDIR/reference-test"
+        cd "$TMPDIR/reference-test"
+
+        # Create a rules file with a generated SSH key and a secret that references it
+        cat > "reference-secrets.nix" << 'EOF'
+    {
+      "host-key.age" = {
+        publicKeys = [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH" ];
+        generator = {}: 
+          let keypair = builtins.sshKey {};
+          in { secret = keypair.private; public = keypair.public; };
+      };
+      "backup.age" = {
+        publicKeys = [ 
+          "host-key"
+          "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH"
+        ];
+        generator = {}: "backup-data-12345";
+      };
+      "another-backup.age" = {
+        publicKeys = [ "host-key.age" ];
+        generator = {}: "another-backup-67890";
+      };
+    }
+    EOF
+
+        # Generate the host-key first (which creates the .pub file)
+        agenix --generate --rules "$TMPDIR/reference-test/reference-secrets.nix"
+        
+        # Verify host-key.age.pub was created
+        if [ -f "host-key.age.pub" ]; then
+          echo "✓ Host key public file created"
+        else
+          echo "✗ Host key public file not created"
+          exit 1
+        fi
+        
+        # Verify the .pub file contains an SSH key
+        if grep -q "^ssh-ed25519 " "host-key.age.pub"; then
+          echo "✓ Host key public file has correct format"
+        else
+          echo "✗ Host key public file has wrong format"
+          exit 1
+        fi
+        
+        # Now generate the backup secrets that reference the host-key
+        # This should work because the .pub file exists
+        if [ -f "backup.age" ]; then
+          echo "✓ Backup secret with reference generated"
+        else
+          echo "✗ Backup secret with reference not generated"
+          exit 1
+        fi
+        
+        if [ -f "another-backup.age" ]; then
+          echo "✓ Another backup secret with .age reference generated"
+        else
+          echo "✗ Another backup secret with .age reference not generated"
+          exit 1
+        fi
+        
+        # Verify we can decrypt the backup secret with the host key
+        decrypted_backup=$(agenix -d backup.age --rules "$TMPDIR/reference-test/reference-secrets.nix" -i ${./example_keys/user1})
+        if [ "$decrypted_backup" = "backup-data-12345" ]; then
+          echo "✓ Backup secret with reference decrypts correctly"
+        else
+          echo "✗ Backup secret decryption failed: got '$decrypted_backup'"
+          exit 1
+        fi
+
+        cd "$HOME/secrets"
+
         echo "=== Test 12: Ensure temporary files are cleaned up ==="
         echo "secret-temp-test" | agenix -e secret1.age
         if grep -r "secret-temp-test" "$TMPDIR" 2>/dev/null; then

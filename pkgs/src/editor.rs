@@ -123,47 +123,111 @@ pub fn rekey_all_files(rules_path: &str, identity: Option<&str>) -> Result<()> {
 pub fn generate_secrets(rules_path: &str) -> Result<()> {
     let files = get_all_files(rules_path)?;
 
-    for file in files {
-        // Skip if the file already exists
-        if Path::new(&file).exists() {
-            if let Ok(Some(_)) = generate_secret_with_public(rules_path, &file) {
-                eprintln!("Skipping {file}: already exists");
-            }
-            continue;
-        }
+    // We need to generate secrets in dependency order:
+    // 1. First, generate secrets that have generators and don't reference other secrets
+    // 2. Then, generate secrets that reference other secrets
+    // We do this in multiple passes to handle dependencies
 
-        // Check if there's a generator for this file
-        if let Some(generator_output) = generate_secret_with_public(rules_path, &file)? {
-            eprintln!("Generating {file}...");
+    let mut generated = std::collections::HashSet::new();
+    let mut pending: Vec<String> = files;
+    let max_iterations = pending.len() + 1; // Prevent infinite loops
+    let mut iteration = 0;
 
-            let public_keys = get_public_keys(rules_path, &file)?;
-            let armor = should_armor(rules_path, &file)?;
+    while !pending.is_empty() && iteration < max_iterations {
+        iteration += 1;
+        let mut still_pending = Vec::new();
+        let current_pending = std::mem::take(&mut pending);
 
-            if public_keys.is_empty() {
-                eprintln!("Warning: No public keys found for {file}, skipping");
+        for file in current_pending {
+            // Skip if the file already exists
+            if Path::new(&file).exists() {
+                if let Ok(Some(_)) = generate_secret_with_public(rules_path, &file) {
+                    eprintln!("Skipping {file}: already exists");
+                }
+                generated.insert(file.clone());
                 continue;
             }
 
-            // Create temporary file with the generated secret content
-            let temp_dir = TempDir::new().context("Failed to create temporary directory")?;
-            let temp_file = temp_dir.path().join("generated_secret");
-            fs::write(&temp_file, &generator_output.secret)
-                .context("Failed to write generated content to temporary file")?;
+            // Check if there's a generator for this file
+            if let Some(generator_output) = generate_secret_with_public(rules_path, &file)? {
+                eprintln!("Generating {file}...");
 
-            // Encrypt the generated secret content
-            encrypt_from_file(&temp_file.to_string_lossy(), &file, &public_keys, armor)
-                .with_context(|| format!("Failed to encrypt generated secret {file}"))?;
+                // Try to get public keys - this will fail if there are unresolved references
+                let public_keys_result = get_public_keys(rules_path, &file);
 
-            eprintln!("Generated and encrypted {file}");
+                match public_keys_result {
+                    Ok(public_keys) => {
+                        if public_keys.is_empty() {
+                            eprintln!("Warning: No public keys found for {file}, skipping");
+                            generated.insert(file.clone());
+                            continue;
+                        }
 
-            // If there's public content, write it to a .pub file
-            if let Some(public_content) = &generator_output.public {
-                let pub_file = format!("{}.pub", file);
-                fs::write(&pub_file, public_content)
-                    .with_context(|| format!("Failed to write public file {pub_file}"))?;
-                eprintln!("Generated public file {pub_file}");
+                        let armor = should_armor(rules_path, &file)?;
+
+                        // Create temporary file with the generated secret content
+                        let temp_dir =
+                            TempDir::new().context("Failed to create temporary directory")?;
+                        let temp_file = temp_dir.path().join("generated_secret");
+                        fs::write(&temp_file, &generator_output.secret)
+                            .context("Failed to write generated content to temporary file")?;
+
+                        // Encrypt the generated secret content
+                        encrypt_from_file(&temp_file.to_string_lossy(), &file, &public_keys, armor)
+                            .with_context(|| {
+                                format!("Failed to encrypt generated secret {file}")
+                            })?;
+
+                        eprintln!("Generated and encrypted {file}");
+
+                        // If there's public content, write it to a .pub file
+                        if let Some(public_content) = &generator_output.public {
+                            let pub_file = format!("{}.pub", file);
+                            fs::write(&pub_file, public_content).with_context(|| {
+                                format!("Failed to write public file {pub_file}")
+                            })?;
+                            eprintln!("Generated public file {pub_file}");
+                        }
+
+                        generated.insert(file.clone());
+                    }
+                    Err(e) => {
+                        // If we can't resolve public keys (likely due to missing .pub files),
+                        // defer this file to the next iteration
+                        let err_msg = e.to_string();
+                        if err_msg.contains("not found") || err_msg.contains("Cannot resolve") {
+                            still_pending.push(file);
+                        } else {
+                            // For other errors, propagate them
+                            return Err(e);
+                        }
+                    }
+                }
+            } else {
+                // No generator for this file, mark as processed
+                generated.insert(file);
             }
         }
+
+        // If we made no progress (still_pending has the same size as before),
+        // we have a circular dependency or missing references
+        let prev_pending_count = pending.len();
+        pending = still_pending;
+        if !pending.is_empty() && pending.len() == prev_pending_count {
+            return Err(anyhow!(
+                "Cannot resolve dependencies for: {}. \
+                 Make sure all referenced secrets have been generated first, \
+                 or there are no circular dependencies.",
+                pending.join(", ")
+            ));
+        }
+    }
+
+    if iteration >= max_iterations {
+        return Err(anyhow!(
+            "Maximum iterations reached while resolving dependencies. \
+             This might indicate a circular dependency."
+        ));
     }
 
     Ok(())

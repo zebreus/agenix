@@ -4,7 +4,8 @@ use snix_eval::NixString;
 use snix_eval::Value;
 use snix_eval::builtin_macros;
 use std::env::current_dir;
-use std::path::Path;
+use std::fs;
+use std::path::{Path, PathBuf};
 
 pub fn generate_ed25519_keypair() -> Result<(String, String)> {
     use ed25519_dalek::SigningKey;
@@ -211,6 +212,60 @@ fn value_to_optional_string(value: Value) -> Result<Option<String>> {
     }
 }
 
+/// Resolve a potential secret name reference to a public key.
+/// If the input looks like a secret name (doesn't start with "ssh-" or "age1"),
+/// try to read the corresponding .pub file. Otherwise, return the input as-is.
+fn resolve_public_key_reference(key: &str, rules_path: &str) -> Result<String> {
+    // If it looks like a real public key, return it as-is
+    if key.starts_with("ssh-") || key.starts_with("age1") {
+        return Ok(key.to_string());
+    }
+
+    // Otherwise, treat it as a secret name reference
+    // Get the directory containing the rules file
+    let rules_path_buf = PathBuf::from(rules_path);
+    let rules_dir = rules_path_buf
+        .parent()
+        .ok_or_else(|| anyhow!("Cannot determine parent directory of rules file"))?;
+
+    // Construct the path to the .pub file
+    // Handle both "secret-name" and "secret-name.age" formats
+    let secret_name = if key.ends_with(".age") {
+        key.to_string()
+    } else {
+        format!("{}.age", key)
+    };
+
+    let pub_file_path = rules_dir.join(format!("{}.pub", secret_name));
+
+    // Try to read the .pub file
+    match fs::read_to_string(&pub_file_path) {
+        Ok(content) => {
+            let trimmed = content.trim();
+            if trimmed.is_empty() {
+                Err(anyhow!(
+                    "Public key file {} is empty",
+                    pub_file_path.display()
+                ))
+            } else {
+                Ok(trimmed.to_string())
+            }
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Err(anyhow!(
+            "Cannot resolve secret reference '{}': public key file {} not found. \
+                 Make sure to generate the secret with a generator that produces public output, \
+                 or use an actual public key (starting with 'ssh-' or 'age1').",
+            key,
+            pub_file_path.display()
+        )),
+        Err(e) => Err(anyhow!(
+            "Failed to read public key file {}: {}",
+            pub_file_path.display(),
+            e
+        )),
+    }
+}
+
 /// Get public keys for a file from the rules
 pub fn get_public_keys(rules_path: &str, file: &str) -> Result<Vec<String>> {
     let nix_expr = format!(
@@ -222,7 +277,13 @@ pub fn get_public_keys(rules_path: &str, file: &str) -> Result<Vec<String>> {
 
     let keys = value_to_string_array(output)?;
 
-    Ok(keys)
+    // Resolve any secret name references in the keys
+    let resolved_keys: Result<Vec<String>> = keys
+        .iter()
+        .map(|key| resolve_public_key_reference(key, rules_path))
+        .collect();
+
+    resolved_keys
 }
 
 /// Check if a file should be armored (ASCII-armored output)
@@ -1789,6 +1850,199 @@ mod tests {
         assert!(output.public.is_some());
         let public = output.public.unwrap();
         assert!(public.starts_with("metadata-for-"));
+
+        Ok(())
+    }
+
+    // Tests for secret name reference resolution
+    #[test]
+    fn test_resolve_public_key_reference_with_real_key() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let rules_path = temp_dir.path().join("secrets.nix");
+        fs::write(&rules_path, "{}")?;
+
+        // Real SSH key should be returned as-is
+        let ssh_key =
+            "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqiXi9DyVJGcL8pE4+bKqe3FP8";
+        let result = resolve_public_key_reference(ssh_key, rules_path.to_str().unwrap())?;
+        assert_eq!(result, ssh_key);
+
+        // Real age key should be returned as-is
+        let age_key = "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p";
+        let result = resolve_public_key_reference(age_key, rules_path.to_str().unwrap())?;
+        assert_eq!(result, age_key);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_resolve_public_key_reference_with_secret_name() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let rules_path = temp_dir.path().join("secrets.nix");
+        fs::write(&rules_path, "{}")?;
+
+        // Create a .pub file
+        let pub_content = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestPublicKey";
+        let pub_file = temp_dir.path().join("host-key.age.pub");
+        fs::write(&pub_file, pub_content)?;
+
+        // Reference without .age extension
+        let result = resolve_public_key_reference("host-key", rules_path.to_str().unwrap())?;
+        assert_eq!(result, pub_content);
+
+        // Reference with .age extension
+        let result = resolve_public_key_reference("host-key.age", rules_path.to_str().unwrap())?;
+        assert_eq!(result, pub_content);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_resolve_public_key_reference_missing_file() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let rules_path = temp_dir.path().join("secrets.nix");
+        fs::write(&rules_path, "{}")?;
+
+        // Reference to non-existent secret
+        let result = resolve_public_key_reference("nonexistent", rules_path.to_str().unwrap());
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("not found"));
+        assert!(err_msg.contains("nonexistent"));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_resolve_public_key_reference_empty_file() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let rules_path = temp_dir.path().join("secrets.nix");
+        fs::write(&rules_path, "{}")?;
+
+        // Create an empty .pub file
+        let pub_file = temp_dir.path().join("empty-key.age.pub");
+        fs::write(&pub_file, "")?;
+
+        // Reference to secret with empty .pub file
+        let result = resolve_public_key_reference("empty-key", rules_path.to_str().unwrap());
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("empty"));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_get_public_keys_with_references() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let rules_path = temp_dir.path().join("secrets.nix");
+
+        // Create a .pub file for the referenced secret
+        let pub_content = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestPublicKeyFromReference";
+        let pub_file = temp_dir.path().join("host-key.age.pub");
+        fs::write(&pub_file, pub_content)?;
+
+        // Create rules file that mixes real keys and references
+        let rules_content = r#"
+        {
+          "backup.age" = {
+            publicKeys = [ 
+              "host-key"
+              "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDirectKey"
+            ];
+          };
+        }
+        "#;
+        fs::write(&rules_path, rules_content)?;
+
+        // Get public keys - should resolve the reference
+        let keys = get_public_keys(rules_path.to_str().unwrap(), "backup.age")?;
+        assert_eq!(keys.len(), 2);
+        assert_eq!(keys[0], pub_content);
+        assert_eq!(keys[1], "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDirectKey");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_get_public_keys_with_missing_reference() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let rules_path = temp_dir.path().join("secrets.nix");
+
+        // Create rules file with a reference to non-existent secret
+        let rules_content = r#"
+        {
+          "backup.age" = {
+            publicKeys = [ "nonexistent-secret" ];
+          };
+        }
+        "#;
+        fs::write(&rules_path, rules_content)?;
+
+        // Should fail when trying to resolve the reference
+        let result = get_public_keys(rules_path.to_str().unwrap(), "backup.age");
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("not found"));
+        assert!(err_msg.contains("nonexistent-secret"));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_get_public_keys_all_references() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let rules_path = temp_dir.path().join("secrets.nix");
+
+        // Create multiple .pub files
+        let pub1 = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKey1";
+        let pub2 = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKey2";
+        fs::write(temp_dir.path().join("key1.age.pub"), pub1)?;
+        fs::write(temp_dir.path().join("key2.age.pub"), pub2)?;
+
+        // Create rules file with only references
+        let rules_content = r#"
+        {
+          "backup.age" = {
+            publicKeys = [ "key1" "key2.age" ];
+          };
+        }
+        "#;
+        fs::write(&rules_path, rules_content)?;
+
+        // Should resolve all references
+        let keys = get_public_keys(rules_path.to_str().unwrap(), "backup.age")?;
+        assert_eq!(keys.len(), 2);
+        assert_eq!(keys[0], pub1);
+        assert_eq!(keys[1], pub2);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_get_public_keys_with_whitespace_in_pub_file() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let rules_path = temp_dir.path().join("secrets.nix");
+
+        // Create a .pub file with whitespace
+        let pub_content = "  ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKey  \n";
+        let pub_file = temp_dir.path().join("test-key.age.pub");
+        fs::write(&pub_file, pub_content)?;
+
+        // Create rules file
+        let rules_content = r#"
+        {
+          "backup.age" = {
+            publicKeys = [ "test-key" ];
+          };
+        }
+        "#;
+        fs::write(&rules_path, rules_content)?;
+
+        // Should trim whitespace
+        let keys = get_public_keys(rules_path.to_str().unwrap(), "backup.age")?;
+        assert_eq!(keys.len(), 1);
+        assert_eq!(keys[0], "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKey");
 
         Ok(())
     }
