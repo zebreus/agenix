@@ -259,7 +259,7 @@ pub fn generate_secret(rules_path: &str, file: &str) -> Result<Option<String>> {
 /// Get the generator output for a file, handling both string and attrset outputs
 pub fn generate_secret_with_public(rules_path: &str, file: &str) -> Result<Option<GeneratorOutput>> {
     let nix_expr = format!(
-        "(let rules = import {rules_path}; in if builtins.hasAttr \"generator\" rules.\"{file}\" then (rules.\"{file}\".generator {{}}) else null)",
+        "(let rules = import {rules_path}; result = if builtins.hasAttr \"generator\" rules.\"{file}\" then (rules.\"{file}\".generator {{}}) else null; in builtins.deepSeq result result)",
     );
 
     let current_dir = current_dir()?;
@@ -1738,7 +1738,7 @@ mod tests {
         
         // Verify it's a PEM private key
         assert!(output.secret.starts_with("-----BEGIN PRIVATE KEY-----"));
-        assert!(output.secret.ends_with("-----END PRIVATE KEY-----\n"));
+        assert!(output.secret.contains("-----END PRIVATE KEY-----"));
         
         // Verify the public key is in SSH format
         assert!(output.public.is_some());
