@@ -1,0 +1,125 @@
+use anyhow::{Context, Result, anyhow};
+use snix_eval::{EvaluationBuilder, Value};
+use std::path::Path;
+
+use super::builtins::impure_builtins;
+
+/// Evaluate a Nix expression with custom builtins
+pub fn eval_nix_expression(expr: &str, path: &Path) -> Result<Value> {
+    let path = std::path::absolute(path).with_context(|| {
+        format!(
+            "Failed to get absolute path for evaluation at {}",
+            path.display()
+        )
+    })?;
+
+    let builder = EvaluationBuilder::new_impure();
+    let evaluation = builder.add_builtins(impure_builtins::builtins()).build();
+    let sourcemap = evaluation.source_map();
+
+    let result = evaluation.evaluate(expr, Some(path));
+
+    // Capture formatted errors and warnings instead of printing directly
+    let error_messages: Vec<String> = result
+        .errors
+        .iter()
+        .map(snix_eval::Error::fancy_format_str)
+        .collect();
+
+    let warning_messages: Vec<String> = result
+        .warnings
+        .iter()
+        .map(|warning| warning.fancy_format_str(&sourcemap))
+        .collect();
+
+    let Some(result) = result.value else {
+        // Include captured errors and warnings in the anyhow error
+        let mut error_msg = "Failed to evaluate Nix expression".to_string();
+
+        if !error_messages.is_empty() {
+            error_msg.push_str("\n\nErrors:\n");
+            error_msg.push_str(&error_messages.join("\n"));
+        }
+
+        if !warning_messages.is_empty() {
+            error_msg.push_str("\n\nWarnings:\n");
+            error_msg.push_str(&warning_messages.join("\n"));
+        }
+
+        return Err(anyhow!("{error_msg}"));
+    };
+
+    // If there are warnings but evaluation succeeded, we could optionally log them
+    // For now, we'll just proceed silently with warnings
+
+    Ok(result)
+}
+
+/// Convert a Nix Value to a vector of strings
+pub(crate) fn value_to_string_array(value: Value) -> Result<Vec<String>> {
+    match value {
+        Value::List(arr) => arr
+            .into_iter()
+            .map(|v| {
+                match v {
+                    Value::String(s) => Ok(s.as_str().map(std::string::ToString::to_string)?),
+                    Value::Thunk(thunk) => {
+                        // Try to extract the value from the thunk
+                        let debug_str = format!("{thunk:?}");
+                        // Look for pattern: Thunk(RefCell { value: Evaluated(String("...")) })
+                        if let Some(start) = debug_str.find("Evaluated(String(\"") {
+                            let start = start + "Evaluated(String(\"".len();
+                            if let Some(end) = debug_str[start..].find("\"))") {
+                                let extracted = &debug_str[start..start + end];
+                                return Ok(extracted.to_string());
+                            }
+                        }
+                        Err(anyhow!("Could not extract string from thunk: {thunk:?}"))
+                    }
+                    _ => Err(anyhow!("Expected string public key, got: {v:?}")),
+                }
+            })
+            .collect::<Result<Vec<_>, _>>(),
+        _ => Err(anyhow!(
+            "Expected JSON array for public keys, got: {value:?}"
+        )),
+    }
+}
+
+/// Convert a Nix Value to a string
+pub(crate) fn value_to_string(v: Value) -> Result<String> {
+    match v {
+        Value::String(s) => Ok(s.as_str().map(std::string::ToString::to_string)?),
+        Value::Thunk(thunk) => {
+            // Try to extract the value from the thunk
+            let debug_str = format!("{thunk:?}");
+            // Look for pattern: Thunk(RefCell { value: Evaluated(String("...")) })
+            if let Some(start) = debug_str.find("Evaluated(String(\"") {
+                let start = start + "Evaluated(String(\"".len();
+                if let Some(end) = debug_str[start..].find("\"))") {
+                    let extracted = &debug_str[start..start + end];
+                    return Ok(extracted.to_string());
+                }
+            }
+            Err(anyhow!("Could not extract string from thunk: {thunk:?}"))
+        }
+        _ => Err(anyhow!("Expected string public key, got: {v:?}")),
+    }
+}
+
+/// Convert a Nix Value to a boolean
+pub(crate) fn value_to_bool(value: &Value) -> Result<bool> {
+    match value {
+        Value::Bool(b) => Ok(*b),
+        _ => Err(anyhow!("Expected boolean value, got: {value:?}")),
+    }
+}
+
+/// Convert a Nix Value to an optional string
+#[allow(dead_code)]
+pub(crate) fn value_to_optional_string(value: Value) -> Result<Option<String>> {
+    match value {
+        Value::Null => Ok(None),
+        _ => value_to_string(value).map(Some),
+    }
+}
