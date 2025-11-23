@@ -298,9 +298,7 @@ pkgs.runCommand "agenix-cli-test"
       };
       "ssh-keypair.age" = {
         publicKeys = [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH" ];
-        generator = {}: 
-          let keypair = builtins.sshKey {};
-          in { secret = keypair.private; public = keypair.public; };
+        generator = builtins.sshKey;
       };
     }
     EOF

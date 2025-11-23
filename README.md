@@ -812,12 +812,7 @@ Example in `secrets.nix`:
   # Generator with public output - returns an attrset
   "ssh-key.age" = {
     publicKeys = [ ... ];
-    generator = {}: 
-      let keypair = builtins.sshKey {};
-      in { 
-        secret = keypair.private; 
-        public = keypair.public; 
-      };
+    generator = builtins.sshKey;
   };
   
   # Generator with metadata
