@@ -1,3 +1,7 @@
+//! Command-line argument parsing and definitions for agenix.
+//!
+//! This module defines the CLI interface using clap's derive macros.
+
 use clap::Parser;
 use std::env;
 
@@ -58,7 +62,28 @@ mod tests {
     use super::*;
     use std::sync::{Mutex, OnceLock};
 
-    pub static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+    /// Helper to restore environment variable after test
+    fn with_env_var<F>(key: &str, value: Option<&str>, f: F)
+    where
+        F: FnOnce(),
+    {
+        let _guard = ENV_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
+        let original = std::env::var(key).ok();
+
+        match value {
+            Some(v) => unsafe { std::env::set_var(key, v) },
+            None => unsafe { std::env::remove_var(key) },
+        }
+
+        f();
+
+        match original {
+            Some(v) => unsafe { std::env::set_var(key, v) },
+            None => unsafe { std::env::remove_var(key) },
+        }
+    }
 
     #[test]
     fn test_args_parsing() {
@@ -94,76 +119,43 @@ mod tests {
 
     #[test]
     fn test_args_parsing_default_editor() {
-        use std::env;
-        let _g = ENV_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
-        let orig = env::var("EDITOR").ok();
-        unsafe { env::remove_var("EDITOR") };
-        let args = Args::try_parse_from(["agenix", "-e", "test.age"]).unwrap();
-        assert_eq!(args.edit, Some("test.age".to_string()));
-        assert_eq!(args.editor, "vi");
-        match orig {
-            Some(v) => unsafe { env::set_var("EDITOR", v) },
-            None => unsafe { env::remove_var("EDITOR") },
-        }
+        with_env_var("EDITOR", None, || {
+            let args = Args::try_parse_from(["agenix", "-e", "test.age"]).unwrap();
+            assert_eq!(args.edit, Some("test.age".to_string()));
+            assert_eq!(args.editor, "vi");
+        });
     }
 
     #[test]
     fn test_editor_env_overrides_default() {
-        use std::env;
-        let _g = ENV_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
-        let orig = env::var("EDITOR").ok();
-        unsafe { env::set_var("EDITOR", "nano") };
-        let args = Args::try_parse_from(["agenix"]).unwrap();
-        assert_eq!(args.editor, "nano");
-        match orig {
-            Some(v) => unsafe { env::set_var("EDITOR", v) },
-            None => unsafe { env::remove_var("EDITOR") },
-        }
+        with_env_var("EDITOR", Some("nano"), || {
+            let args = Args::try_parse_from(["agenix"]).unwrap();
+            assert_eq!(args.editor, "nano");
+        });
     }
 
     #[test]
     fn test_editor_flag_overrides_env() {
-        use std::env;
-        let _g = ENV_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
-        let orig = env::var("EDITOR").ok();
-        unsafe { env::set_var("EDITOR", "nano") };
-        let args = Args::try_parse_from(["agenix", "--editor", "vim"]).unwrap();
-        assert_eq!(args.editor, "vim");
-        match orig {
-            Some(v) => unsafe { env::set_var("EDITOR", v) },
-            None => unsafe { env::remove_var("EDITOR") },
-        }
+        with_env_var("EDITOR", Some("nano"), || {
+            let args = Args::try_parse_from(["agenix", "--editor", "vim"]).unwrap();
+            assert_eq!(args.editor, "vim");
+        });
     }
 
     #[test]
     fn test_editor_flag_without_env() {
-        use std::env;
-        let _g = ENV_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
-        let orig = env::var("EDITOR").ok();
-        unsafe { env::remove_var("EDITOR") };
-        let args = Args::try_parse_from(["agenix", "--editor", "micro"]).unwrap();
-        assert_eq!(args.editor, "micro");
-        match orig {
-            Some(v) => unsafe { env::set_var("EDITOR", v) },
-            None => unsafe { env::remove_var("EDITOR") },
-        }
+        with_env_var("EDITOR", None, || {
+            let args = Args::try_parse_from(["agenix", "--editor", "micro"]).unwrap();
+            assert_eq!(args.editor, "micro");
+        });
     }
 
     #[test]
     fn test_rules_env_var() {
-        use std::env;
-        let original = env::var("RULES").ok();
-        unsafe {
-            env::set_var("RULES", "/custom/path/secrets.nix");
-        }
-
-        let args = Args::try_parse_from(["agenix"]).unwrap();
-        assert_eq!(args.rules, "/custom/path/secrets.nix");
-
-        match original {
-            Some(val) => unsafe { env::set_var("RULES", val) },
-            None => unsafe { env::remove_var("RULES") },
-        }
+        with_env_var("RULES", Some("/custom/path/secrets.nix"), || {
+            let args = Args::try_parse_from(["agenix"]).unwrap();
+            assert_eq!(args.rules, "/custom/path/secrets.nix");
+        });
     }
 
     #[test]

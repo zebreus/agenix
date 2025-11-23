@@ -1,3 +1,8 @@
+//! Cryptographic operations for age encryption and decryption.
+//!
+//! This module handles encrypting and decrypting files using the age encryption format,
+//! supporting both age and SSH keys.
+
 use age::{Decryptor, Encryptor, Identity, IdentityFile, Recipient, armor};
 use anyhow::{Context, Result};
 use itertools::Itertools;
@@ -54,7 +59,7 @@ pub fn decrypt_to_file<P: AsRef<Path>>(
 
     let mut reader = decryptor
         .decrypt(identities.iter().map(|i| i.as_ref() as &dyn Identity))
-        .map_err(|e| anyhow::anyhow!("Failed to decrypt {input_file}: {e}"))?;
+        .with_context(|| format!("Failed to decrypt {input_file}"))?;
 
     let mut plaintext = vec![];
     reader
@@ -71,23 +76,31 @@ pub fn decrypt_to_file<P: AsRef<Path>>(
     Ok(())
 }
 
-// TODO: document what recipient is
+/// Parse a recipient string or file
+///
+/// Accepts:
+/// - Path to identity file (which will be converted to recipients)
+/// - Age recipient string (age1...)
+/// - SSH recipient string (ssh-ed25519, ssh-rsa, etc.)
 fn parse_recipient(recipient_file: &str) -> Result<Vec<Box<dyn Recipient + Send>>> {
-    let Ok(id_file) = IdentityFile::from_file(recipient_file.to_string()) else {
-        // Fallback: treat as single recipient string (e.g., age1.. or ssh-ed25519 AAAA...)
-        let Ok(recipient) = age::ssh::Recipient::from_str(recipient_file) else {
-            // Try as x25519 recipient
-            let Ok(recipient) = age::x25519::Recipient::from_str(recipient_file) else {
-                return Err(anyhow::anyhow!("Invalid recipient: {recipient_file}"));
-            };
-            return Ok(vec![Box::new(recipient)]);
-        };
-        return Ok(vec![Box::new(recipient)]);
-    };
+    // Try to load as an identity file first
+    if let Ok(id_file) = IdentityFile::from_file(recipient_file.to_string()) {
+        return id_file
+            .to_recipients()
+            .with_context(|| format!("Failed to parse recipients from file: {recipient_file}"));
+    }
 
-    id_file
-        .to_recipients()
-        .with_context(|| format!("Failed to parse recipients from file: {recipient_file}"))
+    // Try as SSH recipient
+    if let Ok(recipient) = age::ssh::Recipient::from_str(recipient_file) {
+        return Ok(vec![Box::new(recipient)]);
+    }
+
+    // Try as x25519 recipient
+    if let Ok(recipient) = age::x25519::Recipient::from_str(recipient_file) {
+        return Ok(vec![Box::new(recipient)]);
+    }
+
+    Err(anyhow::anyhow!("Invalid recipient: {recipient_file}"))
 }
 
 /// Encrypt from a file to another file
@@ -155,7 +168,7 @@ fn load_identities_from_file(path: &str) -> Result<Vec<Box<dyn Identity>>> {
     {
         let ssh_identity =
             age::ssh::Identity::from_buffer(std::io::Cursor::new(content), Some(path.to_string()))
-                .map_err(|e| anyhow::anyhow!("Failed to parse SSH identity from {path}: {e}"))?;
+                .with_context(|| format!("Failed to parse SSH identity from {path}"))?;
         return Ok(vec![Box::new(ssh_identity)]);
     }
 

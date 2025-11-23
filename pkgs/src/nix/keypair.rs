@@ -1,3 +1,8 @@
+//! Cryptographic key pair generation for SSH and age.
+//!
+//! This module provides functions to generate Ed25519 SSH keypairs and
+//! age x25519 keypairs for use in secret encryption.
+
 use anyhow::Result;
 
 pub fn generate_ed25519_keypair() -> Result<(String, String)> {

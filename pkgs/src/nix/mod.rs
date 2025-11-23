@@ -1,3 +1,8 @@
+//! Nix expression evaluation and secret management integration.
+//!
+//! This module provides functionality for evaluating Nix expressions to extract
+//! public keys, file lists, and generator configurations from rules files.
+
 pub mod builtins;
 pub mod eval;
 pub mod keypair;
@@ -15,7 +20,6 @@ use std::path::Path;
 /// Resolve a potential secret reference to a public key
 /// If the key_str looks like a public key (starts with ssh-, age1, etc.), return it as-is
 /// If it looks like a secret name, try to read the corresponding .pub file
-#[cfg_attr(test, allow(dead_code))]
 pub(crate) fn resolve_public_key(rules_dir: &Path, key_str: &str) -> Result<String> {
     // Check if this looks like an actual public key
     if key_str.starts_with("ssh-") || key_str.starts_with("age1") || key_str.starts_with("sk-") {
@@ -1189,8 +1193,6 @@ mod tests {
         Ok(())
     }
 
-    // Test to verify error message formatting is captured in anyhow
-    #[test]
     #[test]
     fn test_basic_generator_functionality() -> Result<()> {
         let rules_content = r#"
@@ -1237,12 +1239,6 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    #[test]
-    #[test]
-    #[test]
-    #[test]
-    #[test]
     #[test]
     fn test_generate_secret_with_public_string_only() -> Result<()> {
         let rules_content = r#"
@@ -1414,11 +1410,6 @@ mod tests {
     }
 
     // Tests for age x25519 keypair generation
-    #[test]
-    #[test]
-    #[test]
-    #[test]
-    #[test]
     #[test]
     fn test_generate_age_keypair_with_public() -> Result<()> {
         // Test using ageKey in a generator that returns both secret and public
