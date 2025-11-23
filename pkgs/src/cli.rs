@@ -73,6 +73,7 @@ mod tests {
         let original = std::env::var(key).ok();
 
         match value {
+            // SAFETY: We hold ENV_LOCK to ensure no other thread is accessing env vars
             Some(v) => unsafe { std::env::set_var(key, v) },
             None => unsafe { std::env::remove_var(key) },
         }
@@ -80,6 +81,7 @@ mod tests {
         f();
 
         match original {
+            // SAFETY: We hold ENV_LOCK to ensure no other thread is accessing env vars
             Some(v) => unsafe { std::env::set_var(key, v) },
             None => unsafe { std::env::remove_var(key) },
         }

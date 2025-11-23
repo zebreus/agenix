@@ -8,7 +8,11 @@ use snix_eval::EvaluationBuilder;
 use snix_eval::Value;
 use std::path::Path;
 
-/// Extract a string from a thunk by parsing its debug representation
+/// Extract a string from a thunk by parsing its debug representation.
+///
+/// Note: This is a workaround needed because snix_eval doesn't currently provide
+/// a proper API to evaluate thunks. The debug format parsing is fragile and should
+/// be replaced with proper thunk evaluation once available in the upstream library.
 fn extract_string_from_thunk(thunk: &dyn std::fmt::Debug) -> Result<String> {
     let debug_str = format!("{thunk:?}");
     // Look for pattern: Thunk(RefCell { value: Evaluated(String("...")) })
