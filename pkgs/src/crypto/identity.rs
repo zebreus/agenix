@@ -39,3 +39,15 @@ pub fn get_default_identities() -> Vec<String> {
         })
         .unwrap_or_default()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_get_default_identities() {
+        let identities = get_default_identities();
+        // Should return 0-2 identities depending on system
+        assert!(identities.len() <= 2);
+    }
+}

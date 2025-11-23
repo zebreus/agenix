@@ -43,3 +43,87 @@ pub(crate) fn resolve_public_key(rules_dir: &Path, key_str: &str) -> Result<Stri
     // If no .pub file found, return the original string (might be a public key we don't recognize)
     Ok(key_str.to_string())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    #[test]
+    fn test_resolve_public_key_actual_ssh_key() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let rules_dir = temp_dir.path();
+
+        let ssh_key =
+            "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqiXi9DyVJGcL8pE4+bKqe3FP8";
+        let result = resolve_public_key(rules_dir, ssh_key)?;
+
+        // Should return the key unchanged
+        assert_eq!(result, ssh_key);
+        Ok(())
+    }
+
+    #[test]
+    fn test_resolve_public_key_actual_age_key() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let rules_dir = temp_dir.path();
+
+        let age_key = "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p";
+        let result = resolve_public_key(rules_dir, age_key)?;
+
+        // Should return the key unchanged
+        assert_eq!(result, age_key);
+        Ok(())
+    }
+
+    #[test]
+    fn test_resolve_public_key_secret_reference_with_age_suffix() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let rules_dir = temp_dir.path();
+
+        // Create a .pub file for the secret
+        let pub_file = rules_dir.join("my-ssh-key.age.pub");
+        let public_key =
+            "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqiXi9DyVJGcL8pE4+bKqe3FP8";
+        std::fs::write(&pub_file, format!("{}\n", public_key))?;
+
+        // Reference with .age suffix
+        let result = resolve_public_key(rules_dir, "my-ssh-key.age")?;
+
+        // Should resolve to the public key
+        assert_eq!(result, public_key);
+        Ok(())
+    }
+
+    #[test]
+    fn test_resolve_public_key_secret_reference_without_age_suffix() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let rules_dir = temp_dir.path();
+
+        // Create a .pub file for the secret
+        let pub_file = rules_dir.join("my-ssh-key.age.pub");
+        let public_key =
+            "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqiXi9DyVJGcL8pE4+bKqe3FP8";
+        std::fs::write(&pub_file, format!("{}\n", public_key))?;
+
+        // Reference without .age suffix
+        let result = resolve_public_key(rules_dir, "my-ssh-key")?;
+
+        // Should resolve to the public key
+        assert_eq!(result, public_key);
+        Ok(())
+    }
+
+    #[test]
+    fn test_resolve_public_key_nonexistent_reference() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let rules_dir = temp_dir.path();
+
+        // Reference to a non-existent secret
+        let result = resolve_public_key(rules_dir, "nonexistent-key")?;
+
+        // Should return the original string
+        assert_eq!(result, "nonexistent-key");
+        Ok(())
+    }
+}
