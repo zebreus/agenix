@@ -18,7 +18,7 @@ mod impure_builtins {
     #[builtin("randomString")]
     async fn builtin_random_string(co: GenCo, var: Value) -> Result<Value, ErrorKind> {
         let length = var.as_int()?;
-        if length < 0 && length > 2i64.pow(16) {
+        if length < 0 || length > 2i64.pow(16) {
             // TODO use better error kind
             return Err(ErrorKind::Abort(
                 "Length for randomString must be between 0 and 2^16".to_string(),
@@ -250,7 +250,6 @@ mod tests {
         // Keys should be different each time
         assert_ne!(public1, public2);
         assert_ne!(private1, private2);
-        eprintln!("public1: {}", public1);
 
         // Both should be valid SSH keys
         assert!(public1.starts_with("ssh-ed25519 "));
