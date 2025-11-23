@@ -1,7 +1,7 @@
 mod cli;
 mod crypto;
 mod editor;
-mod nix;
+pub mod nix;
 
 use anyhow::{Context, Result};
 use clap::Parser;
