@@ -199,13 +199,13 @@ pub fn get_all_files(rules_path: &str) -> Result<Vec<String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use anyhow::{Result, anyhow};
+    use anyhow::Result;
     use std::env::current_dir;
     use std::fs;
     use std::io::Write;
     use tempfile::{NamedTempFile, TempDir};
 
-    // Helper function to create test Nix files
+    /// Helper function to create test Nix files
     fn create_test_rules_file(content: &str) -> Result<NamedTempFile> {
         let mut temp_file = NamedTempFile::new()?;
         writeln!(temp_file, "{}", content)?;
@@ -213,7 +213,7 @@ mod tests {
         Ok(temp_file)
     }
 
-    // Helper function to create a temporary directory with test files
+    /// Helper function to create a temporary directory with test files
     fn create_test_workspace() -> Result<(TempDir, String)> {
         let temp_dir = TempDir::new()?;
         let rules_path = temp_dir.path().join("secrets.nix");
@@ -245,8 +245,7 @@ mod tests {
         fs::write(&rules_path, rules_content)?;
         Ok((temp_dir, rules_path.to_string_lossy().to_string()))
     }
-    // Helper function to create test Nix files
-    // Helper function to create a temporary directory with test files
+
     #[test]
     fn test_get_public_keys_single_key() -> Result<()> {
         let rules_content = r#"
