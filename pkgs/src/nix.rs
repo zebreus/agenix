@@ -96,10 +96,10 @@ mod impure_builtins {
         let (private_key, public_key) = generate_ed25519_keypair()
             .map_err(|e| ErrorKind::Abort(format!("Failed to generate SSH keypair: {}", e)))?;
 
-        // Create a Nix attribute set with `private` and `public`
+        // Create a Nix attribute set with `secret` and `public`
         let mut attrs: BTreeMap<NixString, Value> = BTreeMap::new();
         attrs.insert(
-            NixString::from("private".as_bytes()),
+            NixString::from("secret".as_bytes()),
             Value::String(NixString::from(private_key.as_bytes())),
         );
         attrs.insert(
@@ -121,10 +121,10 @@ mod impure_builtins {
         let (private_key, public_key) = generate_age_x25519_keypair()
             .map_err(|e| ErrorKind::Abort(format!("Failed to generate age keypair: {}", e)))?;
 
-        // Create a Nix attribute set with `private` and `public`
+        // Create a Nix attribute set with `secret` and `public`
         let mut attrs: BTreeMap<NixString, Value> = BTreeMap::new();
         attrs.insert(
-            NixString::from("private".as_bytes()),
+            NixString::from("secret".as_bytes()),
             Value::String(NixString::from(private_key.as_bytes())),
         );
         attrs.insert(
@@ -364,9 +364,9 @@ pub fn generate_secret_with_public(
           hasSuffix = s: builtins.match ".*${{s}}(\.age)?$" name != null;
           auto = 
             if hasSuffix "ed25519" || hasSuffix "ssh" || hasSuffix "ssh_key" 
-            then (_: let k = builtins.sshKey {{}}; in {{ secret = k.private; public = k.public; }})
+            then builtins.sshKey
             else if hasSuffix "x25519"
-            then (_: let k = builtins.ageKey {{}}; in {{ secret = k.private; public = k.public; }})
+            then builtins.ageKey
             else if hasSuffix "password" || hasSuffix "passphrase"
             then (_: builtins.randomString 32)
             else null;
@@ -1517,7 +1517,7 @@ mod tests {
         {
           "ssh-key.age" = {
             publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
-            generator = { }: (builtins.sshKey {}).private;
+            generator = { }: (builtins.sshKey {}).secret;
           };
         }
         "#;
@@ -1577,7 +1577,7 @@ mod tests {
                 .fold((String::new(), String::new()), |mut acc, (k, v)| {
                     let key = k.as_str().unwrap().to_owned();
                     let value = value_to_string(v.clone()).unwrap();
-                    if key == "private" {
+                    if key == "secret" {
                         acc.0 = value;
                     } else if key == "public" {
                         acc.1 = value;
@@ -1590,7 +1590,7 @@ mod tests {
                 .fold((String::new(), String::new()), |mut acc, (k, v)| {
                     let key = k.as_str().unwrap().to_owned();
                     let value = value_to_string(v.clone()).unwrap();
-                    if key == "private" {
+                    if key == "secret" {
                         acc.0 = value;
                     } else if key == "public" {
                         acc.1 = value;
@@ -1848,7 +1848,7 @@ mod tests {
             publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
             generator = { }: 
               let keypair = builtins.sshKey {};
-              in { secret = keypair.private; public = keypair.public; };
+              in { secret = keypair.secret; public = keypair.public; };
           };
         }
         "#;
@@ -1967,7 +1967,7 @@ mod tests {
         {
           "age-key.age" = {
           publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
-          generator = { }: (builtins.ageKey {}).private;
+          generator = { }: (builtins.ageKey {}).secret;
           };
         }
         "#;
@@ -2027,7 +2027,7 @@ mod tests {
                 .fold((String::new(), String::new()), |mut acc, (k, v)| {
                     let key = k.as_str().unwrap().to_owned();
                     let value = value_to_string(v.clone()).unwrap();
-                    if key == "private" {
+                    if key == "secret" {
                         acc.0 = value;
                     } else if key == "public" {
                         acc.1 = value;
@@ -2040,7 +2040,7 @@ mod tests {
                 .fold((String::new(), String::new()), |mut acc, (k, v)| {
                     let key = k.as_str().unwrap().to_owned();
                     let value = value_to_string(v.clone()).unwrap();
-                    if key == "private" {
+                    if key == "secret" {
                         acc.0 = value;
                     } else if key == "public" {
                         acc.1 = value;
@@ -2070,7 +2070,7 @@ mod tests {
           publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
           generator = { }: 
             let keypair = builtins.ageKey {};
-            in { secret = keypair.private; public = keypair.public; };
+            in { secret = keypair.secret; public = keypair.public; };
           };
         }
         "#;
@@ -2142,7 +2142,7 @@ mod tests {
                 .fold((String::new(), String::new()), |mut acc, (k, v)| {
                     let key = k.as_str().unwrap().to_owned();
                     let value = value_to_string(v.clone()).unwrap();
-                    if key == "private" {
+                    if key == "secret" {
                         acc.0 = value;
                     } else if key == "public" {
                         acc.1 = value;
