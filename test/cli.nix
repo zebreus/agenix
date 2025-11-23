@@ -52,7 +52,7 @@ let
   missingScripts = pkgs.lib.subtractLists testScripts allTestScripts;
 
   # Fail the build if there are test scripts not included in testScripts
-  _ =
+  validationCheck =
     if missingScripts != [ ] then
       throw ''
         The following test scripts exist in test/scripts/ but are not included in the testScripts list in test/cli.nix:
@@ -61,7 +61,7 @@ let
         Please add them to the testScripts list or remove them from test/scripts/.
       ''
     else
-      null;
+      true;
 
   # Create a script that runs all tests
   runAllTests = pkgs.writeShellScript "run-all-cli-tests" ''
@@ -87,11 +87,16 @@ let
     cd "$HOME/secrets"
 
     # Run each test script
-    ${builtins.concatStringsSep "\n    " (
-      map (script: ''
-        bash ${./scripts}/${script}
-      '') testScripts
-    )}
+    ${
+      # Force evaluation of the validation check
+      builtins.deepSeq validationCheck (
+        builtins.concatStringsSep "\n    " (
+          map (script: ''
+            bash ${./scripts}/${script}
+          '') testScripts
+        )
+      )
+    }
 
     echo ""
     echo "All CLI tests passed!"
