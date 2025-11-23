@@ -49,4 +49,5 @@ To add a new test:
 1. Create a new script in this directory following the naming pattern `test_*.sh`
 2. Source `common_setup.sh` at the beginning
 3. Add the script name to the `testScripts` list in `test/cli.nix`
-4. Make the script executable: `chmod +x test/scripts/test_*.sh`
+
+Note: The build will fail if there are `test_*.sh` scripts in this directory that are not included in the `testScripts` list.

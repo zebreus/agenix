@@ -41,6 +41,28 @@ let
     "test_temp_cleanup.sh"
   ];
 
+  # Get all test_*.sh files in the scripts directory
+  allTestScripts = builtins.attrNames (
+    pkgs.lib.filterAttrs (
+      name: type: type == "regular" && pkgs.lib.hasPrefix "test_" name && pkgs.lib.hasSuffix ".sh" name
+    ) (builtins.readDir ./scripts)
+  );
+
+  # Check that all test scripts in the directory are included in testScripts
+  missingScripts = pkgs.lib.subtractLists testScripts allTestScripts;
+
+  # Fail the build if there are test scripts not included in testScripts
+  _ =
+    if missingScripts != [ ] then
+      throw ''
+        The following test scripts exist in test/scripts/ but are not included in the testScripts list in test/cli.nix:
+        ${builtins.concatStringsSep "\n" (map (s: "  - ${s}") missingScripts)}
+
+        Please add them to the testScripts list or remove them from test/scripts/.
+      ''
+    else
+      null;
+
   # Create a script that runs all tests
   runAllTests = pkgs.writeShellScript "run-all-cli-tests" ''
     set -euo pipefail
