@@ -1846,9 +1846,7 @@ mod tests {
         {
           "ssh-key.age" = {
             publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
-            generator = { }: 
-              let keypair = builtins.sshKey {};
-              in { secret = keypair.secret; public = keypair.public; };
+            generator = builtins.sshKey;
           };
         }
         "#;
@@ -2068,9 +2066,7 @@ mod tests {
         {
           "age-key.age" = {
           publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
-          generator = { }: 
-            let keypair = builtins.ageKey {};
-            in { secret = keypair.secret; public = keypair.public; };
+          generator = builtins.ageKey;
           };
         }
         "#;
