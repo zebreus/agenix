@@ -44,7 +44,7 @@ let
   # Create a script that runs all tests
   runAllTests = pkgs.writeShellScript "run-all-cli-tests" ''
     set -euo pipefail
-    
+
     # Test setup - create home directory and SSH keys
     export HOME="$TMPDIR/home"
     export TMPDIR="$TMPDIR/agenix-cli-test-tmp"
@@ -61,13 +61,15 @@ let
 
     # Export the path to test user key for scripts that need it
     export TEST_USER_KEY="${./example_keys/user1}"
-    
+
     cd "$HOME/secrets"
 
     # Run each test script
-    ${builtins.concatStringsSep "\n    " (map (script: ''
-      bash ${./scripts}/${script}
-    '') testScripts)}
+    ${builtins.concatStringsSep "\n    " (
+      map (script: ''
+        bash ${./scripts}/${script}
+      '') testScripts
+    )}
 
     echo ""
     echo "All CLI tests passed!"
@@ -80,7 +82,8 @@ pkgs.runCommand "agenix-cli-test"
       pkgs.age
       pkgs.diffutils
       pkgs.coreutils
-    ] ++ pkgs.lib.optionals (!pkgs.stdenv.isDarwin) [
+    ]
+    ++ pkgs.lib.optionals (!pkgs.stdenv.isDarwin) [
       # unixtools.script is needed for the rekey test on non-Darwin systems
       pkgs.unixtools.script
     ];
