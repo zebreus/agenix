@@ -5,6 +5,9 @@ pub mod keypair;
 pub mod rules;
 pub mod value_conversion;
 
+#[cfg(test)]
+mod tests;
+
 // Re-export public APIs
 pub use evaluation::eval_nix_expression;
 pub use generator::{GeneratorOutput, generate_secret, generate_secret_with_public};

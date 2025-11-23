@@ -8,7 +8,6 @@ use crate::nix::value_conversion::{value_to_bool, value_to_string_array};
 /// Resolve a potential secret reference to a public key
 /// If the key_str looks like a public key (starts with ssh-, age1, etc.), return it as-is
 /// If it looks like a secret name, try to read the corresponding .pub file
-#[cfg_attr(test, allow(dead_code))]
 pub(crate) fn resolve_public_key(rules_dir: &Path, key_str: &str) -> Result<String> {
     // Check if this looks like an actual public key
     if key_str.starts_with("ssh-") || key_str.starts_with("age1") || key_str.starts_with("sk-") {
