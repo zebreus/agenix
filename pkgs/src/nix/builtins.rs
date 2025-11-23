@@ -20,8 +20,7 @@ pub mod impure_builtins {
     #[builtin("randomString")]
     async fn builtin_random_string(co: GenCo, var: Value) -> Result<Value, ErrorKind> {
         let length = var.as_int()?;
-        if length < 0 && length > 2i64.pow(16) {
-            // TODO use better error kind
+        if length < 0 || length > 2i64.pow(16) {
             return Err(ErrorKind::Abort(
                 "Length for randomString must be between 0 and 2^16".to_string(),
             ));
