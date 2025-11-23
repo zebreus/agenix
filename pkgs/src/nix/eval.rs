@@ -1,3 +1,8 @@
+//! Nix expression evaluation utilities.
+//!
+//! Provides functions for evaluating Nix expressions and converting Nix values
+//! to Rust types.
+
 use anyhow::{Context, Result, anyhow};
 use snix_eval::EvaluationBuilder;
 use snix_eval::Value;

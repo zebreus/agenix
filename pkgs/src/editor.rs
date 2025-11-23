@@ -1,3 +1,8 @@
+//! File editing and secret management operations.
+//!
+//! This module provides functions for editing, decrypting, rekeying, and generating
+//! encrypted secret files with temporary file handling and editor integration.
+
 use anyhow::{Context, Result, anyhow};
 use std::fs;
 use std::io::{self, IsTerminal, Read, stdin};

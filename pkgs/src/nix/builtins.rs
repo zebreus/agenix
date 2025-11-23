@@ -1,3 +1,8 @@
+//! Custom Nix builtins for secret generation.
+//!
+//! Provides `randomString`, `sshKey`, and `ageKey` builtins for use in
+//! Nix expressions to generate secrets and keypairs.
+
 use snix_eval::builtin_macros;
 
 #[builtin_macros::builtins]
