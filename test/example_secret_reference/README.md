@@ -24,7 +24,11 @@ Generators can now reference both secret and public contents of other secrets vi
    - `secrets.<name>` - the secret content (for just-generated secrets)
    - `publics.<name>` - the public content (always available if secret has public output)
 3. Generator functions can accept `{ secrets }`, `{ publics }`, `{ secrets, publics }`, `{ }`, or any subset
-4. The system automatically tries different parameter combinations if the generator doesn't accept all arguments
+4. The system starts with minimal parameters and adds more only when needed:
+   - First tries `{ }` (no parameters)
+   - Then tries `{ publics }` if available
+   - Then tries `{ secrets }` if available
+   - Finally tries `{ secrets, publics }` if both available
 5. Secrets are generated in dependency order automatically
 6. Clear error messages if dependencies cannot be resolved
 
