@@ -45,7 +45,7 @@ rustPlatform.buildRustPackage rec {
     )
 
     cd $HOME/secrets
-    test $(${bin} -d secret1.age) = "hello"
+    test "$(${bin} decrypt secret1.age)" = "hello"
   '';
 
   meta.description = "age-encrypted secrets for NixOS";
