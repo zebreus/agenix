@@ -4,6 +4,7 @@
 //! encrypted secret files with temporary file handling and editor integration.
 
 use anyhow::{Context, Result, anyhow};
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::{self, IsTerminal, Read, stdin};
 use std::path::Path;
@@ -126,13 +127,10 @@ pub fn rekey_all_files(rules_path: &str, identity: Option<&str>) -> Result<()> {
 /// 1. The file has a generator function defined
 /// 2. The secret file doesn't already exist
 pub fn generate_secrets(rules_path: &str) -> Result<()> {
-    use std::collections::{HashMap, HashSet};
-    
     let files = get_all_files(rules_path)?;
     let mut generated_secrets: HashMap<String, String> = HashMap::new();
     let mut generated_publics: HashMap<String, String> = HashMap::new();
     let mut remaining_files: HashSet<String> = files.iter().cloned().collect();
-    let mut files_to_process: Vec<String> = files.clone();
     
     // First, try to load any existing encrypted files that we can decrypt
     for file in &files {
@@ -269,7 +267,7 @@ pub fn generate_secrets(rules_path: &str) -> Result<()> {
 fn build_context_expr(secrets: &HashMap<String, String>, publics: &HashMap<String, String>) -> String {
     let mut expr = String::from("{ secrets = {");
     
-    for (name, content) = secrets {
+    for (name, content) in secrets {
         // Escape the content for Nix string literal
         let escaped = escape_nix_string(content);
         expr.push_str(&format!(" \"{}\" = \"{}\";", name, escaped));

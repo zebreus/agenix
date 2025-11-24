@@ -119,7 +119,7 @@ pub fn generate_secret(rules_path: &str, file: &str) -> Result<Option<String>> {
 /// - Files ending with "x25519" use builtins.ageKey (age x25519 keypair)
 /// - Files ending with "password" or "passphrase" use builtins.randomString 32
 ///
-/// The context parameter allows passing secrets and publics that can be referenced by the generator.
+///The context parameter allows passing secrets and publics that can be referenced by the generator.
 /// It should be a Nix expression that evaluates to an attrset like:
 /// `{ secrets = { "secret1.age" = "content"; }; publics = { "secret2.age" = "pubkey"; }; }`
 pub fn generate_secret_with_public_context(
@@ -127,8 +127,8 @@ pub fn generate_secret_with_public_context(
     file: &str,
     context_expr: &str,
 ) -> Result<Option<GeneratorOutput>> {
-    // Build Nix expression that checks for explicit generator or uses automatic selection
-    let nix_expr = format!(
+    // First try with context
+    let nix_expr_with_context = format!(
         r#"(let 
           rules = import {rules_path};
           context = {context_expr};
@@ -142,14 +142,50 @@ pub fn generate_secret_with_public_context(
             else if hasSuffix "password" || hasSuffix "passphrase"
             then (_: builtins.randomString 32)
             else null;
-          result = if builtins.hasAttr "generator" rules."{file}"
-                   then rules."{file}".generator context
-                   else if auto != null then auto context else null;
-        in builtins.deepSeq result result)"#,
+          result = builtins.tryEval (
+            if builtins.hasAttr "generator" rules."{file}"
+            then rules."{file}".generator context
+            else if auto != null then auto context else null
+          );
+        in if result.success then builtins.deepSeq result.value result.value else throw "GENERATOR_ERROR")"#,
     );
 
     let current_dir = current_dir()?;
-    let output = eval_nix_expression(nix_expr.as_str(), &current_dir)?;
+    
+    // Try with context first
+    let output_result = eval_nix_expression(nix_expr_with_context.as_str(), &current_dir);
+    
+    let output = match output_result {
+        Ok(val) => val,
+        Err(e) => {
+            let error_msg = e.to_string();
+            // If it failed and it's an argument error, try without context for backward compatibility
+            if error_msg.contains("Unexpected argument") || error_msg.contains("GENERATOR_ERROR") {
+                // Try with empty context {}
+                let nix_expr_no_context = format!(
+                    r#"(let 
+                      rules = import {rules_path};
+                      name = builtins.replaceStrings ["A" "B" "C" "D" "E" "F" "G" "H" "I" "J" "K" "L" "M" "N" "O" "P" "Q" "R" "S" "T" "U" "V" "W" "X" "Y" "Z"] ["a" "b" "c" "d" "e" "f" "g" "h" "i" "j" "k" "l" "m" "n" "o" "p" "q" "r" "s" "t" "u" "v" "w" "x" "y" "z"] "{file}";
+                      hasSuffix = s: builtins.match ".*${{s}}(\.age)?$" name != null;
+                      auto = 
+                        if hasSuffix "ed25519" || hasSuffix "ssh" || hasSuffix "ssh_key" 
+                        then builtins.sshKey
+                        else if hasSuffix "x25519"
+                        then builtins.ageKey
+                        else if hasSuffix "password" || hasSuffix "passphrase"
+                        then (_: builtins.randomString 32)
+                        else null;
+                      result = if builtins.hasAttr "generator" rules."{file}"
+                               then rules."{file}".generator {{}}
+                               else if auto != null then auto {{}} else null;
+                    in builtins.deepSeq result result)"#,
+                );
+                eval_nix_expression(nix_expr_no_context.as_str(), &current_dir)?
+            } else {
+                return Err(e);
+            }
+        }
+    };
 
     // Commonly used attribute names as constants
     const SECRET_KEY: &[u8] = b"secret";
