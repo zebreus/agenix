@@ -75,7 +75,15 @@ pub enum Command {
 
     /// Generate secrets using generator functions from rules
     #[command(visible_alias = "g")]
-    Generate,
+    Generate {
+        /// Overwrite existing secret files
+        #[arg(short, long)]
+        force: bool,
+
+        /// Show what would be generated without making changes
+        #[arg(short = 'n', long)]
+        dry_run: bool,
+    },
 }
 
 #[cfg(test)]
@@ -231,13 +239,83 @@ mod tests {
     #[test]
     fn test_generate_subcommand() {
         let args = Args::try_parse_from(["agenix", "generate"]).unwrap();
-        assert!(matches!(args.command, Some(Command::Generate)));
+        assert!(matches!(args.command, Some(Command::Generate { .. })));
+        if let Some(Command::Generate { force, dry_run }) = args.command {
+            assert!(!force);
+            assert!(!dry_run);
+        }
     }
 
     #[test]
     fn test_generate_short_alias() {
         let args = Args::try_parse_from(["agenix", "g"]).unwrap();
-        assert!(matches!(args.command, Some(Command::Generate)));
+        assert!(matches!(args.command, Some(Command::Generate { .. })));
+    }
+
+    #[test]
+    fn test_generate_force_flag() {
+        let args = Args::try_parse_from(["agenix", "generate", "--force"]).unwrap();
+        if let Some(Command::Generate { force, dry_run }) = args.command {
+            assert!(force);
+            assert!(!dry_run);
+        } else {
+            panic!("Expected Generate command");
+        }
+    }
+
+    #[test]
+    fn test_generate_force_short_flag() {
+        let args = Args::try_parse_from(["agenix", "generate", "-f"]).unwrap();
+        if let Some(Command::Generate { force, dry_run }) = args.command {
+            assert!(force);
+            assert!(!dry_run);
+        } else {
+            panic!("Expected Generate command");
+        }
+    }
+
+    #[test]
+    fn test_generate_dry_run_flag() {
+        let args = Args::try_parse_from(["agenix", "generate", "--dry-run"]).unwrap();
+        if let Some(Command::Generate { force, dry_run }) = args.command {
+            assert!(!force);
+            assert!(dry_run);
+        } else {
+            panic!("Expected Generate command");
+        }
+    }
+
+    #[test]
+    fn test_generate_dry_run_short_flag() {
+        let args = Args::try_parse_from(["agenix", "generate", "-n"]).unwrap();
+        if let Some(Command::Generate { force, dry_run }) = args.command {
+            assert!(!force);
+            assert!(dry_run);
+        } else {
+            panic!("Expected Generate command");
+        }
+    }
+
+    #[test]
+    fn test_generate_force_and_dry_run() {
+        let args = Args::try_parse_from(["agenix", "generate", "--force", "--dry-run"]).unwrap();
+        if let Some(Command::Generate { force, dry_run }) = args.command {
+            assert!(force);
+            assert!(dry_run);
+        } else {
+            panic!("Expected Generate command");
+        }
+    }
+
+    #[test]
+    fn test_generate_short_flags_combined() {
+        let args = Args::try_parse_from(["agenix", "generate", "-f", "-n"]).unwrap();
+        if let Some(Command::Generate { force, dry_run }) = args.command {
+            assert!(force);
+            assert!(dry_run);
+        } else {
+            panic!("Expected Generate command");
+        }
     }
 
     #[test]
@@ -301,14 +379,14 @@ mod tests {
         let args =
             Args::try_parse_from(["agenix", "--rules", "/custom/rules.nix", "generate"]).unwrap();
         assert_eq!(args.rules, "/custom/rules.nix");
-        assert!(matches!(args.command, Some(Command::Generate)));
+        assert!(matches!(args.command, Some(Command::Generate { .. })));
     }
 
     #[test]
     fn test_global_rules_short_flag() {
         let args = Args::try_parse_from(["agenix", "-r", "/custom/rules.nix", "generate"]).unwrap();
         assert_eq!(args.rules, "/custom/rules.nix");
-        assert!(matches!(args.command, Some(Command::Generate)));
+        assert!(matches!(args.command, Some(Command::Generate { .. })));
     }
 
     #[test]
