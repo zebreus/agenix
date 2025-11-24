@@ -27,6 +27,15 @@ pub struct Args {
     #[arg(short, long, global = true)]
     pub verbose: bool,
 
+    /// Identity (private key) to use when decrypting. Can be specified multiple times.
+    /// Identities are tried in order: explicitly specified identities first, then default system identities.
+    #[arg(short, long, value_name = "KEY", global = true, action = clap::ArgAction::Append)]
+    pub identity: Vec<String>,
+
+    /// Do not use default system identities (~/.ssh/id_rsa, ~/.ssh/id_ed25519)
+    #[arg(long, global = true)]
+    pub no_system_identities: bool,
+
     #[command(subcommand)]
     pub command: Option<Command>,
 }
@@ -40,10 +49,6 @@ pub enum Command {
         #[arg(value_name = "FILE", allow_hyphen_values = true)]
         file: String,
 
-        /// Identity (private key) to use when decrypting
-        #[arg(short, long, value_name = "KEY")]
-        identity: Option<String>,
-
         /// Editor command to use (defaults to $EDITOR or vi)
         #[arg(short = 'e', long, env = "EDITOR", value_name = "COMMAND", default_value_t = String::from("vi"))]
         editor: String,
@@ -56,10 +61,6 @@ pub enum Command {
         #[arg(value_name = "FILE", allow_hyphen_values = true)]
         file: String,
 
-        /// Identity (private key) to use when decrypting
-        #[arg(short, long, value_name = "KEY")]
-        identity: Option<String>,
-
         /// Output file (defaults to stdout)
         #[arg(short, long, value_name = "FILE")]
         output: Option<String>,
@@ -67,11 +68,7 @@ pub enum Command {
 
     /// Re-encrypt all secrets with updated recipients
     #[command(visible_alias = "r")]
-    Rekey {
-        /// Identity (private key) to use when decrypting
-        #[arg(short, long, value_name = "KEY")]
-        identity: Option<String>,
-    },
+    Rekey {},
 
     /// Generate secrets using generator functions from rules
     #[command(visible_alias = "g")]
@@ -121,9 +118,9 @@ mod tests {
         let args = Args::try_parse_from(["agenix", "edit", "test.age"]).unwrap();
         assert!(matches!(args.command, Some(Command::Edit { .. })));
         assert!(!args.verbose);
-        if let Some(Command::Edit { file, identity, .. }) = args.command {
+        assert!(args.identity.is_empty());
+        if let Some(Command::Edit { file, .. }) = args.command {
             assert_eq!(file, "test.age".to_string());
-            assert_eq!(identity, None);
         }
     }
 
@@ -147,11 +144,11 @@ mod tests {
 
     #[test]
     fn test_decrypt_subcommand_with_identity() {
-        let args = Args::try_parse_from(["agenix", "decrypt", "secret.age", "-i", "/path/to/key"])
+        let args = Args::try_parse_from(["agenix", "-i", "/path/to/key", "decrypt", "secret.age"])
             .unwrap();
-        if let Some(Command::Decrypt { file, identity, .. }) = args.command {
+        assert_eq!(args.identity, vec!["/path/to/key".to_string()]);
+        if let Some(Command::Decrypt { file, .. }) = args.command {
             assert_eq!(file, "secret.age".to_string());
-            assert_eq!(identity, Some("/path/to/key".to_string()));
         } else {
             panic!("Expected Decrypt command");
         }
@@ -366,12 +363,66 @@ mod tests {
 
     #[test]
     fn test_rekey_with_identity() {
-        let args = Args::try_parse_from(["agenix", "rekey", "-i", "/path/to/key"]).unwrap();
-        if let Some(Command::Rekey { identity }) = args.command {
-            assert_eq!(identity, Some("/path/to/key".to_string()));
-        } else {
-            panic!("Expected Rekey command");
-        }
+        let args = Args::try_parse_from(["agenix", "-i", "/path/to/key", "rekey"]).unwrap();
+        assert_eq!(args.identity, vec!["/path/to/key".to_string()]);
+        assert!(matches!(args.command, Some(Command::Rekey {})));
+    }
+
+    #[test]
+    fn test_global_identity_option() {
+        let args = Args::try_parse_from(["agenix", "-i", "/path/to/key", "decrypt", "secret.age"])
+            .unwrap();
+        assert_eq!(args.identity, vec!["/path/to/key".to_string()]);
+        assert!(matches!(args.command, Some(Command::Decrypt { .. })));
+    }
+
+    #[test]
+    fn test_multiple_identities() {
+        let args = Args::try_parse_from([
+            "agenix",
+            "-i",
+            "/path/to/key1",
+            "-i",
+            "/path/to/key2",
+            "decrypt",
+            "secret.age",
+        ])
+        .unwrap();
+        assert_eq!(
+            args.identity,
+            vec!["/path/to/key1".to_string(), "/path/to/key2".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_no_system_identities_flag() {
+        let args =
+            Args::try_parse_from(["agenix", "--no-system-identities", "decrypt", "secret.age"])
+                .unwrap();
+        assert!(args.no_system_identities);
+    }
+
+    #[test]
+    fn test_identity_with_no_system_identities() {
+        let args = Args::try_parse_from([
+            "agenix",
+            "-i",
+            "/path/to/key",
+            "--no-system-identities",
+            "decrypt",
+            "secret.age",
+        ])
+        .unwrap();
+        assert_eq!(args.identity, vec!["/path/to/key".to_string()]);
+        assert!(args.no_system_identities);
+    }
+
+    #[test]
+    fn test_identity_after_subcommand() {
+        // Global flags should work after subcommand too
+        let args = Args::try_parse_from(["agenix", "decrypt", "-i", "/path/to/key", "secret.age"])
+            .unwrap();
+        assert_eq!(args.identity, vec!["/path/to/key".to_string()]);
     }
 
     #[test]
@@ -462,14 +513,15 @@ mod tests {
     }
 
     #[test]
-    fn test_old_identity_flag_at_root_rejected() {
-        // Old: agenix -i key -e file.age (identity at root level)
-        // New: agenix edit -i key file.age (identity in subcommand)
+    fn test_global_identity_flag_at_root_works() {
+        // Now: agenix -i key edit file.age (identity at root level works)
         let result = Args::try_parse_from(["agenix", "-i", "/path/to/key", "edit", "test.age"]);
         assert!(
-            result.is_err(),
-            "Old -i flag at root level should be rejected"
+            result.is_ok(),
+            "Global -i flag at root level should be accepted"
         );
+        let args = result.unwrap();
+        assert_eq!(args.identity, vec!["/path/to/key".to_string()]);
     }
 
     #[test]

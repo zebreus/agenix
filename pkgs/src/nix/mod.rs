@@ -1700,11 +1700,13 @@ mod tests {
         )?;
 
         // Decrypt with the private key
-        use crate::crypto::decrypt_to_file;
+        use crate::crypto::{IdentityConfig, decrypt_to_file};
+        let identities = vec![identity_file.path().to_str().unwrap().to_string()];
+        let config = IdentityConfig::new(&identities, true);
         decrypt_to_file(
             encrypted_file.path().to_str().unwrap(),
             decrypted_file.path(),
-            Some(identity_file.path().to_str().unwrap()),
+            &config,
         )?;
 
         // Verify content matches
@@ -1713,6 +1715,7 @@ mod tests {
         Ok(())
     }
 
+    #[test]
     fn test_auto_generator_ssh_ending() -> Result<()> {
         let rules_content = r#"
         {

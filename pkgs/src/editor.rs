@@ -10,7 +10,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use tempfile::TempDir;
 
-use crate::crypto::{decrypt_to_file, encrypt_from_file, files_equal};
+use crate::IdentityConfig;
+use crate::crypto::{self, encrypt_from_file, files_equal};
 use crate::nix::{
     GeneratorOutput, generate_secret_with_public, generate_secret_with_public_and_context,
     get_all_files, get_public_keys, get_secret_dependencies, should_armor,
@@ -79,7 +80,7 @@ pub fn edit_file(
     rules_path: &str,
     file: &str,
     editor_cmd: &str,
-    identity: Option<&str>,
+    identity_config: &IdentityConfig,
 ) -> Result<()> {
     let public_keys = get_public_keys(rules_path, file)?;
     let armor = should_armor(rules_path, file)?;
@@ -92,9 +93,15 @@ pub fn edit_file(
     let temp_dir = TempDir::new().context("Failed to create temporary directory")?;
     let cleartext_file = temp_dir.path().join(Path::new(file).file_name().unwrap());
 
+    // Create crypto config from identity config
+    let crypto_config = crypto::IdentityConfig::new(
+        &identity_config.identities,
+        identity_config.no_system_identities,
+    );
+
     // Decrypt if file exists
     if Path::new(file).exists() {
-        decrypt_to_file(file, &cleartext_file, identity)?;
+        crypto::decrypt_to_file(file, &cleartext_file, &crypto_config)?;
     }
 
     // Create backup
@@ -155,28 +162,34 @@ pub fn decrypt_file(
     rules_path: &str,
     file: &str,
     output: Option<&str>,
-    identity: Option<&str>,
+    identity_config: &IdentityConfig,
 ) -> Result<()> {
     let public_keys = get_public_keys(rules_path, file)?;
     if public_keys.is_empty() {
         return Err(anyhow!("No public keys found for file: {file}"));
     }
 
+    // Create crypto config from identity config
+    let crypto_config = crypto::IdentityConfig::new(
+        &identity_config.identities,
+        identity_config.no_system_identities,
+    );
+
     match output {
-        Some(out_file) => decrypt_to_file(file, Path::new(out_file), identity)?,
-        None => decrypt_to_file(file, Path::new("/dev/stdout"), identity)?,
+        Some(out_file) => crypto::decrypt_to_file(file, Path::new(out_file), &crypto_config)?,
+        None => crypto::decrypt_to_file(file, Path::new("/dev/stdout"), &crypto_config)?,
     }
 
     Ok(())
 }
 
 /// Rekey all files in the rules (no-op editor used to avoid launching an editor)
-pub fn rekey_all_files(rules_path: &str, identity: Option<&str>) -> Result<()> {
+pub fn rekey_all_files(rules_path: &str, identity_config: &IdentityConfig) -> Result<()> {
     let files = get_all_files(rules_path)?;
 
     files.iter().try_for_each(|file| {
         eprintln!("Rekeying {file}...");
-        edit_file(rules_path, file, ":", identity)
+        edit_file(rules_path, file, ":", identity_config)
     })?;
 
     Ok(())
@@ -577,17 +590,24 @@ mod tests {
     use std::{fs::File, path::PathBuf};
     use tempfile::tempdir;
 
+    /// Helper to create a default identity config (use system defaults)
+    fn default_identity_config() -> IdentityConfig {
+        IdentityConfig::new(vec![], false)
+    }
+
     #[test]
     fn test_edit_file_no_keys() {
         let rules = "./test_secrets.nix";
-        let result = edit_file(rules, "nonexistent.age", "vi", None);
+        let config = default_identity_config();
+        let result = edit_file(rules, "nonexistent.age", "vi", &config);
         assert!(result.is_err());
     }
 
     #[test]
     fn test_decrypt_file_no_keys() {
         let rules = "./test_secrets.nix";
-        let result = decrypt_file(rules, "nonexistent.age", None, None);
+        let config = default_identity_config();
+        let result = decrypt_file(rules, "nonexistent.age", None, &config);
         assert!(result.is_err());
     }
 
@@ -595,8 +615,9 @@ mod tests {
     fn test_rekey_uses_no_op_editor() {
         // With nonexistent rules this will early error if keys empty; simulate empty by pointing to test file
         let rules = "./test_secrets.nix";
+        let config = default_identity_config();
         // Should error, but specifically via missing keys, not editor invocation failure.
-        let result = rekey_all_files(rules, None);
+        let result = rekey_all_files(rules, &config);
         assert!(result.is_err());
     }
 
@@ -609,11 +630,12 @@ mod tests {
         // Create an empty file so decrypt_to_file won't run (no existence of keys) but backup logic proceeds.
         File::create(&secret_path).unwrap();
         // Call edit_file expecting an error due to no keys; ensures we reach key check early.
+        let config = default_identity_config();
         let res = edit_file(
             "./test_secrets.nix",
             secret_path.to_str().unwrap(),
             ":",
-            None,
+            &config,
         );
         assert!(res.is_err());
     }

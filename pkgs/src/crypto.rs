@@ -11,11 +11,29 @@ use std::io::{Read, Write};
 use std::path::Path;
 use std::str::FromStr;
 
+/// Configuration for identity management
+pub struct IdentityConfig<'a> {
+    /// Explicitly specified identities (in order)
+    pub identities: &'a [String],
+    /// Whether to exclude system identities
+    pub no_system_identities: bool,
+}
+
+impl<'a> IdentityConfig<'a> {
+    /// Create a new identity configuration from explicit identities and a flag
+    pub fn new(identities: &'a [String], no_system_identities: bool) -> Self {
+        Self {
+            identities,
+            no_system_identities,
+        }
+    }
+}
+
 /// Decrypt a file to another file
 pub fn decrypt_to_file<P: AsRef<Path>>(
     input_file: &str,
     output_file: P,
-    identity: Option<&str>,
+    identity_config: &IdentityConfig,
 ) -> Result<()> {
     // Read ciphertext
     let mut ciphertext = vec![];
@@ -42,20 +60,8 @@ pub fn decrypt_to_file<P: AsRef<Path>>(
 
     let decryptor = Decryptor::new(&ciphertext_bytes[..]).context("Failed to parse age file")?;
 
-    // Collect identities
-    let identities: Vec<Box<dyn Identity>> = if let Some(id_path) = identity {
-        load_identities_from_file(id_path)?
-    } else {
-        // Load default identities, failing if any key file is corrupted
-        get_default_identities()
-            .iter()
-            .map(|path| {
-                load_identities_from_file(path)
-                    .with_context(|| format!("Failed to load identity from {path}"))
-            })
-            .flatten_ok()
-            .collect::<Result<Vec<_>>>()?
-    };
+    // Collect identities: explicit identities first, then system defaults (unless disabled)
+    let identities = collect_identities(identity_config)?;
 
     let mut reader = decryptor
         .decrypt(identities.iter().map(|i| i.as_ref() as &dyn Identity))
@@ -74,6 +80,31 @@ pub fn decrypt_to_file<P: AsRef<Path>>(
     })?;
 
     Ok(())
+}
+
+/// Collect identities based on the configuration
+/// Order: explicit identities first, then system defaults (unless no_system_identities is set)
+fn collect_identities(config: &IdentityConfig) -> Result<Vec<Box<dyn Identity>>> {
+    let mut identities: Vec<Box<dyn Identity>> = Vec::new();
+
+    // First, add explicitly specified identities (in order)
+    for id_path in config.identities {
+        let loaded = load_identities_from_file(id_path)
+            .with_context(|| format!("Failed to load identity from {id_path}"))?;
+        identities.extend(loaded);
+    }
+
+    // Then, add system default identities (unless disabled)
+    if !config.no_system_identities {
+        let default_paths = get_default_identities();
+        for path in default_paths {
+            let loaded = load_identities_from_file(&path)
+                .with_context(|| format!("Failed to load identity from {path}"))?;
+            identities.extend(loaded);
+        }
+    }
+
+    Ok(identities)
 }
 
 /// Parse a recipient string or file
@@ -294,10 +325,12 @@ mod tests {
         assert!(encrypted_content.contains("-----END AGE ENCRYPTED FILE-----"));
 
         // Test decryption
+        let identities = vec![identity_file.path().to_str().unwrap().to_string()];
+        let config = IdentityConfig::new(&identities, true);
         decrypt_to_file(
             encrypted_file.path().to_str().unwrap(),
             decrypted_file.path(),
-            Some(identity_file.path().to_str().unwrap()),
+            &config,
         )?;
 
         // Verify content matches
@@ -342,10 +375,12 @@ mod tests {
         assert!(!encrypted_str.contains("-----BEGIN AGE ENCRYPTED FILE-----"));
 
         // Test decryption
+        let identities = vec![identity_file.path().to_str().unwrap().to_string()];
+        let config = IdentityConfig::new(&identities, true);
         decrypt_to_file(
             encrypted_file.path().to_str().unwrap(),
             decrypted_file.path(),
-            Some(identity_file.path().to_str().unwrap()),
+            &config,
         )?;
 
         // Verify content matches
@@ -404,17 +439,21 @@ mod tests {
         assert!(encrypted_content.contains("-----END AGE ENCRYPTED FILE-----"));
 
         // Test decryption with first key
+        let identities1 = vec![identity_file1.path().to_str().unwrap().to_string()];
+        let config1 = IdentityConfig::new(&identities1, true);
         decrypt_to_file(
             encrypted_file.path().to_str().unwrap(),
             decrypted_file1.path(),
-            Some(identity_file1.path().to_str().unwrap()),
+            &config1,
         )?;
 
         // Test decryption with second key
+        let identities2 = vec![identity_file2.path().to_str().unwrap().to_string()];
+        let config2 = IdentityConfig::new(&identities2, true);
         decrypt_to_file(
             encrypted_file.path().to_str().unwrap(),
             decrypted_file2.path(),
-            Some(identity_file2.path().to_str().unwrap()),
+            &config2,
         )?;
 
         // Verify both decryptions match original
@@ -466,16 +505,18 @@ mod tests {
         )?;
 
         // Decrypt both versions
+        let identities = vec![identity_file.path().to_str().unwrap().to_string()];
+        let config = IdentityConfig::new(&identities, true);
         decrypt_to_file(
             armored_file.path().to_str().unwrap(),
             decrypted_armored.path(),
-            Some(identity_file.path().to_str().unwrap()),
+            &config,
         )?;
 
         decrypt_to_file(
             binary_file.path().to_str().unwrap(),
             decrypted_binary.path(),
-            Some(identity_file.path().to_str().unwrap()),
+            &config,
         )?;
 
         // Both should decrypt to the same content
@@ -555,10 +596,11 @@ mod tests {
         }
 
         // Try to decrypt without explicit identity (should fail due to bogus default key)
+        let config = IdentityConfig::new(&[], false); // Use system defaults
         let _result = decrypt_to_file(
             encrypted_file.path().to_str().unwrap(),
             temp_home.path().join("decrypted.txt"),
-            None, // No explicit identity - should use defaults
+            &config,
         );
 
         // Restore original HOME
@@ -572,14 +614,9 @@ mod tests {
             }
         }
 
-        // The current implementation incorrectly succeeds because unwrap_or_default()
-        // swallows the error. This test documents the current (incorrect) behavior.
-        // TODO: This should fail but currently doesn't due to unwrap_or_default()
-
+        // The current implementation correctly fails due to bogus default key
         // For now, let's just verify that get_default_identities finds the bogus key
         let _identities = get_default_identities();
-        // Should find no identities since we only have a bogus key
-        // But currently it will find the path, and load_identities_from_file will fail silently
 
         Ok(())
     }
@@ -634,11 +671,13 @@ mod tests {
             std::env::set_var("HOME", temp_home.path());
         }
 
-        // Try to decrypt WITH explicit valid identity (should succeed)
+        // Try to decrypt WITH explicit valid identity and no_system_identities=true
+        let identities = vec![valid_identity_file.path().to_str().unwrap().to_string()];
+        let config = IdentityConfig::new(&identities, true); // Exclude bogus system identities
         let result = decrypt_to_file(
             encrypted_file.path().to_str().unwrap(),
             decrypted_file.path(),
-            Some(valid_identity_file.path().to_str().unwrap()),
+            &config,
         );
 
         // Restore original HOME
@@ -719,12 +758,12 @@ mod tests {
         }
 
         // Now try to decrypt WITHOUT explicit identity
-        // This should fail because there's a bogus id_rsa, but currently it succeeds
-        // because unwrap_or_default() ignores the error from the bogus key
+        // This should fail because there's a bogus id_rsa
+        let config = IdentityConfig::new(&[], false); // Use system defaults
         let result = decrypt_to_file(
             encrypted_file.path().to_str().unwrap(),
             decrypted_file.path(),
-            None, // No explicit identity - use defaults
+            &config,
         );
 
         // Restore HOME
@@ -738,24 +777,8 @@ mod tests {
             }
         }
 
-        // This currently succeeds when it should fail!
-        // The CLI integration test expects this to fail with "Should have failed with bogus id_rsa"
-        match result {
-            Ok(_) => {
-                println!(
-                    "CURRENT BEHAVIOR: Decryption succeeded despite bogus id_rsa (this is the bug!)"
-                );
-                // Verify it actually decrypted correctly using the valid id_ed25519
-                let decrypted_content = fs::read_to_string(decrypted_file.path())?;
-                assert_eq!(test_content, decrypted_content);
-            }
-            Err(e) => {
-                println!(
-                    "EXPECTED BEHAVIOR: Decryption failed due to bogus key: {}",
-                    e
-                );
-            }
-        }
+        // With the new implementation, this properly fails with bogus id_rsa
+        assert!(result.is_err(), "Should fail with bogus id_rsa in defaults");
 
         Ok(())
     }
@@ -797,10 +820,12 @@ mod tests {
 
         // Try to decrypt using the bogus identity file explicitly
         // This should fail because the identity file is invalid
+        let identities = vec![bogus_identity_file.path().to_str().unwrap().to_string()];
+        let config = IdentityConfig::new(&identities, true);
         let result = decrypt_to_file(
             encrypted_file.path().to_str().unwrap(),
             &decrypted_file.path(),
-            Some(bogus_identity_file.path().to_str().unwrap()),
+            &config,
         );
 
         // The fix ensures this fails properly
@@ -813,7 +838,8 @@ mod tests {
         assert!(
             full_error.contains("Failed to parse identity file")
                 || full_error.contains("Failed to read identity file")
-                || full_error.contains("non-identity data"),
+                || full_error.contains("non-identity data")
+                || full_error.contains("Failed to load identity"),
             "Error chain should mention identity file parsing failure: {}",
             full_error
         );
@@ -865,10 +891,11 @@ mod tests {
         }
 
         // This should fail - bogus default identity should cause failure
+        let config = IdentityConfig::new(&[], false); // Use system defaults
         let result = decrypt_to_file(
             encrypted_file.path().to_str().unwrap(),
             &decrypted_file.path(),
-            None, // No explicit identity - use defaults (finds bogus key)
+            &config,
         );
 
         // Restore HOME immediately to avoid affecting other tests
