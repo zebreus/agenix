@@ -210,10 +210,10 @@ pub fn get_all_files(rules_path: &str) -> Result<Vec<String>> {
 }
 
 /// Get the dependencies of a secret (other secrets referenced in its generator)
-/// Returns the list of secret names that this secret depends on
+/// Returns the list of secret names that this secret depends on by reading
+/// the `dependencies` attribute from the secret's configuration.
 pub fn get_secret_dependencies(rules_path: &str, file: &str) -> Result<Vec<String>> {
-    // Try to evaluate the generator to see what dependencies it has
-    // This checks if the generator function accepts a parameter with specific attributes
+    // Extract the dependencies list from the secret's configuration
     let nix_expr = format!(
         r#"(let 
           rules = import {rules_path};

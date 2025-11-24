@@ -16,6 +16,35 @@ use crate::nix::{
     get_all_files, get_public_keys, get_secret_dependencies, should_armor,
 };
 
+/// Escape a string for safe inclusion in a Nix string literal
+fn escape_nix_string(s: &str) -> String {
+    s.chars()
+        .flat_map(|c| match c {
+            '\\' => vec!['\\', '\\'],
+            '"' => vec!['\\', '"'],
+            '\n' => vec!['\\', 'n'],
+            '\r' => vec!['\\', 'r'],
+            '\t' => vec!['\\', 't'],
+            '\0' => vec!['\\', '0'],
+            '$' => vec!['\\', '$'],
+            c if c.is_control() => {
+                // Escape other control characters as unicode
+                format!("\\u{{{:04x}}}", c as u32).chars().collect()
+            }
+            c => vec![c],
+        })
+        .collect()
+}
+
+/// Normalize a secret name to its basename (filename without path)
+fn secret_basename(name: &str) -> String {
+    Path::new(name)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(name)
+        .to_string()
+}
+
 /// Edit a file with encryption/decryption
 pub fn edit_file(
     rules_path: &str,
@@ -158,18 +187,10 @@ pub fn generate_secrets(rules_path: &str) -> Result<()> {
         let normalized_name = format!("{}.age", secret_name);
 
         // Check if we just generated it - search by basename
-        let basename = Path::new(&normalized_name)
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or(&normalized_name);
+        let basename = secret_basename(&normalized_name);
 
         for (key, output) in generated.iter() {
-            let key_basename = Path::new(key)
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or(key);
-
-            if key_basename == basename {
+            if secret_basename(key) == basename {
                 if let Some(ref public) = output.public {
                     return Ok(Some(public.clone()));
                 }
@@ -197,7 +218,9 @@ pub fn generate_secrets(rules_path: &str) -> Result<()> {
     // Process secrets, handling dependencies
     let mut to_process: Vec<String> = files.clone();
     let mut iteration = 0;
-    let max_iterations = files.len() * 2; // Prevent infinite loops
+    // In the worst case (linear dependency chain), we need files.len() iterations.
+    // We add a safety margin to handle edge cases.
+    let max_iterations = files.len() + 10;
 
     while !to_process.is_empty() && iteration < max_iterations {
         iteration += 1;
@@ -236,17 +259,9 @@ pub fn generate_secrets(rules_path: &str) -> Result<()> {
                     };
 
                     // Check if the dependency will be generated (exists in files list)
-                    let will_be_generated = files.iter().any(|f| {
-                        let f_basename = Path::new(f)
-                            .file_name()
-                            .and_then(|n| n.to_str())
-                            .unwrap_or(f);
-                        let dep_basename = Path::new(&dep_normalized)
-                            .file_name()
-                            .and_then(|n| n.to_str())
-                            .unwrap_or(&dep_normalized);
-                        f_basename == dep_basename
-                    });
+                    let dep_basename = secret_basename(&dep_normalized);
+                    let will_be_generated =
+                        files.iter().any(|f| secret_basename(f) == dep_basename);
 
                     // Check if dependency file exists
                     let dep_file_path = rules_dir.join(&dep_normalized);
@@ -257,17 +272,8 @@ pub fn generate_secrets(rules_path: &str) -> Result<()> {
                         missing_deps.push(dep.clone());
                     } else if will_be_generated && !processed.contains(&dep_normalized) {
                         // Also need to check if any file in processed matches by basename
-                        let is_processed = processed.iter().any(|p| {
-                            let p_basename = Path::new(p)
-                                .file_name()
-                                .and_then(|n| n.to_str())
-                                .unwrap_or(p);
-                            let dep_basename = Path::new(&dep_normalized)
-                                .file_name()
-                                .and_then(|n| n.to_str())
-                                .unwrap_or(&dep_normalized);
-                            p_basename == dep_basename
-                        });
+                        let is_processed =
+                            processed.iter().any(|p| secret_basename(p) == dep_basename);
 
                         if !is_processed {
                             // Dependency will be generated but hasn't been yet
@@ -298,10 +304,7 @@ pub fn generate_secrets(rules_path: &str) -> Result<()> {
                 if let Some(public_content) =
                     get_public_content(dep, rules_dir, &generated_secrets)?
                 {
-                    let escaped_public = public_content
-                        .replace('\\', "\\\\")
-                        .replace('"', "\\\"")
-                        .replace('\n', "\\n");
+                    let escaped_public = escape_nix_string(&public_content);
                     publics_context_parts.push(format!(
                         r#""{}" = {{ public = "{}"; }};"#,
                         dep, escaped_public
