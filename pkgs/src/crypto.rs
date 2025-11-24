@@ -824,14 +824,17 @@ mod tests {
 
         // The fix ensures this fails properly instead of silently ignoring the error
         assert!(result.is_err(), "Should fail with bogus default identity");
-        let error_msg = format!("{}", result.unwrap_err());
+        let err = result.unwrap_err();
+
+        // Check the full error chain for the expected messages
+        let full_error = format!("{:#}", err); // {:#} shows the full error chain
+
         assert!(
-            error_msg.contains("Failed to load identity")
-                || error_msg.contains("id_rsa")
-                || error_msg.contains("No matching keys found")
-                || error_msg.contains("Failed to decrypt"),
-            "Error should mention failed identity loading, no matching keys, or decryption failure: {}",
-            error_msg
+            full_error.contains("Failed to load identity")
+                || full_error.contains("id_rsa")
+                || full_error.contains("No matching keys found"),
+            "Error chain should mention failed identity loading or no matching keys: {}",
+            full_error
         );
 
         Ok(())
