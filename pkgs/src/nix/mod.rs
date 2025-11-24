@@ -134,52 +134,61 @@ pub(crate) fn generate_secret_with_public_and_context(
     file: &str,
     secrets_arg: &str,
 ) -> Result<Option<GeneratorOutput>> {
-    // Try calling the generator starting with minimal parameters
-    // If that fails with a missing parameter error, add more parameters
+    // Try calling the generator with different parameter combinations
+    // Start with what we're given, then try subsets
 
     // Extract just the publics or secrets from the full context if needed
-    let (has_secrets, has_publics) =
+    let (has_secrets_attr, has_publics_attr) =
         if secrets_arg.contains("secrets =") && secrets_arg.contains("publics =") {
             (true, true)
+        } else if secrets_arg.contains("secrets =") {
+            (true, false)
+        } else if secrets_arg.contains("publics =") {
+            (false, true)
         } else {
             (false, false)
         };
 
-    let mut attempts_to_try = vec!["{}".to_string()]; // Start with empty params
+    let mut attempts_to_try = vec![];
 
-    if has_secrets || has_publics {
-        // Parse out secrets and publics parts
-        let secrets_part = if let Some(start) = secrets_arg.find("secrets = {") {
-            if let Some(end) = secrets_arg[start..].find("};") {
-                Some(format!("{{ {} }}", &secrets_arg[start..start + end + 2]))
-            } else {
-                None
-            }
+    // Parse out secrets and publics parts
+    let secrets_part = if let Some(start) = secrets_arg.find("secrets = {") {
+        if let Some(end) = secrets_arg[start..].find("};") {
+            Some(format!("{{ {} }}", &secrets_arg[start..start + end + 2]))
         } else {
             None
-        };
+        }
+    } else {
+        None
+    };
 
-        let publics_part = if let Some(start) = secrets_arg.find("publics = {") {
-            if let Some(end) = secrets_arg[start..].find("};") {
-                Some(format!("{{ {} }}", &secrets_arg[start..start + end + 2]))
-            } else {
-                None
-            }
+    let publics_part = if let Some(start) = secrets_arg.find("publics = {") {
+        if let Some(end) = secrets_arg[start..].find("};") {
+            Some(format!("{{ {} }}", &secrets_arg[start..start + end + 2]))
         } else {
             None
-        };
+        }
+    } else {
+        None
+    };
 
-        // Try progressively adding parameters
-        // Order: empty -> publics -> secrets -> both
-        if let Some(ref p) = publics_part {
-            attempts_to_try.push(p.clone());
-        }
-        if let Some(ref s) = secrets_part {
-            attempts_to_try.push(s.clone());
-        }
-        if has_secrets && has_publics {
-            attempts_to_try.push(secrets_arg.to_string()); // Both secrets and publics
-        }
+    // Build the list of attempts in priority order:
+    // Start minimal and add parameters as needed
+    // 1. Try with empty (catches generators that don't need dependencies)
+    // 2. Try with just publics (most common case)
+    // 3. Try with just secrets (less common)
+    // 4. Try with both (for generators that need both)
+
+    attempts_to_try.push("{}".to_string());
+
+    if let Some(ref p) = publics_part {
+        attempts_to_try.push(p.clone());
+    }
+    if let Some(ref s) = secrets_part {
+        attempts_to_try.push(s.clone());
+    }
+    if has_secrets_attr && has_publics_attr {
+        attempts_to_try.push(secrets_arg.to_string());
     }
 
     let mut last_error = None;
@@ -250,23 +259,37 @@ pub(crate) fn generate_secret_with_public_and_context(
             }
             Err(e) => {
                 let error_msg = e.to_string();
+                eprintln!(
+                    "Attempt '{}' failed",
+                    attempt_arg.chars().take(50).collect::<String>()
+                );
+                eprintln!(
+                    "Error contains 'attribute': {}",
+                    error_msg.contains("attribute")
+                );
+                eprintln!("Error contains 'E005': {}", error_msg.contains("E005"));
                 // Check if it's an unexpected argument error or missing parameter error
                 // E031 is unexpected argument, we should try with fewer params (but we're going the other way now)
                 // For missing params, Nix will complain about undefined variables or missing attributes
+                // E003 is undefined variable, E005 is attribute not found
                 if error_msg.contains("Unexpected argument") || error_msg.contains("E031") {
                     // Got unexpected argument - this shouldn't happen with our new order
                     // but keep it for safety
                     last_error = Some(e);
+                    eprintln!("  -> Unexpected argument, trying next");
                     continue;
                 } else if error_msg.contains("undefined variable")
                     || error_msg.contains("attribute")
                     || error_msg.contains("E003")
+                    || error_msg.contains("E005")
                 {
                     // Missing parameter - try the next combination with more params
                     last_error = Some(e);
+                    eprintln!("  -> Missing parameter/attribute, trying next");
                     continue;
                 } else {
                     // Different error - propagate it
+                    eprintln!("  -> Different error, propagating");
                     return Err(e);
                 }
             }

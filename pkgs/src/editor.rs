@@ -244,6 +244,7 @@ pub fn generate_secrets(rules_path: &str) -> Result<()> {
 
             // Get dependencies
             let deps = get_secret_dependencies(rules_path, &file).unwrap_or_default();
+            eprintln!("Dependencies for {}: {:?}", file, deps);
 
             // Check if all dependencies are satisfied (public keys available)
             let mut all_deps_satisfied = true;
@@ -342,7 +343,9 @@ pub fn generate_secrets(rules_path: &str) -> Result<()> {
 
                 if !deps.is_empty() {
                     // Only include secrets/publics if there are dependencies
-                    format!("{{ {} {} }}", secrets_part, publics_part)
+                    let result = format!("{{ {} {} }}", secrets_part, publics_part);
+                    eprintln!("secrets_arg for {}: {}", file, result);
+                    result
                 } else {
                     "{}".to_string()
                 }
@@ -974,6 +977,596 @@ mod tests {
             ignore_path.exists(),
             "ignore-deps-with-empty.age should be created"
         );
+
+        Ok(())
+    }
+
+    // Complex dependency chain tests
+    #[test]
+    fn test_dependency_chain_full() -> Result<()> {
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+
+        let temp_dir = tempdir()?;
+
+        // Chain: level1 -> level2 -> level3
+        let rules_content = format!(
+            r#"
+{{
+  "{}/level1.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {{ }}: {{ secret = "level1-secret"; public = "level1-public"; }};
+  }};
+  "{}/level2.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {{ publics }}: {{ secret = "level2-" + publics."level1"; public = "level2-public"; }};
+  }};
+  "{}/level3.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {{ publics }}: "level3-" + publics."level2";
+  }};
+}}
+"#,
+            temp_dir.path().to_str().unwrap(),
+            temp_dir.path().to_str().unwrap(),
+            temp_dir.path().to_str().unwrap()
+        );
+
+        let mut temp_rules = NamedTempFile::new()?;
+        writeln!(temp_rules, "{}", rules_content)?;
+        temp_rules.flush()?;
+
+        let args = vec![
+            "agenix".to_string(),
+            "--generate".to_string(),
+            "--rules".to_string(),
+            temp_rules.path().to_str().unwrap().to_string(),
+        ];
+
+        let result = crate::run(args);
+        assert!(
+            result.is_ok(),
+            "Should handle full dependency chain: {:?}",
+            result.err()
+        );
+
+        // All three files should be created
+        assert!(temp_dir.path().join("level1.age").exists());
+        assert!(temp_dir.path().join("level2.age").exists());
+        assert!(temp_dir.path().join("level3.age").exists());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_dependency_chain_middle_exists() -> Result<()> {
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+
+        let temp_dir = tempdir()?;
+
+        // Pre-create middle secret with public key
+        let level2_path = temp_dir.path().join("level2.age");
+        let level2_pub_path = temp_dir.path().join("level2.age.pub");
+        std::fs::write(&level2_path, "existing-level2-encrypted")?;
+        std::fs::write(&level2_pub_path, "existing-level2-public")?;
+
+        // Chain: level1 -> level2 (exists) -> level3
+        let rules_content = format!(
+            r#"
+{{
+  "{}/level1.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {{ }}: {{ secret = "level1-secret"; public = "level1-public"; }};
+  }};
+  "{}/level2.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {{ publics }}: {{ secret = "level2-" + publics."level1"; public = "level2-public"; }};
+  }};
+  "{}/level3.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {{ publics }}: "level3-" + publics."level2";
+  }};
+}}
+"#,
+            temp_dir.path().to_str().unwrap(),
+            temp_dir.path().to_str().unwrap(),
+            temp_dir.path().to_str().unwrap()
+        );
+
+        let mut temp_rules = NamedTempFile::new()?;
+        writeln!(temp_rules, "{}", rules_content)?;
+        temp_rules.flush()?;
+
+        let args = vec![
+            "agenix".to_string(),
+            "--generate".to_string(),
+            "--rules".to_string(),
+            temp_rules.path().to_str().unwrap().to_string(),
+        ];
+
+        let result = crate::run(args);
+        assert!(
+            result.is_ok(),
+            "Should handle chain with existing middle: {:?}",
+            result.err()
+        );
+
+        // level1 and level3 should be generated, level2 should be skipped
+        assert!(temp_dir.path().join("level1.age").exists());
+        assert!(temp_dir.path().join("level3.age").exists());
+        // level2 content should remain unchanged
+        let level2_content = std::fs::read_to_string(&level2_path)?;
+        assert_eq!(level2_content, "existing-level2-encrypted");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_dependency_chain_middle_needs_secret_only_public_available() -> Result<()> {
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+
+        let temp_dir = tempdir()?;
+
+        // Pre-create middle secret with only public key (no encrypted file)
+        let level2_pub_path = temp_dir.path().join("level2.age.pub");
+        std::fs::write(&level2_pub_path, "existing-level2-public")?;
+
+        // Chain where level3 needs the SECRET from level2 but only public is available
+        let rules_content = format!(
+            r#"
+{{
+  "{}/level1.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {{ }}: {{ secret = "level1-secret"; public = "level1-public"; }};
+  }};
+  "{}/level2.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {{ publics }}: {{ secret = "level2-" + publics."level1"; public = "level2-public"; }};
+  }};
+  "{}/level3.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {{ secrets }}: "level3-" + secrets."level2";
+  }};
+}}
+"#,
+            temp_dir.path().to_str().unwrap(),
+            temp_dir.path().to_str().unwrap(),
+            temp_dir.path().to_str().unwrap()
+        );
+
+        let mut temp_rules = NamedTempFile::new()?;
+        writeln!(temp_rules, "{}", rules_content)?;
+        temp_rules.flush()?;
+
+        let args = vec![
+            "agenix".to_string(),
+            "--generate".to_string(),
+            "--rules".to_string(),
+            temp_rules.path().to_str().unwrap().to_string(),
+        ];
+
+        let result = crate::run(args);
+
+        // This should succeed because level2 will be generated (not skipped)
+        // since it doesn't already exist as an encrypted file
+        assert!(
+            result.is_ok(),
+            "Should generate level2 and then level3: {:?}",
+            result.err()
+        );
+
+        assert!(temp_dir.path().join("level2.age").exists());
+        assert!(temp_dir.path().join("level3.age").exists());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_dependency_chain_missing_middle() -> Result<()> {
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+
+        let temp_dir = tempdir()?;
+
+        // Chain where middle secret is not defined in rules
+        let rules_content = format!(
+            r#"
+{{
+  "{}/level1.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {{ }}: {{ secret = "level1-secret"; public = "level1-public"; }};
+  }};
+  "{}/level3.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    dependencies = [ "level2" ];
+    generator = {{ publics }}: "level3-" + publics."level2";
+  }};
+}}
+"#,
+            temp_dir.path().to_str().unwrap(),
+            temp_dir.path().to_str().unwrap()
+        );
+
+        let mut temp_rules = NamedTempFile::new()?;
+        writeln!(temp_rules, "{}", rules_content)?;
+        temp_rules.flush()?;
+
+        let args = vec![
+            "agenix".to_string(),
+            "--generate".to_string(),
+            "--rules".to_string(),
+            temp_rules.path().to_str().unwrap().to_string(),
+        ];
+
+        let result = crate::run(args);
+        assert!(result.is_err(), "Should fail with missing dependency");
+
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("depends on")
+                || err_msg.contains("level2")
+                || err_msg.contains("cannot be found"),
+            "Error message should mention missing dependency 'level2': {}",
+            err_msg
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_circular_dependency() -> Result<()> {
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+
+        let temp_dir = tempdir()?;
+
+        // Circular: secret1 -> secret2 -> secret1
+        let rules_content = format!(
+            r#"
+{{
+  "{}/secret1.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {{ publics }}: {{ secret = "s1-" + publics."secret2"; public = "p1"; }};
+  }};
+  "{}/secret2.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {{ publics }}: {{ secret = "s2-" + publics."secret1"; public = "p2"; }};
+  }};
+}}
+"#,
+            temp_dir.path().to_str().unwrap(),
+            temp_dir.path().to_str().unwrap()
+        );
+
+        let mut temp_rules = NamedTempFile::new()?;
+        writeln!(temp_rules, "{}", rules_content)?;
+        temp_rules.flush()?;
+
+        let args = vec![
+            "agenix".to_string(),
+            "--generate".to_string(),
+            "--rules".to_string(),
+            temp_rules.path().to_str().unwrap().to_string(),
+        ];
+
+        let result = crate::run(args);
+        assert!(result.is_err(), "Should fail with circular dependency");
+
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("Maximum iterations")
+                || err_msg.contains("circular")
+                || err_msg.contains("depends"),
+            "Error message should indicate circular dependency issue: {}",
+            err_msg
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_diamond_dependency() -> Result<()> {
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+
+        let temp_dir = tempdir()?;
+
+        // Diamond: base -> left + right -> top
+        let rules_content = format!(
+            r#"
+{{
+  "{}/base.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {{ }}: {{ secret = "base-secret"; public = "base-public"; }};
+  }};
+  "{}/left.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {{ publics }}: {{ secret = "left-" + publics."base"; public = "left-public"; }};
+  }};
+  "{}/right.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {{ publics }}: {{ secret = "right-" + publics."base"; public = "right-public"; }};
+  }};
+  "{}/top.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {{ publics }}: "top-" + publics."left" + "-" + publics."right";
+  }};
+}}
+"#,
+            temp_dir.path().to_str().unwrap(),
+            temp_dir.path().to_str().unwrap(),
+            temp_dir.path().to_str().unwrap(),
+            temp_dir.path().to_str().unwrap()
+        );
+
+        let mut temp_rules = NamedTempFile::new()?;
+        writeln!(temp_rules, "{}", rules_content)?;
+        temp_rules.flush()?;
+
+        let args = vec![
+            "agenix".to_string(),
+            "--generate".to_string(),
+            "--rules".to_string(),
+            temp_rules.path().to_str().unwrap().to_string(),
+        ];
+
+        let result = crate::run(args);
+        assert!(
+            result.is_ok(),
+            "Should handle diamond dependency: {:?}",
+            result.err()
+        );
+
+        // All four files should be created
+        assert!(temp_dir.path().join("base.age").exists());
+        assert!(temp_dir.path().join("left.age").exists());
+        assert!(temp_dir.path().join("right.age").exists());
+        assert!(temp_dir.path().join("top.age").exists());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_multiple_independent_chains() -> Result<()> {
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+
+        let temp_dir = tempdir()?;
+
+        // Two independent chains: chain1: a -> b and chain2: x -> y
+        let rules_content = format!(
+            r#"
+{{
+  "{}/a.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {{ }}: {{ secret = "a-secret"; public = "a-public"; }};
+  }};
+  "{}/b.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {{ publics }}: "b-" + publics."a";
+  }};
+  "{}/x.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {{ }}: {{ secret = "x-secret"; public = "x-public"; }};
+  }};
+  "{}/y.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {{ publics }}: "y-" + publics."x";
+  }};
+}}
+"#,
+            temp_dir.path().to_str().unwrap(),
+            temp_dir.path().to_str().unwrap(),
+            temp_dir.path().to_str().unwrap(),
+            temp_dir.path().to_str().unwrap()
+        );
+
+        let mut temp_rules = NamedTempFile::new()?;
+        writeln!(temp_rules, "{}", rules_content)?;
+        temp_rules.flush()?;
+
+        let args = vec![
+            "agenix".to_string(),
+            "--generate".to_string(),
+            "--rules".to_string(),
+            temp_rules.path().to_str().unwrap().to_string(),
+        ];
+
+        let result = crate::run(args);
+        assert!(
+            result.is_ok(),
+            "Should handle multiple independent chains: {:?}",
+            result.err()
+        );
+
+        // All files should be created
+        assert!(temp_dir.path().join("a.age").exists());
+        assert!(temp_dir.path().join("b.age").exists());
+        assert!(temp_dir.path().join("x.age").exists());
+        assert!(temp_dir.path().join("y.age").exists());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_mixed_explicit_and_auto_dependencies() -> Result<()> {
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+
+        let temp_dir = tempdir()?;
+
+        // Mix of explicit dependencies and auto-detected ones
+        let rules_content = format!(
+            r#"
+{{
+  "{}/key1.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {{ }}: {{ secret = "key1"; public = "pub1"; }};
+  }};
+  "{}/key2.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {{ }}: {{ secret = "key2"; public = "pub2"; }};
+  }};
+  "{}/auto-detected.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {{ publics }}: publics."key1";
+  }};
+  "{}/explicit.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    dependencies = [ "key2" ];
+    generator = {{ publics }}: publics."key2";
+  }};
+}}
+"#,
+            temp_dir.path().to_str().unwrap(),
+            temp_dir.path().to_str().unwrap(),
+            temp_dir.path().to_str().unwrap(),
+            temp_dir.path().to_str().unwrap()
+        );
+
+        let mut temp_rules = NamedTempFile::new()?;
+        writeln!(temp_rules, "{}", rules_content)?;
+        temp_rules.flush()?;
+
+        let args = vec![
+            "agenix".to_string(),
+            "--generate".to_string(),
+            "--rules".to_string(),
+            temp_rules.path().to_str().unwrap().to_string(),
+        ];
+
+        let result = crate::run(args);
+        assert!(
+            result.is_ok(),
+            "Should handle mixed explicit and auto dependencies: {:?}",
+            result.err()
+        );
+
+        assert!(temp_dir.path().join("key1.age").exists());
+        assert!(temp_dir.path().join("key2.age").exists());
+        assert!(temp_dir.path().join("auto-detected.age").exists());
+        assert!(temp_dir.path().join("explicit.age").exists());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_dependency_on_both_secret_and_public() -> Result<()> {
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+
+        let temp_dir = tempdir()?;
+
+        // One secret depends on both the secret and public parts of another
+        let rules_content = format!(
+            r#"
+{{
+  "{}/source.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {{ }}: {{ secret = "source-secret"; public = "source-public"; }};
+  }};
+  "{}/combined.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {{ secrets, publics }}: secrets."source" + ":" + publics."source";
+  }};
+}}
+"#,
+            temp_dir.path().to_str().unwrap(),
+            temp_dir.path().to_str().unwrap()
+        );
+
+        let mut temp_rules = NamedTempFile::new()?;
+        writeln!(temp_rules, "{}", rules_content)?;
+        temp_rules.flush()?;
+
+        let args = vec![
+            "agenix".to_string(),
+            "--generate".to_string(),
+            "--rules".to_string(),
+            temp_rules.path().to_str().unwrap().to_string(),
+        ];
+
+        let result = crate::run(args);
+        assert!(
+            result.is_ok(),
+            "Should handle dependency on both secret and public: {:?}",
+            result.err()
+        );
+
+        assert!(temp_dir.path().join("source.age").exists());
+        assert!(temp_dir.path().join("combined.age").exists());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_long_chain_dependency() -> Result<()> {
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+
+        let temp_dir = tempdir()?;
+
+        // Long chain: step1 -> step2 -> step3 -> step4 -> step5
+        let rules_content = format!(
+            r#"
+{{
+  "{}/step1.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {{ }}: {{ secret = "step1"; public = "pub1"; }};
+  }};
+  "{}/step2.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {{ publics }}: {{ secret = "step2-" + publics."step1"; public = "pub2"; }};
+  }};
+  "{}/step3.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {{ publics }}: {{ secret = "step3-" + publics."step2"; public = "pub3"; }};
+  }};
+  "{}/step4.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {{ publics }}: {{ secret = "step4-" + publics."step3"; public = "pub4"; }};
+  }};
+  "{}/step5.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {{ publics }}: "step5-" + publics."step4";
+  }};
+}}
+"#,
+            temp_dir.path().to_str().unwrap(),
+            temp_dir.path().to_str().unwrap(),
+            temp_dir.path().to_str().unwrap(),
+            temp_dir.path().to_str().unwrap(),
+            temp_dir.path().to_str().unwrap()
+        );
+
+        let mut temp_rules = NamedTempFile::new()?;
+        writeln!(temp_rules, "{}", rules_content)?;
+        temp_rules.flush()?;
+
+        let args = vec![
+            "agenix".to_string(),
+            "--generate".to_string(),
+            "--rules".to_string(),
+            temp_rules.path().to_str().unwrap().to_string(),
+        ];
+
+        let result = crate::run(args);
+        assert!(
+            result.is_ok(),
+            "Should handle long dependency chain: {:?}",
+            result.err()
+        );
+
+        // All five files should be created
+        for i in 1..=5 {
+            assert!(
+                temp_dir.path().join(format!("step{}.age", i)).exists(),
+                "step{}.age should be created",
+                i
+            );
+        }
 
         Ok(())
     }
