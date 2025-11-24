@@ -118,9 +118,21 @@ pub fn generate_secret(rules_path: &str, file: &str) -> Result<Option<String>> {
 /// - Files ending with "ed25519", "ssh", or "ssh_key" use builtins.sshKey (SSH Ed25519 keypair)
 /// - Files ending with "x25519" use builtins.ageKey (age x25519 keypair)
 /// - Files ending with "password" or "passphrase" use builtins.randomString 32
+///
+/// The `secrets_arg` parameter is a Nix expression that will be passed as the argument to the generator.
+/// This allows generators to access other secrets' contents.
 pub fn generate_secret_with_public(
     rules_path: &str,
     file: &str,
+) -> Result<Option<GeneratorOutput>> {
+    generate_secret_with_public_and_context(rules_path, file, "{}")
+}
+
+/// Internal function that accepts a custom context for the generator
+pub(crate) fn generate_secret_with_public_and_context(
+    rules_path: &str,
+    file: &str,
+    secrets_arg: &str,
 ) -> Result<Option<GeneratorOutput>> {
     // Build Nix expression that checks for explicit generator or uses automatic selection
     let nix_expr = format!(
@@ -136,9 +148,10 @@ pub fn generate_secret_with_public(
             else if hasSuffix "password" || hasSuffix "passphrase"
             then (_: builtins.randomString 32)
             else null;
+          secretsContext = {secrets_arg};
           result = if builtins.hasAttr "generator" rules."{file}"
-                   then rules."{file}".generator {{}}
-                   else if auto != null then auto {{}} else null;
+                   then rules."{file}".generator secretsContext
+                   else if auto != null then auto secretsContext else null;
         in builtins.deepSeq result result)"#,
     );
 
@@ -194,6 +207,26 @@ pub fn get_all_files(rules_path: &str) -> Result<Vec<String>> {
     let keys = value_to_string_array(output)?;
 
     Ok(keys)
+}
+
+/// Get the dependencies of a secret (other secrets referenced in its generator)
+/// Returns the list of secret names that this secret depends on
+pub fn get_secret_dependencies(rules_path: &str, file: &str) -> Result<Vec<String>> {
+    // Try to evaluate the generator to see what dependencies it has
+    // This checks if the generator function accepts a parameter with specific attributes
+    let nix_expr = format!(
+        r#"(let 
+          rules = import {rules_path};
+          hasGenerator = builtins.hasAttr "generator" rules."{file}";
+          hasDeps = hasGenerator && (builtins.hasAttr "dependencies" rules."{file}");
+          deps = if hasDeps then rules."{file}".dependencies else [];
+        in builtins.deepSeq deps deps)"#,
+    );
+
+    let current_dir = current_dir()?;
+    let output = eval_nix_expression(nix_expr.as_str(), &current_dir)?;
+
+    value_to_string_array(output)
 }
 
 #[cfg(test)]
@@ -1948,6 +1981,67 @@ mod tests {
         );
         assert_eq!(result[1], ssh_public_key);
 
+        Ok(())
+    }
+
+    // Tests for secret dependencies
+    #[test]
+    fn test_get_secret_dependencies_no_dependencies() -> Result<()> {
+        let rules_content = r#"
+        {
+          "secret1.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+            generator = { }: "simple-secret";
+          };
+        }
+        "#;
+        let temp_file = create_test_rules_file(rules_content)?;
+
+        let result = get_secret_dependencies(temp_file.path().to_str().unwrap(), "secret1.age")?;
+
+        assert_eq!(result.len(), 0);
+        Ok(())
+    }
+
+    #[test]
+    fn test_get_secret_dependencies_with_dependencies() -> Result<()> {
+        let rules_content = r#"
+        {
+          "base-secret.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+            generator = { }: "base";
+          };
+          "derived-secret.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+            dependencies = [ "base-secret" ];
+            generator = { secrets }: "derived-from-${secrets.base-secret.secret}";
+          };
+        }
+        "#;
+        let temp_file = create_test_rules_file(rules_content)?;
+
+        let result =
+            get_secret_dependencies(temp_file.path().to_str().unwrap(), "derived-secret.age")?;
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0], "base-secret");
+        Ok(())
+    }
+
+    #[test]
+    fn test_get_secret_dependencies_no_generator() -> Result<()> {
+        let rules_content = r#"
+        {
+          "secret1.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+          };
+        }
+        "#;
+        let temp_file = create_test_rules_file(rules_content)?;
+
+        let result = get_secret_dependencies(temp_file.path().to_str().unwrap(), "secret1.age")?;
+
+        assert_eq!(result.len(), 0);
         Ok(())
     }
 }
