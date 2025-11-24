@@ -14,6 +14,7 @@ use std::env;
 pub struct Args {
     /// Path to Nix rules file (can also be set via RULES env var)
     #[arg(
+        short = 'r',
         long,
         env = "RULES",
         value_name = "FILE",
@@ -32,45 +33,43 @@ pub struct Args {
 
 #[derive(Subcommand, Debug)]
 pub enum Command {
-    /// Edit FILE using $EDITOR
+    /// Edit a secret file using $EDITOR
     #[command(visible_alias = "e")]
     Edit {
-        /// The file to edit
+        /// The secret file to edit
         #[arg(value_name = "FILE", allow_hyphen_values = true)]
         file: String,
 
-        /// Identity to use when decrypting
-        #[arg(short, long, value_name = "PRIVATE_KEY")]
+        /// Identity (private key) to use when decrypting
+        #[arg(short, long, value_name = "KEY")]
         identity: Option<String>,
 
-        /// Editor to use when editing secrets.
-        ///
-        /// This setting is only used when stdin is a terminal, otherwise we always read from stdin.
-        #[arg(long, env = "EDITOR", value_name = "EDITOR", default_value_t = String::from("vi"))]
+        /// Editor command to use (defaults to $EDITOR or vi)
+        #[arg(short = 'e', long, env = "EDITOR", value_name = "COMMAND", default_value_t = String::from("vi"))]
         editor: String,
     },
 
-    /// Decrypt FILE to STDOUT (or to --output)
+    /// Decrypt a secret file to stdout or a file
     #[command(visible_alias = "d")]
     Decrypt {
-        /// The file to decrypt
+        /// The secret file to decrypt
         #[arg(value_name = "FILE", allow_hyphen_values = true)]
         file: String,
 
-        /// Identity to use when decrypting
-        #[arg(short, long, value_name = "PRIVATE_KEY")]
+        /// Identity (private key) to use when decrypting
+        #[arg(short, long, value_name = "KEY")]
         identity: Option<String>,
 
-        /// Write decrypt output to FILE instead of STDOUT
+        /// Output file (defaults to stdout)
         #[arg(short, long, value_name = "FILE")]
         output: Option<String>,
     },
 
-    /// Re-encrypts all secrets with specified recipients
+    /// Re-encrypt all secrets with updated recipients
     #[command(visible_alias = "r")]
     Rekey {
-        /// Identity to use when decrypting
-        #[arg(short, long, value_name = "PRIVATE_KEY")]
+        /// Identity (private key) to use when decrypting
+        #[arg(short, long, value_name = "KEY")]
         identity: Option<String>,
     },
 
@@ -303,5 +302,106 @@ mod tests {
             Args::try_parse_from(["agenix", "--rules", "/custom/rules.nix", "generate"]).unwrap();
         assert_eq!(args.rules, "/custom/rules.nix");
         assert!(matches!(args.command, Some(Command::Generate)));
+    }
+
+    #[test]
+    fn test_global_rules_short_flag() {
+        let args = Args::try_parse_from(["agenix", "-r", "/custom/rules.nix", "generate"]).unwrap();
+        assert_eq!(args.rules, "/custom/rules.nix");
+        assert!(matches!(args.command, Some(Command::Generate)));
+    }
+
+    #[test]
+    fn test_edit_editor_short_flag() {
+        let args = Args::try_parse_from(["agenix", "edit", "-e", "nano", "test.age"]).unwrap();
+        if let Some(Command::Edit { editor, .. }) = args.command {
+            assert_eq!(editor, "nano");
+        } else {
+            panic!("Expected Edit command");
+        }
+    }
+
+    // Tests to ensure old flag-based interface no longer works
+    // These verify that the migration to subcommands is complete
+
+    #[test]
+    fn test_old_edit_flag_rejected() {
+        // Old: agenix -e file.age
+        // New: agenix edit file.age
+        let result = Args::try_parse_from(["agenix", "-e", "test.age"]);
+        assert!(result.is_err(), "Old -e flag should be rejected");
+    }
+
+    #[test]
+    fn test_old_edit_long_flag_rejected() {
+        // Old: agenix --edit file.age
+        let result = Args::try_parse_from(["agenix", "--edit", "test.age"]);
+        assert!(result.is_err(), "Old --edit flag should be rejected");
+    }
+
+    #[test]
+    fn test_old_decrypt_flag_rejected() {
+        // Old: agenix -d file.age
+        // New: agenix decrypt file.age
+        let result = Args::try_parse_from(["agenix", "-d", "test.age"]);
+        assert!(result.is_err(), "Old -d flag should be rejected");
+    }
+
+    #[test]
+    fn test_old_decrypt_long_flag_rejected() {
+        // Old: agenix --decrypt file.age
+        let result = Args::try_parse_from(["agenix", "--decrypt", "test.age"]);
+        assert!(result.is_err(), "Old --decrypt flag should be rejected");
+    }
+
+    #[test]
+    fn test_rules_short_flag_requires_value() {
+        // -r is now for --rules and requires a value
+        let result = Args::try_parse_from(["agenix", "-r"]);
+        assert!(result.is_err(), "-r requires a value");
+    }
+
+    #[test]
+    fn test_old_rekey_long_flag_rejected() {
+        // Old: agenix --rekey
+        let result = Args::try_parse_from(["agenix", "--rekey"]);
+        assert!(result.is_err(), "Old --rekey flag should be rejected");
+    }
+
+    #[test]
+    fn test_old_generate_flag_rejected() {
+        // Old: agenix -g
+        // New: agenix generate
+        let result = Args::try_parse_from(["agenix", "-g"]);
+        assert!(result.is_err(), "Old -g flag should be rejected");
+    }
+
+    #[test]
+    fn test_old_generate_long_flag_rejected() {
+        // Old: agenix --generate
+        let result = Args::try_parse_from(["agenix", "--generate"]);
+        assert!(result.is_err(), "Old --generate flag should be rejected");
+    }
+
+    #[test]
+    fn test_old_identity_flag_at_root_rejected() {
+        // Old: agenix -i key -e file.age (identity at root level)
+        // New: agenix edit -i key file.age (identity in subcommand)
+        let result = Args::try_parse_from(["agenix", "-i", "/path/to/key", "edit", "test.age"]);
+        assert!(
+            result.is_err(),
+            "Old -i flag at root level should be rejected"
+        );
+    }
+
+    #[test]
+    fn test_old_output_flag_at_root_rejected() {
+        // Old: agenix -o output -d file.age (output at root level)
+        // New: agenix decrypt -o output file.age (output in subcommand)
+        let result = Args::try_parse_from(["agenix", "-o", "output.txt", "decrypt", "test.age"]);
+        assert!(
+            result.is_err(),
+            "Old -o flag at root level should be rejected"
+        );
     }
 }
