@@ -50,6 +50,25 @@ fn strip_age_suffix(name: &str) -> &str {
     name.strip_suffix(".age").unwrap_or(name)
 }
 
+/// Normalize a secret name: extract basename and strip .age suffix
+fn normalize_secret_name(name: &str) -> String {
+    let basename = secret_basename(name);
+    strip_age_suffix(&basename).to_string()
+}
+
+/// Resolve a dependency name to its full file path from the files list
+/// Maps simple names like "level2" to full paths like "/tmp/test/level2.age"
+fn resolve_dependency_path<'a>(dep: &'a str, files: &'a [String]) -> &'a str {
+    files
+        .iter()
+        .find(|f| {
+            let f_normalized = normalize_secret_name(f);
+            let dep_normalized = strip_age_suffix(dep);
+            f_normalized == dep_normalized
+        })
+        .map(|s| s.as_str())
+        .unwrap_or(dep)
+}
 
 /// Edit a file with encryption/decryption
 pub fn edit_file(
@@ -166,6 +185,13 @@ pub fn rekey_all_files(rules_path: &str, identity: Option<&str>) -> Result<()> {
 ///
 /// This function now supports dependencies - generators can reference
 /// other secrets' public keys via the `dependencies` attribute.
+///
+/// TODO: Refactoring opportunity - This function is very long (300+ lines).
+/// Consider extracting:
+/// - `build_dependency_context()` for lines building secrets_arg
+/// - `check_dependencies_satisfied()` for dependency validation logic
+/// - Using a state struct instead of multiple HashMaps
+/// This would improve maintainability without changing functionality.
 pub fn generate_secrets(rules_path: &str) -> Result<()> {
     use std::collections::{HashMap, HashSet};
 
@@ -263,25 +289,7 @@ pub fn generate_secrets(rules_path: &str) -> Result<()> {
 
             for dep in &deps {
                 // Map dependency name to full file path
-                // Dependencies may be simple names like "manual", but files may be full paths
-                let dep_file = files
-                    .iter()
-                    .find(|f| {
-                        let f_basename = secret_basename(f);
-                        let f_base_no_age = if f_basename.ends_with(".age") {
-                            &f_basename[..f_basename.len() - 4]
-                        } else {
-                            &f_basename
-                        };
-                        let dep_no_age = if dep.ends_with(".age") {
-                            &dep[..dep.len() - 4]
-                        } else {
-                            dep.as_str()
-                        };
-                        f_base_no_age == dep_no_age
-                    })
-                    .map(|s| s.as_str())
-                    .unwrap_or(dep.as_str()); // Fallback to dep if not found
+                let dep_file = resolve_dependency_path(dep, &files);
 
                 // Normalize the dependency name
                 let dep_normalized = if dep_file.ends_with(".age") {
@@ -341,36 +349,10 @@ pub fn generate_secrets(rules_path: &str) -> Result<()> {
 
             for dep in &deps {
                 // Map dependency name to full file path
-                // Dependencies may be simple names like "level2", but files may be full paths
-                let dep_file = files
-                    .iter()
-                    .find(|f| {
-                        let f_basename = secret_basename(f);
-                        let f_base_no_age = if f_basename.ends_with(".age") {
-                            &f_basename[..f_basename.len() - 4]
-                        } else {
-                            &f_basename
-                        };
-                        let dep_no_age = if dep.ends_with(".age") {
-                            &dep[..dep.len() - 4]
-                        } else {
-                            dep.as_str()
-                        };
-                        f_base_no_age == dep_no_age
-                    })
-                    .unwrap_or(dep); // Fallback to dep if not found
+                let dep_file = resolve_dependency_path(dep, &files);
 
                 // Extract basename for use as key in context
-                // Generators reference secrets by simple name, not full path
-                let dep_key = {
-                    let basename = secret_basename(dep_file);
-                    // Remove .age suffix if present
-                    if basename.ends_with(".age") {
-                        basename[..basename.len() - 4].to_string()
-                    } else {
-                        basename
-                    }
-                };
+                let dep_key = normalize_secret_name(dep_file);
 
                 // Add public content
                 if let Some(public_content) =
