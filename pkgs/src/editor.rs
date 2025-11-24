@@ -12,7 +12,10 @@ use std::process::Command;
 use tempfile::TempDir;
 
 use crate::crypto::{decrypt_to_file, decrypt_to_string, encrypt_from_file, files_equal};
-use crate::nix::{generate_secret_with_public, generate_secret_with_public_context, get_all_files, get_public_keys, should_armor};
+use crate::nix::{
+    generate_secret_with_public, generate_secret_with_public_context, get_all_files,
+    get_public_keys, should_armor,
+};
 
 /// Edit a file with encryption/decryption
 pub fn edit_file(
@@ -131,7 +134,7 @@ pub fn generate_secrets(rules_path: &str) -> Result<()> {
     let mut generated_secrets: HashMap<String, String> = HashMap::new();
     let mut generated_publics: HashMap<String, String> = HashMap::new();
     let mut remaining_files: HashSet<String> = files.iter().cloned().collect();
-    
+
     // First, try to load any existing encrypted files that we can decrypt
     for file in &files {
         if Path::new(file).exists() {
@@ -139,7 +142,7 @@ pub fn generate_secrets(rules_path: &str) -> Result<()> {
             if let Ok(content) = decrypt_to_string(file, None) {
                 generated_secrets.insert(file.clone(), content);
             }
-            
+
             // Also load the public file if it exists
             let pub_file = format!("{}.pub", file);
             if Path::new(&pub_file).exists() {
@@ -149,19 +152,19 @@ pub fn generate_secrets(rules_path: &str) -> Result<()> {
             }
         }
     }
-    
+
     // Keep trying to generate secrets until we can't make progress
     let mut made_progress = true;
     let mut iteration = 0;
     const MAX_ITERATIONS: usize = 100; // Prevent infinite loops
-    
+
     while made_progress && !remaining_files.is_empty() && iteration < MAX_ITERATIONS {
         made_progress = false;
         iteration += 1;
-        
+
         // Try to generate each remaining file
         let current_files: Vec<String> = remaining_files.iter().cloned().collect();
-        
+
         for file in current_files {
             // Skip if the file already exists
             if Path::new(&file).exists() {
@@ -175,10 +178,11 @@ pub fn generate_secrets(rules_path: &str) -> Result<()> {
 
             // Build context with currently available secrets and publics
             let context_expr = build_context_expr(&generated_secrets, &generated_publics);
-            
+
             // Check if there's a generator for this file and try to generate with current context
-            let generation_result = generate_secret_with_public_context(rules_path, &file, &context_expr);
-            
+            let generation_result =
+                generate_secret_with_public_context(rules_path, &file, &context_expr);
+
             match generation_result {
                 Ok(Some(generator_output)) => {
                     eprintln!("Generating {file}...");
@@ -194,7 +198,8 @@ pub fn generate_secrets(rules_path: &str) -> Result<()> {
                     }
 
                     // Create temporary file with the generated secret content
-                    let temp_dir = TempDir::new().context("Failed to create temporary directory")?;
+                    let temp_dir =
+                        TempDir::new().context("Failed to create temporary directory")?;
                     let temp_file = temp_dir.path().join("generated_secret");
                     fs::write(&temp_file, &generator_output.secret)
                         .context("Failed to write generated content to temporary file")?;
@@ -216,7 +221,7 @@ pub fn generate_secrets(rules_path: &str) -> Result<()> {
                         eprintln!("Generated public file {pub_file}");
                         generated_publics.insert(file.clone(), public_content.clone());
                     }
-                    
+
                     remaining_files.remove(&file);
                     made_progress = true;
                 }
@@ -228,7 +233,10 @@ pub fn generate_secrets(rules_path: &str) -> Result<()> {
                 Err(e) => {
                     let error_msg = e.to_string();
                     // Check if this is a missing dependency error
-                    if error_msg.contains("secrets.") || error_msg.contains("publics.") || error_msg.contains("attribute") {
+                    if error_msg.contains("secrets.")
+                        || error_msg.contains("publics.")
+                        || error_msg.contains("attribute")
+                    {
                         // This secret depends on something not yet generated, skip for now
                         continue;
                     } else {
@@ -241,16 +249,17 @@ pub fn generate_secrets(rules_path: &str) -> Result<()> {
             }
         }
     }
-    
+
     // Check if there are any ungenerated secrets left
     if !remaining_files.is_empty() {
         let files_list: Vec<String> = remaining_files.iter().cloned().collect();
         let files_str = files_list.join(", ");
-        
+
         if iteration >= MAX_ITERATIONS {
             return Err(anyhow!(
                 "Could not generate all secrets after {} iterations. The following secrets have circular dependencies or unresolvable references: {}",
-                MAX_ITERATIONS, files_str
+                MAX_ITERATIONS,
+                files_str
             ));
         } else {
             return Err(anyhow!(
@@ -264,22 +273,25 @@ pub fn generate_secrets(rules_path: &str) -> Result<()> {
 }
 
 /// Build a Nix expression representing the context with available secrets and publics
-fn build_context_expr(secrets: &HashMap<String, String>, publics: &HashMap<String, String>) -> String {
+fn build_context_expr(
+    secrets: &HashMap<String, String>,
+    publics: &HashMap<String, String>,
+) -> String {
     let mut expr = String::from("{ secrets = {");
-    
+
     for (name, content) in secrets {
         // Escape the content for Nix string literal
         let escaped = escape_nix_string(content);
         expr.push_str(&format!(" \"{}\" = \"{}\";", name, escaped));
     }
-    
+
     expr.push_str(" }; publics = {");
-    
+
     for (name, content) in publics {
         let escaped = escape_nix_string(content);
         expr.push_str(&format!(" \"{}\" = \"{}\";", name, escaped));
     }
-    
+
     expr.push_str(" }; }");
     expr
 }

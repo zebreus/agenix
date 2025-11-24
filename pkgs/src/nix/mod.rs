@@ -151,10 +151,10 @@ pub fn generate_secret_with_public_context(
     );
 
     let current_dir = current_dir()?;
-    
+
     // Try with context first
     let output_result = eval_nix_expression(nix_expr_with_context.as_str(), &current_dir);
-    
+
     let output = match output_result {
         Ok(val) => val,
         Err(e) => {

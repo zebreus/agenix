@@ -77,10 +77,7 @@ pub fn decrypt_to_file<P: AsRef<Path>>(
 }
 
 /// Decrypt a file to a string
-pub fn decrypt_to_string(
-    input_file: &str,
-    identity: Option<&str>,
-) -> Result<String> {
+pub fn decrypt_to_string(input_file: &str, identity: Option<&str>) -> Result<String> {
     // Read ciphertext
     let mut ciphertext = vec![];
     fs::File::open(input_file)
