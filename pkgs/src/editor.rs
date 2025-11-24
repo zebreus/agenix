@@ -11,7 +11,10 @@ use std::process::Command;
 use tempfile::TempDir;
 
 use crate::crypto::{decrypt_to_file, encrypt_from_file, files_equal};
-use crate::nix::{generate_secret_with_public, get_all_files, get_public_keys, should_armor};
+use crate::nix::{
+    GeneratorOutput, generate_secret_with_public, generate_secret_with_public_and_context,
+    get_all_files, get_public_keys, get_secret_dependencies, should_armor,
+};
 
 /// Edit a file with encryption/decryption
 pub fn edit_file(
@@ -125,50 +128,273 @@ pub fn rekey_all_files(rules_path: &str, identity: Option<&str>) -> Result<()> {
 /// Only generates secrets if:
 /// 1. The file has a generator function defined
 /// 2. The secret file doesn't already exist
+///
+/// This function now supports dependencies - generators can reference
+/// other secrets' public keys via the `dependencies` attribute.
 pub fn generate_secrets(rules_path: &str) -> Result<()> {
-    let files = get_all_files(rules_path)?;
+    use std::collections::{HashMap, HashSet};
 
-    for file in files {
-        // Skip if the file already exists
-        if Path::new(&file).exists() {
-            if let Ok(Some(_)) = generate_secret_with_public(rules_path, &file) {
-                eprintln!("Skipping {file}: already exists");
+    let files = get_all_files(rules_path)?;
+    let rules_dir = Path::new(rules_path)
+        .parent()
+        .unwrap_or_else(|| Path::new("."));
+
+    // Track which secrets have been generated
+    let mut generated_secrets: HashMap<String, GeneratorOutput> = HashMap::new();
+    let mut processed: HashSet<String> = HashSet::new();
+
+    // Helper function to get public content
+    fn get_public_content(
+        file: &str,
+        rules_dir: &Path,
+        generated: &HashMap<String, GeneratorOutput>,
+    ) -> Result<Option<String>> {
+        let secret_name = if file.ends_with(".age") {
+            &file[..file.len() - 4]
+        } else {
+            file
+        };
+
+        let normalized_name = format!("{}.age", secret_name);
+
+        // Check if we just generated it - search by basename
+        let basename = Path::new(&normalized_name)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or(&normalized_name);
+
+        for (key, output) in generated.iter() {
+            let key_basename = Path::new(key)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or(key);
+
+            if key_basename == basename {
+                if let Some(ref public) = output.public {
+                    return Ok(Some(public.clone()));
+                }
             }
-            continue;
         }
 
-        // Check if there's a generator for this file
-        if let Some(generator_output) = generate_secret_with_public(rules_path, &file)? {
-            eprintln!("Generating {file}...");
+        // Check for .pub file
+        let pub_file_paths = [
+            rules_dir.join(format!("{}.age.pub", secret_name)),
+            rules_dir.join(format!("{}.pub", secret_name)),
+        ];
 
-            let public_keys = get_public_keys(rules_path, &file)?;
-            let armor = should_armor(rules_path, &file)?;
+        for pub_file_path in &pub_file_paths {
+            if pub_file_path.exists() {
+                let content = fs::read_to_string(pub_file_path).with_context(|| {
+                    format!("Failed to read public file: {}", pub_file_path.display())
+                })?;
+                return Ok(Some(content.trim().to_string()));
+            }
+        }
 
-            if public_keys.is_empty() {
-                eprintln!("Warning: No public keys found for {file}, skipping");
+        Ok(None)
+    }
+
+    // Process secrets, handling dependencies
+    let mut to_process: Vec<String> = files.clone();
+    let mut iteration = 0;
+    let max_iterations = files.len() * 2; // Prevent infinite loops
+
+    while !to_process.is_empty() && iteration < max_iterations {
+        iteration += 1;
+        let mut progress_made = false;
+        let mut deferred = Vec::new();
+
+        for file in to_process.drain(..) {
+            // Skip if already processed
+            if processed.contains(&file) {
                 continue;
             }
 
-            // Create temporary file with the generated secret content
-            let temp_dir = TempDir::new().context("Failed to create temporary directory")?;
-            let temp_file = temp_dir.path().join("generated_secret");
-            fs::write(&temp_file, &generator_output.secret)
-                .context("Failed to write generated content to temporary file")?;
+            // Skip if the file already exists
+            if Path::new(&file).exists() {
+                if let Ok(Some(_)) = generate_secret_with_public(rules_path, &file) {
+                    eprintln!("Skipping {file}: already exists");
+                }
+                processed.insert(file.clone());
+                continue;
+            }
 
-            // Encrypt the generated secret content
-            encrypt_from_file(&temp_file.to_string_lossy(), &file, &public_keys, armor)
-                .with_context(|| format!("Failed to encrypt generated secret {file}"))?;
+            // Get dependencies
+            let deps = get_secret_dependencies(rules_path, &file).unwrap_or_default();
 
-            eprintln!("Generated and encrypted {file}");
+            // Check if all dependencies are satisfied (public keys available)
+            let mut all_deps_satisfied = true;
+            let mut missing_deps = Vec::new();
 
-            // If there's public content, write it to a .pub file
-            if let Some(public_content) = &generator_output.public {
-                let pub_file = format!("{}.pub", file);
-                fs::write(&pub_file, public_content)
-                    .with_context(|| format!("Failed to write public file {pub_file}"))?;
-                eprintln!("Generated public file {pub_file}");
+            for dep in &deps {
+                if get_public_content(dep, rules_dir, &generated_secrets)?.is_none() {
+                    // Check if this dependency will be generated
+                    let dep_normalized = if dep.ends_with(".age") {
+                        dep.clone()
+                    } else {
+                        format!("{}.age", dep)
+                    };
+
+                    // Check if the dependency will be generated (exists in files list)
+                    let will_be_generated = files.iter().any(|f| {
+                        let f_basename = Path::new(f)
+                            .file_name()
+                            .and_then(|n| n.to_str())
+                            .unwrap_or(f);
+                        let dep_basename = Path::new(&dep_normalized)
+                            .file_name()
+                            .and_then(|n| n.to_str())
+                            .unwrap_or(&dep_normalized);
+                        f_basename == dep_basename
+                    });
+
+                    // Check if dependency file exists
+                    let dep_file_path = rules_dir.join(&dep_normalized);
+                    let exists = dep_file_path.exists();
+
+                    if !will_be_generated && !exists {
+                        all_deps_satisfied = false;
+                        missing_deps.push(dep.clone());
+                    } else if will_be_generated && !processed.contains(&dep_normalized) {
+                        // Also need to check if any file in processed matches by basename
+                        let is_processed = processed.iter().any(|p| {
+                            let p_basename = Path::new(p)
+                                .file_name()
+                                .and_then(|n| n.to_str())
+                                .unwrap_or(p);
+                            let dep_basename = Path::new(&dep_normalized)
+                                .file_name()
+                                .and_then(|n| n.to_str())
+                                .unwrap_or(&dep_normalized);
+                            p_basename == dep_basename
+                        });
+
+                        if !is_processed {
+                            // Dependency will be generated but hasn't been yet
+                            all_deps_satisfied = false;
+                        }
+                    }
+                }
+            }
+
+            if !all_deps_satisfied && !missing_deps.is_empty() {
+                return Err(anyhow::anyhow!(
+                    "Secret '{}' depends on '{}' which cannot be found or generated",
+                    file,
+                    missing_deps.join("', '")
+                ));
+            }
+
+            if !all_deps_satisfied {
+                // Defer this secret for later
+                deferred.push(file);
+                continue;
+            }
+
+            // Build the public context for the generator
+            let mut publics_context_parts = Vec::new();
+
+            for dep in &deps {
+                if let Some(public_content) =
+                    get_public_content(dep, rules_dir, &generated_secrets)?
+                {
+                    let escaped_public = public_content
+                        .replace('\\', "\\\\")
+                        .replace('"', "\\\"")
+                        .replace('\n', "\\n");
+                    publics_context_parts.push(format!(
+                        r#""{}" = {{ public = "{}"; }};"#,
+                        dep, escaped_public
+                    ));
+                }
+            }
+
+            let secrets_arg = if !publics_context_parts.is_empty() {
+                format!("{{ secrets = {{ {} }}; }}", publics_context_parts.join(" "))
+            } else {
+                "{}".to_string()
+            };
+
+            // Generate with dependencies context
+            let generator_output = if !deps.is_empty() {
+                generate_secret_with_public_and_context(rules_path, &file, &secrets_arg)?
+            } else {
+                generate_secret_with_public(rules_path, &file)?
+            };
+
+            // Check if there's a generator for this file
+            if let Some(generator_output) = generator_output {
+                eprintln!("Generating {file}...");
+
+                let public_keys = get_public_keys(rules_path, &file)?;
+                let armor = should_armor(rules_path, &file)?;
+
+                if public_keys.is_empty() {
+                    eprintln!("Warning: No public keys found for {file}, skipping");
+                    processed.insert(file);
+                    continue;
+                }
+
+                // Create temporary file with the generated secret content
+                let temp_dir = TempDir::new().context("Failed to create temporary directory")?;
+                let temp_file = temp_dir.path().join("generated_secret");
+                fs::write(&temp_file, &generator_output.secret)
+                    .context("Failed to write generated content to temporary file")?;
+
+                // Encrypt the generated secret content
+                encrypt_from_file(&temp_file.to_string_lossy(), &file, &public_keys, armor)
+                    .with_context(|| format!("Failed to encrypt generated secret {file}"))?;
+
+                eprintln!("Generated and encrypted {file}");
+
+                // Store the generated output for dependencies
+                generated_secrets.insert(file.clone(), generator_output.clone());
+
+                // If there's public content, write it to a .pub file
+                if let Some(public_content) = &generator_output.public {
+                    let pub_file = format!("{}.pub", file);
+                    fs::write(&pub_file, public_content)
+                        .with_context(|| format!("Failed to write public file {pub_file}"))?;
+                    eprintln!("Generated public file {pub_file}");
+                }
+
+                processed.insert(file);
+                progress_made = true;
+            } else {
+                // No generator - mark as processed
+                processed.insert(file);
             }
         }
+
+        // If we deferred some secrets, try them again
+        if !deferred.is_empty() {
+            if !progress_made {
+                // No progress made - we have circular dependencies
+                let dep_info: Vec<String> = deferred
+                    .iter()
+                    .map(|f| {
+                        let deps = get_secret_dependencies(rules_path, f).unwrap_or_default();
+                        if deps.is_empty() {
+                            format!("  - {}", f)
+                        } else {
+                            format!("  - {} (depends on: {})", f, deps.join(", "))
+                        }
+                    })
+                    .collect();
+
+                return Err(anyhow::anyhow!(
+                    "Cannot generate secrets due to unresolved dependencies:\n{}",
+                    dep_info.join("\n")
+                ));
+            }
+            to_process = deferred;
+        }
+    }
+
+    if iteration >= max_iterations {
+        return Err(anyhow::anyhow!(
+            "Maximum iterations exceeded while generating secrets. Possible circular dependency detected."
+        ));
     }
 
     Ok(())
@@ -433,6 +659,196 @@ mod tests {
         let result = crate::run(args);
 
         result.unwrap();
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_generate_secrets_with_dependencies() -> Result<()> {
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+
+        // Create a temporary directory for the generated secrets
+        let temp_dir = tempdir()?;
+
+        // Create the rules file with dependencies
+        let rules_content_with_abs_paths = format!(
+            r#"
+{{
+  "{}/ssh-key.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = builtins.sshKey;
+  }};
+  "{}/authorized-keys.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    dependencies = [ "ssh-key" ];
+    generator = {{ secrets }}: "ssh-key-pub: " + secrets."ssh-key".public;
+  }};
+}}
+"#,
+            temp_dir.path().to_str().unwrap(),
+            temp_dir.path().to_str().unwrap()
+        );
+
+        let mut temp_rules = NamedTempFile::new()?;
+        writeln!(temp_rules, "{}", rules_content_with_abs_paths)?;
+        temp_rules.flush()?;
+
+        // Generate the secrets
+        let args = vec![
+            "agenix".to_string(),
+            "--generate".to_string(),
+            "--rules".to_string(),
+            temp_rules.path().to_str().unwrap().to_string(),
+        ];
+
+        let result = crate::run(args);
+        assert!(
+            result.is_ok(),
+            "Generation should succeed: {:?}",
+            result.err()
+        );
+
+        // Check that both files were created
+        let ssh_key_path = temp_dir.path().join("ssh-key.age");
+        let ssh_key_pub_path = temp_dir.path().join("ssh-key.age.pub");
+        let authorized_keys_path = temp_dir.path().join("authorized-keys.age");
+
+        assert!(ssh_key_path.exists(), "ssh-key.age should be created");
+        assert!(
+            ssh_key_pub_path.exists(),
+            "ssh-key.age.pub should be created"
+        );
+        assert!(
+            authorized_keys_path.exists(),
+            "authorized-keys.age should be created"
+        );
+
+        // Verify the public key file exists and is not empty
+        let pub_key_content = fs::read_to_string(&ssh_key_pub_path)?;
+        assert!(
+            !pub_key_content.trim().is_empty(),
+            "Public key should not be empty"
+        );
+        assert!(
+            pub_key_content.starts_with("ssh-ed25519 "),
+            "Public key should be in SSH format"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_generate_secrets_with_missing_dependency() -> Result<()> {
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+
+        // Create a temporary directory
+        let temp_dir = tempdir()?;
+
+        // Create rules with a missing dependency
+        let rules_content = format!(
+            r#"
+{{
+  "{}/dependent-secret.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    dependencies = [ "nonexistent-secret" ];
+    generator = {{ secrets }}: "dependent";
+  }};
+}}
+"#,
+            temp_dir.path().to_str().unwrap()
+        );
+
+        let mut temp_rules = NamedTempFile::new()?;
+        writeln!(temp_rules, "{}", rules_content)?;
+        temp_rules.flush()?;
+
+        // Try to generate - should fail with clear error
+        let args = vec![
+            "agenix".to_string(),
+            "--generate".to_string(),
+            "--rules".to_string(),
+            temp_rules.path().to_str().unwrap().to_string(),
+        ];
+
+        let result = crate::run(args);
+        assert!(
+            result.is_err(),
+            "Generation should fail with missing dependency"
+        );
+
+        // The error chain should include information about the dependency
+        let err = result.unwrap_err();
+        let err_chain: Vec<String> = err.chain().map(|e| e.to_string()).collect();
+        let full_error = err_chain.join(": ");
+
+        assert!(
+            full_error.contains("depends on")
+                || full_error.contains("cannot be found")
+                || full_error.contains("nonexistent"),
+            "Error chain should mention dependency issue: {}",
+            full_error
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_generate_secrets_dependency_order() -> Result<()> {
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+
+        // Create a temporary directory
+        let temp_dir = tempdir()?;
+
+        // Create rules where secrets are listed in reverse dependency order
+        // (dependent comes before dependency in the file)
+        let rules_content = format!(
+            r#"
+{{
+  "{}/derived.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    dependencies = [ "base" ];
+    generator = {{ secrets }}: "derived-from-" + secrets.base.public;
+  }};
+  "{}/base.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {{ }}: {{ secret = "base-secret"; public = "base-public"; }};
+  }};
+}}
+"#,
+            temp_dir.path().to_str().unwrap(),
+            temp_dir.path().to_str().unwrap()
+        );
+
+        let mut temp_rules = NamedTempFile::new()?;
+        writeln!(temp_rules, "{}", rules_content)?;
+        temp_rules.flush()?;
+
+        // Generate secrets - should handle dependency order automatically
+        let args = vec![
+            "agenix".to_string(),
+            "--generate".to_string(),
+            "--rules".to_string(),
+            temp_rules.path().to_str().unwrap().to_string(),
+        ];
+
+        let result = crate::run(args);
+        assert!(
+            result.is_ok(),
+            "Generation should succeed with automatic ordering: {:?}",
+            result.err()
+        );
+
+        // Both files should exist
+        let base_path = temp_dir.path().join("base.age");
+        let base_pub_path = temp_dir.path().join("base.age.pub");
+        let derived_path = temp_dir.path().join("derived.age");
+
+        assert!(base_path.exists(), "base.age should be created");
+        assert!(base_pub_path.exists(), "base.age.pub should be created");
+        assert!(derived_path.exists(), "derived.age should be created");
 
         Ok(())
     }

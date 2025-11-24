@@ -9,15 +9,10 @@ in
       user1
       system1
     ];
-    generator =
-      { }:
-      {
-        secret = "my-deploy-private-key";
-        public = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDeployKeyPublicExample";
-      };
+    generator = builtins.sshKey;
   };
 
-  # Use the deploy key's public key in another secret
+  # Use the deploy key's public key in another secret's publicKeys
   "authorized-keys.age" = {
     publicKeys = [
       user1
@@ -32,5 +27,23 @@ in
       user1
       "deploy-key.age" # Can also reference with .age suffix
     ];
+  };
+
+  # NEW: Use dependencies to reference public content in generators
+  "ssh-config.age" = {
+    publicKeys = [
+      user1
+      system1
+    ];
+    dependencies = [ "deploy-key" ];
+    generator = { secrets }:
+      # Access the deploy key's public key in the generator
+      ''
+        Host myserver
+          HostName myserver.example.com
+          User deploy
+          IdentityFile /etc/ssh/deploy_key
+          # Public key: ${secrets."deploy-key".public}
+      '';
   };
 }
