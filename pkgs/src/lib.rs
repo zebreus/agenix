@@ -20,25 +20,26 @@ where
 {
     let args = cli::Args::parse_from(iter);
 
-    if args.rekey {
-        return editor::rekey_all_files(&args.rules, args.identity.as_deref())
-            .context("Failed to rekey files");
-    }
-    if args.generate {
-        return editor::generate_secrets(&args.rules).context("Failed to generate secrets");
-    }
-    if let Some(file) = &args.decrypt {
-        return editor::decrypt_file(
-            &args.rules,
+    match args.command {
+        Some(cli::Command::Rekey { identity }) => {
+            editor::rekey_all_files(&args.rules, identity.as_deref())
+                .context("Failed to rekey files")
+        }
+        Some(cli::Command::Generate) => {
+            editor::generate_secrets(&args.rules).context("Failed to generate secrets")
+        }
+        Some(cli::Command::Decrypt {
             file,
-            args.output.as_deref(),
-            args.identity.as_deref(),
-        )
-        .with_context(|| format!("Failed to decrypt {file}"));
+            identity,
+            output,
+        }) => editor::decrypt_file(&args.rules, &file, output.as_deref(), identity.as_deref())
+            .with_context(|| format!("Failed to decrypt {file}")),
+        Some(cli::Command::Edit {
+            file,
+            identity,
+            editor,
+        }) => editor::edit_file(&args.rules, &file, &editor, identity.as_deref())
+            .with_context(|| format!("Failed to edit {file}")),
+        None => Ok(()),
     }
-    if let Some(file) = &args.edit {
-        return editor::edit_file(&args.rules, file, &args.editor, args.identity.as_deref())
-            .with_context(|| format!("Failed to edit {file}"));
-    }
-    Ok(())
 }

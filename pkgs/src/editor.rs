@@ -598,7 +598,7 @@ mod tests {
         // Use the CLI interface via the run function
         let args = vec![
             "agenix".to_string(),
-            "--generate".to_string(),
+            "generate".to_string(),
             "--rules".to_string(),
             "./nonexistent_rules.nix".to_string(),
         ];
@@ -644,7 +644,7 @@ mod tests {
         // Use the CLI interface via the run function instead of calling generate_secrets directly
         let args = vec![
             "agenix".to_string(),
-            "--generate".to_string(),
+            "generate".to_string(),
             "--rules".to_string(),
             temp_rules_abs.path().to_str().unwrap().to_string(),
         ];
@@ -741,7 +741,7 @@ mod tests {
         // Use the CLI interface via the run function instead of calling generate_secrets directly
         let args = vec![
             "agenix".to_string(),
-            "--generate".to_string(),
+            "generate".to_string(),
             "--rules".to_string(),
             temp_rules.path().to_str().unwrap().to_string(),
         ];
@@ -790,7 +790,7 @@ mod tests {
         // Instead, we'll test with a regular editor to ensure the path works
         let args = vec![
             "agenix".to_string(),
-            "--edit".to_string(),
+            "edit".to_string(),
             test_file_path.to_str().unwrap().to_string(),
             "--rules".to_string(),
             temp_rules.to_str().unwrap().to_string(),
@@ -843,7 +843,7 @@ mod tests {
         // Generate the secrets
         let args = vec![
             "agenix".to_string(),
-            "--generate".to_string(),
+            "generate".to_string(),
             "--rules".to_string(),
             temp_rules.path().to_str().unwrap().to_string(),
         ];
@@ -913,7 +913,7 @@ mod tests {
         // Try to generate - should fail with clear error
         let args = vec![
             "agenix".to_string(),
-            "--generate".to_string(),
+            "generate".to_string(),
             "--rules".to_string(),
             temp_rules.path().to_str().unwrap().to_string(),
         ];
@@ -975,7 +975,7 @@ mod tests {
         // Generate secrets - should handle dependency order automatically
         let args = vec![
             "agenix".to_string(),
-            "--generate".to_string(),
+            "generate".to_string(),
             "--rules".to_string(),
             temp_rules.path().to_str().unwrap().to_string(),
         ];
@@ -1051,7 +1051,7 @@ mod tests {
         // Generate secrets - should handle all patterns
         let args = vec![
             "agenix".to_string(),
-            "--generate".to_string(),
+            "generate".to_string(),
             "--rules".to_string(),
             temp_rules.path().to_str().unwrap().to_string(),
         ];
@@ -1128,7 +1128,7 @@ mod tests {
 
         let args = vec![
             "agenix".to_string(),
-            "--generate".to_string(),
+            "generate".to_string(),
             "--rules".to_string(),
             temp_rules.path().to_str().unwrap().to_string(),
         ];
@@ -1190,7 +1190,7 @@ mod tests {
 
         let args = vec![
             "agenix".to_string(),
-            "--generate".to_string(),
+            "generate".to_string(),
             "--rules".to_string(),
             temp_rules.path().to_str().unwrap().to_string(),
         ];
@@ -1252,7 +1252,7 @@ mod tests {
 
         let args = vec![
             "agenix".to_string(),
-            "--generate".to_string(),
+            "generate".to_string(),
             "--rules".to_string(),
             temp_rules.path().to_str().unwrap().to_string(),
         ];
@@ -1305,7 +1305,7 @@ mod tests {
 
         let args = vec![
             "agenix".to_string(),
-            "--generate".to_string(),
+            "generate".to_string(),
             "--rules".to_string(),
             temp_rules.path().to_str().unwrap().to_string(),
         ];
@@ -1356,7 +1356,7 @@ mod tests {
 
         let args = vec![
             "agenix".to_string(),
-            "--generate".to_string(),
+            "generate".to_string(),
             "--rules".to_string(),
             temp_rules.path().to_str().unwrap().to_string(),
         ];
@@ -1417,7 +1417,7 @@ mod tests {
 
         let args = vec![
             "agenix".to_string(),
-            "--generate".to_string(),
+            "generate".to_string(),
             "--rules".to_string(),
             temp_rules.path().to_str().unwrap().to_string(),
         ];
@@ -1479,7 +1479,7 @@ mod tests {
 
         let args = vec![
             "agenix".to_string(),
-            "--generate".to_string(),
+            "generate".to_string(),
             "--rules".to_string(),
             temp_rules.path().to_str().unwrap().to_string(),
         ];
@@ -1542,7 +1542,7 @@ mod tests {
 
         let args = vec![
             "agenix".to_string(),
-            "--generate".to_string(),
+            "generate".to_string(),
             "--rules".to_string(),
             temp_rules.path().to_str().unwrap().to_string(),
         ];
@@ -1593,7 +1593,7 @@ mod tests {
 
         let args = vec![
             "agenix".to_string(),
-            "--generate".to_string(),
+            "generate".to_string(),
             "--rules".to_string(),
             temp_rules.path().to_str().unwrap().to_string(),
         ];
@@ -1657,7 +1657,7 @@ mod tests {
 
         let args = vec![
             "agenix".to_string(),
-            "--generate".to_string(),
+            "generate".to_string(),
             "--rules".to_string(),
             temp_rules.path().to_str().unwrap().to_string(),
         ];
@@ -1707,7 +1707,7 @@ mod tests {
 
         let args = vec![
             "agenix".to_string(),
-            "--generate".to_string(),
+            "generate".to_string(),
             "--rules".to_string(),
             temp_rules.path().to_str().unwrap().to_string(),
         ];
@@ -1761,7 +1761,7 @@ mod tests {
 
         let args = vec![
             "agenix".to_string(),
-            "--generate".to_string(),
+            "generate".to_string(),
             "--rules".to_string(),
             temp_rules.path().to_str().unwrap().to_string(),
         ];
@@ -1815,7 +1815,7 @@ mod tests {
 
         let args = vec![
             "agenix".to_string(),
-            "--generate".to_string(),
+            "generate".to_string(),
             "--rules".to_string(),
             temp_rules.path().to_str().unwrap().to_string(),
         ];
@@ -1874,7 +1874,7 @@ mod tests {
 
         let args = vec![
             "agenix".to_string(),
-            "--generate".to_string(),
+            "generate".to_string(),
             "--rules".to_string(),
             temp_rules.path().to_str().unwrap().to_string(),
         ];
@@ -1933,7 +1933,7 @@ mod tests {
 
         let args = vec![
             "agenix".to_string(),
-            "--generate".to_string(),
+            "generate".to_string(),
             "--rules".to_string(),
             temp_rules.path().to_str().unwrap().to_string(),
         ];
@@ -1986,7 +1986,7 @@ mod tests {
 
         let args = vec![
             "agenix".to_string(),
-            "--generate".to_string(),
+            "generate".to_string(),
             "--rules".to_string(),
             temp_rules.path().to_str().unwrap().to_string(),
         ];
@@ -2054,7 +2054,7 @@ mod tests {
 
         let args = vec![
             "agenix".to_string(),
-            "--generate".to_string(),
+            "generate".to_string(),
             "--rules".to_string(),
             temp_rules.path().to_str().unwrap().to_string(),
         ];
@@ -2111,7 +2111,7 @@ mod tests {
 
         let args = vec![
             "agenix".to_string(),
-            "--generate".to_string(),
+            "generate".to_string(),
             "--rules".to_string(),
             temp_rules.path().to_str().unwrap().to_string(),
         ];
@@ -2178,7 +2178,7 @@ mod tests {
 
         let args = vec![
             "agenix".to_string(),
-            "--generate".to_string(),
+            "generate".to_string(),
             "--rules".to_string(),
             temp_rules.path().to_str().unwrap().to_string(),
         ];
