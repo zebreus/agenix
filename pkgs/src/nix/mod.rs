@@ -141,18 +141,25 @@ pub fn generate_secret_with_context(
 
     for (name, output) in generated {
         // Escape the secret and public content for Nix strings
+        // Handle all special characters that could break Nix string parsing
         let secret_escaped = output
             .secret
             .replace("\\", "\\\\")
             .replace("\"", "\\\"")
-            .replace("\n", "\\n");
+            .replace("\n", "\\n")
+            .replace("\r", "\\r")
+            .replace("\t", "\\t")
+            .replace("${", "\\${"); // Prevent string interpolation
         secrets_entries.push(format!("\"{}\" = \"{}\";", name, secret_escaped));
 
         if let Some(public) = &output.public {
             let public_escaped = public
                 .replace("\\", "\\\\")
                 .replace("\"", "\\\"")
-                .replace("\n", "\\n");
+                .replace("\n", "\\n")
+                .replace("\r", "\\r")
+                .replace("\t", "\\t")
+                .replace("${", "\\${");
             publics_entries.push(format!("\"{}\" = \"{}\";", name, public_escaped));
         }
     }
@@ -171,7 +178,7 @@ pub fn generate_secret_with_context(
 
     // Build Nix expression that checks for explicit generator or uses automatic selection
     // Generators receive { secrets = {...}; publics = {...}; } as parameter
-    // Old-style generators with { }: will fail, they need to be updated to { ... }: or { secrets ? {}, publics ? {}, ... }:
+    // Old-style generators with { }: need to be updated to { ... }: to ignore extra parameters
     let nix_expr = format!(
         r#"(let 
           rules = import {rules_path};

@@ -165,6 +165,8 @@ pub fn generate_secrets(rules_path: &str) -> Result<()> {
     };
 
     // Multi-pass generation: keep trying until all secrets are generated or we detect a cycle
+    // MAX_PASSES limits the number of iterations to prevent infinite loops in complex dependency graphs
+    // 100 passes should be more than sufficient for any reasonable dependency structure
     const MAX_PASSES: usize = 100;
     for pass in 0..MAX_PASSES {
         if pending.is_empty() {
