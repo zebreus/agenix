@@ -12,10 +12,10 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
 fi
 
 # First, reset secret1.age to a known state
-echo "rekey-test-content" | agenix -e secret1.age
+echo "rekey-test-content" | agenix edit secret1.age
 
 # Verify it was set correctly
-before_decrypt=$(agenix -d secret1.age)
+before_decrypt=$(agenix decrypt secret1.age)
 if [ "$before_decrypt" != "rekey-test-content" ]; then
   echo "✗ Failed to set up secret1.age: got '$before_decrypt'"
   exit 1
@@ -30,7 +30,7 @@ faketty() {
 }
 
 # Rekey only seems to work properly in a tty, so we use script to fake one
-faketty agenix --rekey
+faketty agenix rekey
 
 # Get hash after rekey
 after_hash=$(sha256sum secret1.age | cut -d' ' -f1)
@@ -42,7 +42,7 @@ else
 fi
 
 # Verify content is preserved after rekey
-after_decrypt=$(agenix -d secret1.age)
+after_decrypt=$(agenix decrypt secret1.age)
 if [ "$after_decrypt" = "rekey-test-content" ]; then
   echo "✓ Content preserved after rekey"
 else

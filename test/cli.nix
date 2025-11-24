@@ -39,6 +39,9 @@ let
     "test_generate_public.sh"
     "test_auto_generate.sh"
     "test_temp_cleanup.sh"
+    "test_multiple_identities.sh"
+    "test_no_system_identities.sh"
+    "test_global_identity.sh"
   ];
 
   # Get all test_*.sh files in the scripts directory
@@ -109,6 +112,7 @@ pkgs.runCommand "agenix-cli-test"
       pkgs.age
       pkgs.diffutils
       pkgs.coreutils
+      pkgs.openssh
     ]
     ++ pkgs.lib.optionals (!pkgs.stdenv.isDarwin) [
       # unixtools.script is needed for the rekey test on non-Darwin systems

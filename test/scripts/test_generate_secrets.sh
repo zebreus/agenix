@@ -26,7 +26,7 @@ cat > "generate-secrets.nix" << 'EOF'
 EOF
 
 # Run generate command with absolute path
-agenix --generate --rules "$TMPDIR/generate-test/generate-secrets.nix"
+agenix generate --rules "$TMPDIR/generate-test/generate-secrets.nix"
 
 # Check that files with generators were created
 if [ -f "fixed-secret.age" ]; then
@@ -53,7 +53,7 @@ fi
 
 # Verify we can decrypt the generated secrets
 # Use TEST_USER_KEY environment variable provided by the test runner
-decrypted_fixed=$(agenix -d fixed-secret.age --rules "$TMPDIR/generate-test/generate-secrets.nix" -i "$TEST_USER_KEY")
+decrypted_fixed=$(agenix decrypt fixed-secret.age --rules "$TMPDIR/generate-test/generate-secrets.nix" -i "$TEST_USER_KEY" --no-system-identities)
 if [ "$decrypted_fixed" = "fixed-password-123" ]; then
   echo "✓ Generated fixed secret decrypts correctly"
 else
