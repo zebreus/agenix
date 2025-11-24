@@ -787,31 +787,91 @@ mod tests {
             false,
         )?;
 
+        // Create a BOGUS identity file directly (not relying on HOME environment variable)
+        let mut bogus_identity_file = NamedTempFile::new()?;
+        writeln!(
+            bogus_identity_file,
+            "this is definitely not a valid identity"
+        )?;
+        bogus_identity_file.flush()?;
+
+        // Try to decrypt using the bogus identity file explicitly
+        // This should fail because the identity file is invalid
+        let result = decrypt_to_file(
+            encrypted_file.path().to_str().unwrap(),
+            &decrypted_file.path(),
+            Some(bogus_identity_file.path().to_str().unwrap()),
+        );
+
+        // The fix ensures this fails properly
+        assert!(result.is_err(), "Should fail with bogus identity file");
+        let err = result.unwrap_err();
+
+        // Check the full error chain for the expected messages
+        let full_error = format!("{:#}", err); // {:#} shows the full error chain
+
+        assert!(
+            full_error.contains("Failed to parse identity file")
+                || full_error.contains("Failed to read identity file")
+                || full_error.contains("non-identity data"),
+            "Error chain should mention identity file parsing failure: {}",
+            full_error
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_bogus_default_identity_from_home() -> Result<()> {
+        // This test verifies that bogus default identities in HOME/.ssh fail properly
+        // This specifically tests the get_default_identities() code path
+
+        // Generate a valid key pair for encryption
+        let secret_key = age::x25519::Identity::generate();
+        let public_key = secret_key.to_public();
+
+        // Create temporary files
+        let mut plaintext_file = NamedTempFile::new()?;
+        let encrypted_file = NamedTempFile::new()?;
+        let decrypted_file = NamedTempFile::new()?;
+
+        // Write test content
+        let test_content = "test-content-home-bogus";
+        plaintext_file.write_all(test_content.as_bytes())?;
+        plaintext_file.flush()?;
+
+        // Encrypt with the valid key
+        encrypt_from_file(
+            plaintext_file.path().to_str().unwrap(),
+            encrypted_file.path().to_str().unwrap(),
+            &[public_key.to_string()],
+            false,
+        )?;
+
         // Create a temporary directory to simulate HOME with bogus keys
         let temp_home = tempfile::tempdir()?;
         let ssh_dir = temp_home.path().join(".ssh");
         std::fs::create_dir_all(&ssh_dir)?;
 
-        // Create a BOGUS id_rsa file - this is what causes CLI test 9 to fail
+        // Create a BOGUS id_rsa file
         let bogus_rsa_path = ssh_dir.join("id_rsa");
         std::fs::write(&bogus_rsa_path, "this is definitely not a valid SSH key")?;
 
         // Set HOME to our temp directory
+        // Note: This test must run serially if other tests also modify HOME
         let old_home = std::env::var("HOME").ok();
         unsafe {
             std::env::set_var("HOME", temp_home.path());
         }
 
         // This should fail - bogus default identity should cause failure
-        // Before the fix: succeeded due to unwrap_or_default()
-        // After the fix: properly fails with error message
         let result = decrypt_to_file(
             encrypted_file.path().to_str().unwrap(),
             &decrypted_file.path(),
             None, // No explicit identity - use defaults (finds bogus key)
         );
 
-        // Restore HOME
+        // Restore HOME immediately to avoid affecting other tests
         if let Some(home) = old_home {
             unsafe {
                 std::env::set_var("HOME", home);
