@@ -36,7 +36,8 @@ in
       system1
     ];
     dependencies = [ "deploy-key" ];
-    generator = { secrets }:
+    generator =
+      { secrets }:
       # Access the deploy key's public key in the generator
       ''
         Host myserver
