@@ -134,9 +134,64 @@ pub(crate) fn generate_secret_with_public_and_context(
     file: &str,
     secrets_arg: &str,
 ) -> Result<Option<GeneratorOutput>> {
-    // Build Nix expression that checks for explicit generator or uses automatic selection
-    let nix_expr = format!(
-        r#"(let 
+    // Try calling the generator with the full context first
+    // If that fails with an unexpected argument error, try with subsets
+    let attempts = vec![
+        secrets_arg.to_string(),         // Both secrets and publics
+        "{ publics = {}; }".to_string(), // Only publics (empty)
+        "{ secrets = {}; }".to_string(), // Only secrets (empty)
+        "{}".to_string(),                // Neither
+    ];
+
+    // Extract just the publics or secrets from the full context if needed
+    let (has_secrets, has_publics) =
+        if secrets_arg.contains("secrets =") && secrets_arg.contains("publics =") {
+            (true, true)
+        } else {
+            (false, false)
+        };
+
+    let mut attempts_to_try = vec![secrets_arg.to_string()];
+
+    if has_secrets && has_publics {
+        // Extract the individual parts to try
+        // Parse out secrets and publics parts
+        let secrets_part = if let Some(start) = secrets_arg.find("secrets = {") {
+            if let Some(end) = secrets_arg[start..].find("};") {
+                Some(format!("{{ {} }}", &secrets_arg[start..start + end + 2]))
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        let publics_part = if let Some(start) = secrets_arg.find("publics = {") {
+            if let Some(end) = secrets_arg[start..].find("};") {
+                Some(format!("{{ {} }}", &secrets_arg[start..start + end + 2]))
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        // Try different combinations
+        if let Some(p) = publics_part {
+            attempts_to_try.push(p);
+        }
+        if let Some(s) = secrets_part {
+            attempts_to_try.push(s);
+        }
+        attempts_to_try.push("{}".to_string());
+    }
+
+    let mut last_error = None;
+
+    for attempt_arg in &attempts_to_try {
+        // Build Nix expression that checks for explicit generator or uses automatic selection
+        let nix_expr = format!(
+            r#"(let 
           rules = import {rules_path};
           name = builtins.replaceStrings ["A" "B" "C" "D" "E" "F" "G" "H" "I" "J" "K" "L" "M" "N" "O" "P" "Q" "R" "S" "T" "U" "V" "W" "X" "Y" "Z"] ["a" "b" "c" "d" "e" "f" "g" "h" "i" "j" "k" "l" "m" "n" "o" "p" "q" "r" "s" "t" "u" "v" "w" "x" "y" "z"] "{file}";
           hasSuffix = s: builtins.match ".*${{s}}(\.age)?$" name != null;
@@ -148,51 +203,72 @@ pub(crate) fn generate_secret_with_public_and_context(
             else if hasSuffix "password" || hasSuffix "passphrase"
             then (_: builtins.randomString 32)
             else null;
-          secretsContext = {secrets_arg};
+          secretsContext = {attempt_arg};
           result = if builtins.hasAttr "generator" rules."{file}"
                    then rules."{file}".generator secretsContext
                    else if auto != null then auto secretsContext else null;
         in builtins.deepSeq result result)"#,
-    );
+        );
 
-    let current_dir = current_dir()?;
-    let output = eval_nix_expression(nix_expr.as_str(), &current_dir)?;
+        let current_dir = current_dir()?;
+        match eval_nix_expression(nix_expr.as_str(), &current_dir) {
+            Ok(output) => {
+                // Successfully evaluated - parse the result
+                // Commonly used attribute names as constants
+                const SECRET_KEY: &[u8] = b"secret";
+                const PUBLIC_KEY: &[u8] = b"public";
 
-    // Commonly used attribute names as constants
-    const SECRET_KEY: &[u8] = b"secret";
-    const PUBLIC_KEY: &[u8] = b"public";
+                return match output {
+                    Value::Null => Ok(None),
+                    Value::String(s) => {
+                        // Generator returned just a string - this is the secret
+                        Ok(Some(GeneratorOutput {
+                            secret: s.as_str()?.to_owned(),
+                            public: None,
+                        }))
+                    }
+                    Value::Attrs(attrs) => {
+                        // Generator returned an attrset - extract secret and public
+                        let secret = attrs
+                            .select(NixString::from(SECRET_KEY).as_ref())
+                            .ok_or_else(|| {
+                                anyhow::anyhow!("Generator attrset must have 'secret' key")
+                            })?;
+                        let secret_str = value_to_string(secret.clone())?;
 
-    match output {
-        Value::Null => Ok(None),
-        Value::String(s) => {
-            // Generator returned just a string - this is the secret
-            Ok(Some(GeneratorOutput {
-                secret: s.as_str()?.to_owned(),
-                public: None,
-            }))
+                        let public = attrs
+                            .select(NixString::from(PUBLIC_KEY).as_ref())
+                            .map(|v| value_to_string(v.clone()))
+                            .transpose()?;
+
+                        Ok(Some(GeneratorOutput {
+                            secret: secret_str,
+                            public,
+                        }))
+                    }
+                    _ => Err(anyhow::anyhow!(
+                        "Generator must return either a string or an attrset with 'secret' and optional 'public' keys, got: {:?}",
+                        output
+                    )),
+                };
+            }
+            Err(e) => {
+                let error_msg = e.to_string();
+                // Check if it's an unexpected argument error
+                if error_msg.contains("Unexpected argument") || error_msg.contains("E031") {
+                    // Try the next combination
+                    last_error = Some(e);
+                    continue;
+                } else {
+                    // Different error - propagate it
+                    return Err(e);
+                }
+            }
         }
-        Value::Attrs(attrs) => {
-            // Generator returned an attrset - extract secret and public
-            let secret = attrs
-                .select(NixString::from(SECRET_KEY).as_ref())
-                .ok_or_else(|| anyhow::anyhow!("Generator attrset must have 'secret' key"))?;
-            let secret_str = value_to_string(secret.clone())?;
-
-            let public = attrs
-                .select(NixString::from(PUBLIC_KEY).as_ref())
-                .map(|v| value_to_string(v.clone()))
-                .transpose()?;
-
-            Ok(Some(GeneratorOutput {
-                secret: secret_str,
-                public,
-            }))
-        }
-        _ => Err(anyhow::anyhow!(
-            "Generator must return either a string or an attrset with 'secret' and optional 'public' keys, got: {:?}",
-            output
-        )),
     }
+
+    // All attempts failed - return the last error
+    Err(last_error.unwrap_or_else(|| anyhow::anyhow!("Failed to call generator")))
 }
 
 /// Get all file names from the rules

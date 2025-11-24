@@ -715,7 +715,7 @@ mod tests {
   "{}/authorized-keys.age" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     dependencies = [ "ssh-key" ];
-    generator = {{ publics, ... }}: "ssh-key-pub: " + publics."ssh-key";
+    generator = {{ publics }}: "ssh-key-pub: " + publics."ssh-key";
   }};
 }}
 "#,
@@ -843,7 +843,7 @@ mod tests {
   "{}/derived.age" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     dependencies = [ "base" ];
-    generator = {{ publics, ... }}: "derived-from-" + publics.base;
+    generator = {{ publics }}: "derived-from-" + publics.base;
   }};
   "{}/base.age" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
@@ -905,22 +905,22 @@ mod tests {
   "{}/only-publics.age" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     dependencies = [ "base-secret" ];
-    generator = {{ publics, ... }}: "public: " + publics."base-secret";
+    generator = {{ publics }}: "public: " + publics."base-secret";
   }};
   "{}/only-secrets.age" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     dependencies = [ "base-secret" ];
-    generator = {{ secrets, ... }}: "secret: " + secrets."base-secret";
+    generator = {{ secrets }}: "secret: " + secrets."base-secret";
   }};
   "{}/both-secrets-and-publics.age" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     dependencies = [ "base-secret" ];
     generator = {{ secrets, publics }}: "secret: " + secrets."base-secret" + ", public: " + publics."base-secret";
   }};
-  "{}/ignore-deps-with-ellipsis.age" = {{
+  "{}/ignore-deps-with-empty.age" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     dependencies = [ "base-secret" ];
-    generator = {{ ... }}: "ignoring-all-params";
+    generator = {{ }}: "ignoring-all-params";
   }};
 }}
 "#,
@@ -955,7 +955,7 @@ mod tests {
         let only_publics_path = temp_dir.path().join("only-publics.age");
         let only_secrets_path = temp_dir.path().join("only-secrets.age");
         let both_path = temp_dir.path().join("both-secrets-and-publics.age");
-        let ignore_path = temp_dir.path().join("ignore-deps-with-ellipsis.age");
+        let ignore_path = temp_dir.path().join("ignore-deps-with-empty.age");
 
         assert!(base_path.exists(), "base-secret.age should be created");
         assert!(
@@ -972,7 +972,7 @@ mod tests {
         );
         assert!(
             ignore_path.exists(),
-            "ignore-deps-with-ellipsis.age should be created"
+            "ignore-deps-with-empty.age should be created"
         );
 
         Ok(())
