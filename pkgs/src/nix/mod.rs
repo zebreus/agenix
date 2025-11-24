@@ -259,15 +259,6 @@ pub(crate) fn generate_secret_with_public_and_context(
             }
             Err(e) => {
                 let error_msg = e.to_string();
-                eprintln!(
-                    "Attempt '{}' failed",
-                    attempt_arg.chars().take(50).collect::<String>()
-                );
-                eprintln!(
-                    "Error contains 'attribute': {}",
-                    error_msg.contains("attribute")
-                );
-                eprintln!("Error contains 'E005': {}", error_msg.contains("E005"));
                 // Check if it's an unexpected argument error or missing parameter error
                 // E031 is unexpected argument, we should try with fewer params (but we're going the other way now)
                 // For missing params, Nix will complain about undefined variables or missing attributes
@@ -276,7 +267,6 @@ pub(crate) fn generate_secret_with_public_and_context(
                     // Got unexpected argument - this shouldn't happen with our new order
                     // but keep it for safety
                     last_error = Some(e);
-                    eprintln!("  -> Unexpected argument, trying next");
                     continue;
                 } else if error_msg.contains("undefined variable")
                     || error_msg.contains("attribute")
@@ -285,11 +275,9 @@ pub(crate) fn generate_secret_with_public_and_context(
                 {
                     // Missing parameter - try the next combination with more params
                     last_error = Some(e);
-                    eprintln!("  -> Missing parameter/attribute, trying next");
                     continue;
                 } else {
                     // Different error - propagate it
-                    eprintln!("  -> Different error, propagating");
                     return Err(e);
                 }
             }
@@ -419,17 +407,28 @@ fn auto_detect_dependencies(rules_path: &str, file: &str) -> Result<Vec<String>>
 
                         // Look for attribute access errors like: attribute 'name' missing
                         for potential_dep in &all_files {
-                            let dep_name = if potential_dep.ends_with(".age") {
+                            // Extract basename from full path for matching
+                            let full_name = if potential_dep.ends_with(".age") {
                                 &potential_dep[..potential_dep.len() - 4]
                             } else {
                                 potential_dep.as_str()
                             };
 
-                            // Check various error patterns
-                            if param_error.contains(&format!("'{}'", dep_name))
-                                || param_error.contains(&format!("\"{}\"", dep_name))
+                            // Get just the basename (filename without directory)
+                            let basename = std::path::Path::new(full_name)
+                                .file_name()
+                                .and_then(|n| n.to_str())
+                                .unwrap_or(full_name);
+
+                            // Check various error patterns - both full name and basename
+                            // This handles cases where files use full paths but errors reference basenames
+                            if param_error.contains(&format!("'{}'", full_name))
+                                || param_error.contains(&format!("\"{}\"", full_name))
+                                || param_error.contains(&format!("'{}'", basename))
+                                || param_error.contains(&format!("\"{}\"", basename))
                             {
-                                detected_deps.push(dep_name.to_string());
+                                // Return the basename without .age (what generators reference)
+                                detected_deps.push(basename.to_string());
                             }
                         }
                     }

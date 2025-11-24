@@ -6,7 +6,7 @@
 use anyhow::{Context, Result, anyhow};
 use std::fs;
 use std::io::{self, IsTerminal, Read, stdin};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use tempfile::TempDir;
 
@@ -198,10 +198,21 @@ pub fn generate_secrets(rules_path: &str) -> Result<()> {
         }
 
         // Check for .pub file
-        let pub_file_paths = [
-            rules_dir.join(format!("{}.age.pub", secret_name)),
-            rules_dir.join(format!("{}.pub", secret_name)),
-        ];
+        // If secret_name looks like an absolute path, use it directly
+        // Otherwise, join with rules_dir
+        let pub_file_paths = if secret_name.starts_with('/') || secret_name.starts_with('\\') {
+            // Absolute path - use directly
+            vec![
+                PathBuf::from(format!("{}.age.pub", secret_name)),
+                PathBuf::from(format!("{}.pub", secret_name)),
+            ]
+        } else {
+            // Relative path - join with rules_dir
+            vec![
+                rules_dir.join(format!("{}.age.pub", secret_name)),
+                rules_dir.join(format!("{}.pub", secret_name)),
+            ]
+        };
 
         for pub_file_path in &pub_file_paths {
             if pub_file_path.exists() {
@@ -244,7 +255,6 @@ pub fn generate_secrets(rules_path: &str) -> Result<()> {
 
             // Get dependencies
             let deps = get_secret_dependencies(rules_path, &file).unwrap_or_default();
-            eprintln!("Dependencies for {}: {:?}", file, deps);
 
             // Check if all dependencies are satisfied (public keys available)
             let mut all_deps_satisfied = true;
@@ -304,26 +314,59 @@ pub fn generate_secrets(rules_path: &str) -> Result<()> {
             let mut publics_context_parts = Vec::new();
 
             for dep in &deps {
+                // Map dependency name to full file path
+                // Dependencies may be simple names like "level2", but files may be full paths
+                let dep_file = files
+                    .iter()
+                    .find(|f| {
+                        let f_basename = secret_basename(f);
+                        let f_base_no_age = if f_basename.ends_with(".age") {
+                            &f_basename[..f_basename.len() - 4]
+                        } else {
+                            &f_basename
+                        };
+                        let dep_no_age = if dep.ends_with(".age") {
+                            &dep[..dep.len() - 4]
+                        } else {
+                            dep.as_str()
+                        };
+                        f_base_no_age == dep_no_age
+                    })
+                    .unwrap_or(dep); // Fallback to dep if not found
+
+                // Extract basename for use as key in context
+                // Generators reference secrets by simple name, not full path
+                let dep_key = {
+                    let basename = secret_basename(dep_file);
+                    // Remove .age suffix if present
+                    if basename.ends_with(".age") {
+                        basename[..basename.len() - 4].to_string()
+                    } else {
+                        basename
+                    }
+                };
+
                 // Add public content
                 if let Some(public_content) =
-                    get_public_content(dep, rules_dir, &generated_secrets)?
+                    get_public_content(dep_file, rules_dir, &generated_secrets)?
                 {
                     let escaped_public = escape_nix_string(&public_content);
-                    publics_context_parts.push(format!(r#""{}" = "{}";"#, dep, escaped_public));
+                    publics_context_parts.push(format!(r#""{}" = "{}";"#, dep_key, escaped_public));
                 }
 
                 // Add secret content if available (from generated_secrets)
-                let dep_basename = if dep.ends_with(".age") {
-                    dep.clone()
+                let dep_basename = if dep_file.ends_with(".age") {
+                    dep_file.to_string()
                 } else {
-                    format!("{}.age", dep)
+                    format!("{}.age", dep_file)
                 };
                 let dep_basename_norm = secret_basename(&dep_basename);
 
                 for (key, output) in generated_secrets.iter() {
                     if secret_basename(key) == dep_basename_norm {
                         let escaped_secret = escape_nix_string(&output.secret);
-                        secrets_context_parts.push(format!(r#""{}" = "{}";"#, dep, escaped_secret));
+                        secrets_context_parts
+                            .push(format!(r#""{}" = "{}";"#, dep_key, escaped_secret));
                         break;
                     }
                 }
@@ -343,9 +386,7 @@ pub fn generate_secrets(rules_path: &str) -> Result<()> {
 
                 if !deps.is_empty() {
                     // Only include secrets/publics if there are dependencies
-                    let result = format!("{{ {} {} }}", secrets_part, publics_part);
-                    eprintln!("secrets_arg for {}: {}", file, result);
-                    result
+                    format!("{{ {} {} }}", secrets_part, publics_part)
                 } else {
                     "{}".to_string()
                 }
