@@ -37,14 +37,14 @@ in
     ];
     dependencies = [ "deploy-key" ];
     generator =
-      { secrets }:
+      { publics, ... }:
       # Access the deploy key's public key in the generator
       ''
         Host myserver
           HostName myserver.example.com
           User deploy
           IdentityFile /etc/ssh/deploy_key
-          # Public key: ${secrets."deploy-key".public}
+          # Public key: ${publics."deploy-key"}
       '';
   };
 }
