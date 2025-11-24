@@ -362,6 +362,140 @@ fn build_dependency_context(
     Ok(format!("{{ {} {} }}", secrets_part, publics_part))
 }
 
+/// Process a single secret file - check dependencies, generate, encrypt, and store
+fn process_single_secret(
+    file: &str,
+    rules_path: &str,
+    files: &[String],
+    rules_dir: &Path,
+    generated_secrets: &mut std::collections::HashMap<String, GeneratorOutput>,
+    processed: &mut std::collections::HashSet<String>,
+) -> Result<ProcessResult> {
+    use std::collections::HashMap;
+
+    // Skip if already processed
+    if processed.contains(file) {
+        return Ok(ProcessResult::AlreadyProcessed);
+    }
+
+    // Skip if the file already exists
+    if Path::new(file).exists() {
+        if let Ok(Some(_)) = generate_secret_with_public(rules_path, file) {
+            eprintln!("Skipping {file}: already exists");
+        }
+        processed.insert(file.to_string());
+        return Ok(ProcessResult::AlreadyProcessed);
+    }
+
+    // Get dependencies
+    let deps = get_secret_dependencies(rules_path, file).unwrap_or_default();
+
+    // Check if all dependencies are satisfied
+    let (all_deps_satisfied, missing_deps) = are_all_dependencies_satisfied(
+        file,
+        &deps,
+        files,
+        rules_dir,
+        generated_secrets,
+        processed,
+    )?;
+
+    if !all_deps_satisfied && !missing_deps.is_empty() {
+        return Err(anyhow::anyhow!(
+            "Secret '{}' depends on '{}' which cannot be found or generated",
+            file,
+            missing_deps.join("', '")
+        ));
+    }
+
+    if !all_deps_satisfied {
+        return Ok(ProcessResult::Deferred);
+    }
+
+    // Build the context for the generator
+    let secrets_arg = build_dependency_context(&deps, files, rules_dir, generated_secrets)?;
+
+    // Generate with dependencies context
+    let generator_output = if !deps.is_empty() {
+        generate_secret_with_public_and_context(rules_path, file, &secrets_arg)?
+    } else {
+        generate_secret_with_public(rules_path, file)?
+    };
+
+    // Check if there's a generator for this file
+    let Some(generator_output) = generator_output else {
+        processed.insert(file.to_string());
+        return Ok(ProcessResult::NoGenerator);
+    };
+
+    eprintln!("Generating {file}...");
+
+    let public_keys = get_public_keys(rules_path, file)?;
+    let armor = should_armor(rules_path, file)?;
+
+    if public_keys.is_empty() {
+        eprintln!("Warning: No public keys found for {file}, skipping");
+        processed.insert(file.to_string());
+        return Ok(ProcessResult::NoPublicKeys);
+    }
+
+    // Create temporary file with the generated secret content
+    let temp_dir = TempDir::new().context("Failed to create temporary directory")?;
+    let temp_file = temp_dir.path().join("generated_secret");
+    fs::write(&temp_file, &generator_output.secret)
+        .context("Failed to write generated content to temporary file")?;
+
+    // Encrypt the generated secret content
+    encrypt_from_file(&temp_file.to_string_lossy(), file, &public_keys, armor)
+        .with_context(|| format!("Failed to encrypt generated secret {file}"))?;
+
+    eprintln!("Generated and encrypted {file}");
+
+    // Store the generated output for dependencies
+    generated_secrets.insert(file.to_string(), generator_output.clone());
+
+    // If there's public content, write it to a .pub file
+    if let Some(public_content) = &generator_output.public {
+        let pub_file = format!("{}.pub", file);
+        fs::write(&pub_file, public_content)
+            .with_context(|| format!("Failed to write public file {pub_file}"))?;
+        eprintln!("Generated public file {pub_file}");
+    }
+
+    processed.insert(file.to_string());
+    Ok(ProcessResult::Generated)
+}
+
+/// Result of processing a single secret
+#[derive(Debug, PartialEq)]
+enum ProcessResult {
+    Generated,
+    Deferred,
+    AlreadyProcessed,
+    NoGenerator,
+    NoPublicKeys,
+}
+
+/// Format circular dependency error message
+fn handle_circular_dependency_error(deferred: &[String], rules_path: &str) -> Result<()> {
+    let dep_info: Vec<String> = deferred
+        .iter()
+        .map(|f| {
+            let deps = get_secret_dependencies(rules_path, f).unwrap_or_default();
+            if deps.is_empty() {
+                format!("  - {}", f)
+            } else {
+                format!("  - {} (depends on: {})", f, deps.join(", "))
+            }
+        })
+        .collect();
+
+    Err(anyhow::anyhow!(
+        "Cannot generate secrets due to unresolved dependencies (possible circular dependency):\n{}",
+        dep_info.join("\n")
+    ))
+}
+
 /// Generate secrets using generator functions from rules
 /// Only generates secrets if:
 /// 1. The file has a generator function defined
@@ -384,8 +518,6 @@ pub fn generate_secrets(rules_path: &str) -> Result<()> {
     // Process secrets, handling dependencies
     let mut to_process: Vec<String> = files.clone();
     let mut iteration = 0;
-    // In the worst case (linear dependency chain), we need files.len() iterations.
-    // We add a safety margin to handle edge cases.
     let max_iterations = files.len() + 10;
 
     while !to_process.is_empty() && iteration < max_iterations {
@@ -394,122 +526,26 @@ pub fn generate_secrets(rules_path: &str) -> Result<()> {
         let mut deferred = Vec::new();
 
         for file in to_process.drain(..) {
-            // Skip if already processed
-            if processed.contains(&file) {
-                continue;
-            }
-
-            // Skip if the file already exists
-            if Path::new(&file).exists() {
-                if let Ok(Some(_)) = generate_secret_with_public(rules_path, &file) {
-                    eprintln!("Skipping {file}: already exists");
-                }
-                processed.insert(file.clone());
-                continue;
-            }
-
-            // Get dependencies
-            let deps = get_secret_dependencies(rules_path, &file).unwrap_or_default();
-
-            // Check if all dependencies are satisfied (public keys available)
-            let (all_deps_satisfied, missing_deps) = are_all_dependencies_satisfied(
+            match process_single_secret(
                 &file,
-                &deps,
+                rules_path,
                 &files,
                 rules_dir,
-                &generated_secrets,
-                &processed,
-            )?;
-
-            if !all_deps_satisfied && !missing_deps.is_empty() {
-                return Err(anyhow::anyhow!(
-                    "Secret '{}' depends on '{}' which cannot be found or generated",
-                    file,
-                    missing_deps.join("', '")
-                ));
-            }
-
-            if !all_deps_satisfied {
-                // Defer this secret for later
-                deferred.push(file);
-                continue;
-            }
-
-            // Build the context for the generator
-            let secrets_arg =
-                build_dependency_context(&deps, &files, rules_dir, &generated_secrets)?;
-
-            // Generate with dependencies context
-            let generator_output = if !deps.is_empty() {
-                generate_secret_with_public_and_context(rules_path, &file, &secrets_arg)?
-            } else {
-                generate_secret_with_public(rules_path, &file)?
-            };
-
-            // Check if there's a generator for this file
-            if let Some(generator_output) = generator_output {
-                eprintln!("Generating {file}...");
-
-                let public_keys = get_public_keys(rules_path, &file)?;
-                let armor = should_armor(rules_path, &file)?;
-
-                if public_keys.is_empty() {
-                    eprintln!("Warning: No public keys found for {file}, skipping");
-                    processed.insert(file);
-                    continue;
-                }
-
-                // Create temporary file with the generated secret content
-                let temp_dir = TempDir::new().context("Failed to create temporary directory")?;
-                let temp_file = temp_dir.path().join("generated_secret");
-                fs::write(&temp_file, &generator_output.secret)
-                    .context("Failed to write generated content to temporary file")?;
-
-                // Encrypt the generated secret content
-                encrypt_from_file(&temp_file.to_string_lossy(), &file, &public_keys, armor)
-                    .with_context(|| format!("Failed to encrypt generated secret {file}"))?;
-
-                eprintln!("Generated and encrypted {file}");
-
-                // Store the generated output for dependencies
-                generated_secrets.insert(file.clone(), generator_output.clone());
-
-                // If there's public content, write it to a .pub file
-                if let Some(public_content) = &generator_output.public {
-                    let pub_file = format!("{}.pub", file);
-                    fs::write(&pub_file, public_content)
-                        .with_context(|| format!("Failed to write public file {pub_file}"))?;
-                    eprintln!("Generated public file {pub_file}");
-                }
-
-                processed.insert(file);
-                progress_made = true;
-            } else {
-                // No generator - mark as processed
-                processed.insert(file);
+                &mut generated_secrets,
+                &mut processed,
+            )? {
+                ProcessResult::Generated => progress_made = true,
+                ProcessResult::Deferred => deferred.push(file),
+                ProcessResult::AlreadyProcessed
+                | ProcessResult::NoGenerator
+                | ProcessResult::NoPublicKeys => {}
             }
         }
 
-        // If we deferred some secrets, try them again
+        // Handle deferred secrets
         if !deferred.is_empty() {
             if !progress_made {
-                // No progress made - we have circular dependencies
-                let dep_info: Vec<String> = deferred
-                    .iter()
-                    .map(|f| {
-                        let deps = get_secret_dependencies(rules_path, f).unwrap_or_default();
-                        if deps.is_empty() {
-                            format!("  - {}", f)
-                        } else {
-                            format!("  - {} (depends on: {})", f, deps.join(", "))
-                        }
-                    })
-                    .collect();
-
-                return Err(anyhow::anyhow!(
-                    "Cannot generate secrets due to unresolved dependencies (possible circular dependency):\n{}",
-                    dep_info.join("\n")
-                ));
+                return handle_circular_dependency_error(&deferred, rules_path);
             }
             to_process = deferred;
         }
