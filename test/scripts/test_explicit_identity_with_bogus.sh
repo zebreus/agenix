@@ -5,16 +5,16 @@ source "$(dirname "$0")/common_setup.sh"
 
 echo "=== Test 9: Edit with explicit identity when bogus key present ==="
 # Set secret1.age to known content
-echo "test-content-12345" | agenix -e secret1.age
+echo "test-content-12345" | agenix edit secret1.age
 
 echo "bogus" > "$HOME/.ssh/id_rsa"
 # This should fail without explicit identity
-if agenix -d secret1.age 2>/dev/null; then
+if agenix decrypt secret1.age 2>/dev/null; then
   echo "✗ Should have failed with bogus id_rsa"
   exit 1
 fi
-# But should work with explicit identity
-decrypted=$(agenix -d secret1.age -i "$HOME/.ssh/id_ed25519")
+# But should work with explicit identity and --no-system-identities
+decrypted=$(agenix decrypt secret1.age -i "$HOME/.ssh/id_ed25519" --no-system-identities)
 if [ "$decrypted" = "test-content-12345" ]; then
   echo "✓ Explicit identity overrides bogus key"
 else

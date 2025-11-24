@@ -4,7 +4,7 @@
 source "$(dirname "$0")/common_setup.sh"
 
 echo "=== Test 2: Decrypt command ==="
-decrypted=$(agenix -d secret1.age)
+decrypted=$(agenix decrypt secret1.age)
 if [ "$decrypted" = "hello" ]; then
   echo "✓ Decrypt command works"
 else
