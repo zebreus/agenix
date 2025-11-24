@@ -178,38 +178,12 @@ pub fn rekey_all_files(rules_path: &str, identity: Option<&str>) -> Result<()> {
     Ok(())
 }
 
-/// Generate secrets using generator functions from rules
-/// Only generates secrets if:
-/// 1. The file has a generator function defined
-/// 2. The secret file doesn't already exist
-///
-/// This function now supports dependencies - generators can reference
-/// other secrets' public keys via the `dependencies` attribute.
-///
-/// TODO: Refactoring opportunity - This function is very long (300+ lines).
-/// Consider extracting:
-/// - `build_dependency_context()` for lines building secrets_arg
-/// - `check_dependencies_satisfied()` for dependency validation logic
-/// - Using a state struct instead of multiple HashMaps
-/// This would improve maintainability without changing functionality.
-pub fn generate_secrets(rules_path: &str) -> Result<()> {
-    use std::collections::{HashMap, HashSet};
-
-    let files = get_all_files(rules_path)?;
-    let rules_dir = Path::new(rules_path)
-        .parent()
-        .unwrap_or_else(|| Path::new("."));
-
-    // Track which secrets have been generated
-    let mut generated_secrets: HashMap<String, GeneratorOutput> = HashMap::new();
-    let mut processed: HashSet<String> = HashSet::new();
-
-    // Helper function to get public content
-    fn get_public_content(
-        file: &str,
-        rules_dir: &Path,
-        generated: &HashMap<String, GeneratorOutput>,
-    ) -> Result<Option<String>> {
+/// Get public content for a secret from either generated secrets or .pub files
+fn get_public_content(
+    file: &str,
+    rules_dir: &Path,
+    generated: &HashMap<String, GeneratorOutput>,
+) -> Result<Option<String>> {
         let secret_name = strip_age_suffix(file);
         let normalized_name = format!("{}.age", secret_name);
 
@@ -252,6 +226,166 @@ pub fn generate_secrets(rules_path: &str) -> Result<()> {
 
         Ok(None)
     }
+
+/// Check if a single dependency is satisfied (has public content available)
+fn check_dependency_satisfied(
+    dep: &str,
+    file: &str,
+    files: &[String],
+    rules_dir: &Path,
+    generated_secrets: &std::collections::HashMap<String, GeneratorOutput>,
+    processed: &std::collections::HashSet<String>,
+) -> Result<(bool, bool)> {
+    // Map dependency name to full file path
+    let dep_file = resolve_dependency_path(dep, files);
+
+    // Normalize the dependency name
+    let dep_normalized = if dep_file.ends_with(".age") {
+        dep_file.to_string()
+    } else {
+        format!("{}.age", dep_file)
+    };
+
+    // Check if the dependency will be generated (exists in files list)
+    let dep_basename = secret_basename(&dep_normalized);
+    let will_be_generated = files.iter().any(|f| secret_basename(f) == dep_basename);
+
+    // Check if dependency file exists
+    let dep_file_path = rules_dir.join(&dep_normalized);
+    let exists = dep_file_path.exists();
+
+    // Check if we have public content already (use full path for lookup)
+    let has_public_content = get_public_content(dep_file, rules_dir, generated_secrets)?.is_some();
+
+    if !will_be_generated && !exists && !has_public_content {
+        // Dependency cannot be satisfied at all
+        return Ok((false, true)); // (not satisfied, is missing)
+    } else if will_be_generated && !has_public_content {
+        // Check if dependency has been processed
+        let is_processed = processed.iter().any(|p| secret_basename(p) == dep_basename);
+
+        if !is_processed {
+            // Dependency will be generated but hasn't been yet
+            return Ok((false, false)); // (not satisfied, not missing - just pending)
+        }
+    } else if exists && !has_public_content {
+        // File exists but no public content available
+        return Ok((false, false)); // (not satisfied, not missing - just no public)
+    }
+
+    Ok((true, false)) // (satisfied, not missing)
+}
+
+/// Check if all dependencies for a secret are satisfied
+fn are_all_dependencies_satisfied(
+    file: &str,
+    deps: &[String],
+    files: &[String],
+    rules_dir: &Path,
+    generated_secrets: &std::collections::HashMap<String, GeneratorOutput>,
+    processed: &std::collections::HashSet<String>,
+) -> Result<(bool, Vec<String>)> {
+    let mut all_deps_satisfied = true;
+    let mut missing_deps = Vec::new();
+
+    for dep in deps {
+        let (satisfied, is_missing) = check_dependency_satisfied(
+            dep,
+            file,
+            files,
+            rules_dir,
+            generated_secrets,
+            processed,
+        )?;
+
+        if is_missing {
+            missing_deps.push(dep.clone());
+        }
+        if !satisfied {
+            all_deps_satisfied = false;
+        }
+    }
+
+    Ok((all_deps_satisfied, missing_deps))
+}
+
+/// Build the Nix context (secrets and publics attrsets) for dependencies
+fn build_dependency_context(
+    deps: &[String],
+    files: &[String],
+    rules_dir: &Path,
+    generated_secrets: &std::collections::HashMap<String, GeneratorOutput>,
+) -> Result<String> {
+    if deps.is_empty() {
+        return Ok("{}".to_string());
+    }
+
+    let mut secrets_context_parts = Vec::new();
+    let mut publics_context_parts = Vec::new();
+
+    for dep in deps {
+        // Map dependency name to full file path
+        let dep_file = resolve_dependency_path(dep, files);
+
+        // Extract basename for use as key in context
+        let dep_key = normalize_secret_name(dep_file);
+
+        // Add public content
+        if let Some(public_content) = get_public_content(dep_file, rules_dir, generated_secrets)? {
+            let escaped_public = escape_nix_string(&public_content);
+            publics_context_parts.push(format!(r#""{}" = "{}";"#, dep_key, escaped_public));
+        }
+
+        // Add secret content if available (from generated_secrets)
+        let dep_basename = if dep_file.ends_with(".age") {
+            dep_file.to_string()
+        } else {
+            format!("{}.age", dep_file)
+        };
+        let dep_basename_norm = secret_basename(&dep_basename);
+
+        for (key, output) in generated_secrets.iter() {
+            if secret_basename(key) == dep_basename_norm {
+                let escaped_secret = escape_nix_string(&output.secret);
+                secrets_context_parts.push(format!(r#""{}" = "{}";"#, dep_key, escaped_secret));
+                break;
+            }
+        }
+    }
+
+    let secrets_part = if !secrets_context_parts.is_empty() {
+        format!("secrets = {{ {} }};", secrets_context_parts.join(" "))
+    } else {
+        "secrets = {};".to_string()
+    };
+
+    let publics_part = if !publics_context_parts.is_empty() {
+        format!("publics = {{ {} }};", publics_context_parts.join(" "))
+    } else {
+        "publics = {};".to_string()
+    };
+
+    Ok(format!("{{ {} {} }}", secrets_part, publics_part))
+}
+
+/// Generate secrets using generator functions from rules
+/// Only generates secrets if:
+/// 1. The file has a generator function defined
+/// 2. The secret file doesn't already exist
+///
+/// This function now supports dependencies - generators can reference
+/// other secrets' public keys via the `dependencies` attribute.
+pub fn generate_secrets(rules_path: &str) -> Result<()> {
+    use std::collections::{HashMap, HashSet};
+
+    let files = get_all_files(rules_path)?;
+    let rules_dir = Path::new(rules_path)
+        .parent()
+        .unwrap_or_else(|| Path::new("."));
+
+    // Track which secrets have been generated
+    let mut generated_secrets: HashMap<String, GeneratorOutput> = HashMap::new();
+    let mut processed: HashSet<String> = HashSet::new();
 
     // Process secrets, handling dependencies
     let mut to_process: Vec<String> = files.clone();
