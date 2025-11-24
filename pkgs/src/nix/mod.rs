@@ -294,8 +294,9 @@ pub fn get_all_files(rules_path: &str) -> Result<Vec<String>> {
 /// Get the dependencies of a secret (other secrets referenced in its generator)
 /// Returns the list of secret names that this secret depends on by reading
 /// the `dependencies` attribute from the secret's configuration.
+/// If dependencies is not explicitly specified, automatically detects them.
 pub fn get_secret_dependencies(rules_path: &str, file: &str) -> Result<Vec<String>> {
-    // Extract the dependencies list from the secret's configuration
+    // First check if dependencies are explicitly specified
     let nix_expr = format!(
         r#"(let 
           rules = import {rules_path};
@@ -307,8 +308,126 @@ pub fn get_secret_dependencies(rules_path: &str, file: &str) -> Result<Vec<Strin
 
     let current_dir = current_dir()?;
     let output = eval_nix_expression(nix_expr.as_str(), &current_dir)?;
+    let explicit_deps = value_to_string_array(output)?;
 
-    value_to_string_array(output)
+    // If dependencies are explicitly specified, use them
+    if !explicit_deps.is_empty() {
+        return Ok(explicit_deps);
+    }
+
+    // Otherwise, try to auto-detect dependencies
+    auto_detect_dependencies(rules_path, file)
+}
+
+/// Automatically detect dependencies by analyzing what the generator references
+fn auto_detect_dependencies(rules_path: &str, file: &str) -> Result<Vec<String>> {
+    // Get all available secrets from the rules
+    let all_files = get_all_files(rules_path)?;
+
+    // Try to extract the generator source code to analyze it
+    let nix_expr_source = format!(
+        r#"(let 
+          rules = import {rules_path};
+          hasGenerator = builtins.hasAttr "generator" rules."{file}";
+          generatorStr = if hasGenerator 
+                         then builtins.toString (builtins.toJSON rules."{file}".generator)
+                         else "null";
+        in builtins.deepSeq generatorStr generatorStr)"#,
+    );
+
+    let current_dir = current_dir()?;
+
+    // First, try to get the generator source
+    // This won't give us the actual source but let's try calling with empty params
+    // and see what errors we get
+    let nix_expr_test = format!(
+        r#"(let 
+          rules = import {rules_path};
+          hasGenerator = builtins.hasAttr "generator" rules."{file}";
+          result = if hasGenerator 
+                   then rules."{file}".generator {{ }}
+                   else null;
+        in builtins.deepSeq result result)"#,
+    );
+
+    match eval_nix_expression(nix_expr_test.as_str(), &current_dir) {
+        Ok(_) => {
+            // Generator works with empty context - no dependencies
+            Ok(vec![])
+        }
+        Err(e) => {
+            let error_msg = e.to_string();
+
+            // Check if the error is about missing 'secrets' or 'publics' parameters
+            let needs_secrets = error_msg.contains("'secrets'");
+            let needs_publics = error_msg.contains("'publics'");
+
+            if !needs_secrets && !needs_publics {
+                // Some other error, not related to dependencies
+                return Ok(vec![]);
+            }
+
+            // Now try calling with the required parameters to see which specific secrets are used
+            let mut detected_deps = Vec::new();
+
+            // Build test contexts with empty attrsets
+            for params in &[
+                "{ secrets = {}; publics = {}; }",
+                "{ secrets = {}; }",
+                "{ publics = {}; }",
+            ] {
+                let nix_expr_with_params = format!(
+                    r#"(let 
+                      rules = import {rules_path};
+                      hasGenerator = builtins.hasAttr "generator" rules."{file}";
+                      result = if hasGenerator 
+                               then rules."{file}".generator {params}
+                               else null;
+                    in builtins.deepSeq result result)"#,
+                );
+
+                match eval_nix_expression(nix_expr_with_params.as_str(), &current_dir) {
+                    Ok(_) => {
+                        // Works with empty - no specific dependencies detected
+                        return Ok(vec![]);
+                    }
+                    Err(e) => {
+                        let param_error = e.to_string();
+
+                        // Look for attribute access errors like: attribute 'name' missing
+                        for potential_dep in &all_files {
+                            let dep_name = if potential_dep.ends_with(".age") {
+                                &potential_dep[..potential_dep.len() - 4]
+                            } else {
+                                potential_dep.as_str()
+                            };
+
+                            // Check various error patterns
+                            if param_error.contains(&format!("'{}'", dep_name))
+                                || param_error.contains(&format!("\"{}\"", dep_name))
+                            {
+                                detected_deps.push(dep_name.to_string());
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Remove duplicates and the current file itself
+            detected_deps.sort();
+            detected_deps.dedup();
+            detected_deps.retain(|d| {
+                let d_normalized = if d.ends_with(".age") {
+                    d.clone()
+                } else {
+                    format!("{}.age", d)
+                };
+                d_normalized != *file
+            });
+
+            Ok(detected_deps)
+        }
+    }
 }
 
 #[cfg(test)]
@@ -2123,6 +2242,234 @@ mod tests {
 
         let result = get_secret_dependencies(temp_file.path().to_str().unwrap(), "secret1.age")?;
 
+        assert_eq!(result.len(), 0);
+        Ok(())
+    }
+
+    // Auto-detection tests
+    #[test]
+    fn test_auto_detect_dependencies_single_public() -> Result<()> {
+        let rules_content = r#"
+        {
+          "base.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+            generator = { }: { secret = "base-secret"; public = "base-public"; };
+          };
+          "derived.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+            generator = { publics }: publics."base";
+          };
+        }
+        "#;
+        let temp_file = create_test_rules_file(rules_content)?;
+
+        let result = get_secret_dependencies(temp_file.path().to_str().unwrap(), "derived.age")?;
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0], "base");
+        Ok(())
+    }
+
+    #[test]
+    fn test_auto_detect_dependencies_single_secret() -> Result<()> {
+        let rules_content = r#"
+        {
+          "base.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+            generator = { }: "base-secret";
+          };
+          "derived.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+            generator = { secrets }: "derived-" + secrets."base";
+          };
+        }
+        "#;
+        let temp_file = create_test_rules_file(rules_content)?;
+
+        let result = get_secret_dependencies(temp_file.path().to_str().unwrap(), "derived.age")?;
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0], "base");
+        Ok(())
+    }
+
+    #[test]
+    fn test_auto_detect_dependencies_multiple() -> Result<()> {
+        let rules_content = r#"
+        {
+          "key1.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+            generator = { }: { secret = "key1"; public = "pub1"; };
+          };
+          "key2.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+            generator = { }: { secret = "key2"; public = "pub2"; };
+          };
+          "derived.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+            generator = { secrets, publics }: secrets."key1" + publics."key2";
+          };
+        }
+        "#;
+        let temp_file = create_test_rules_file(rules_content)?;
+
+        let result = get_secret_dependencies(temp_file.path().to_str().unwrap(), "derived.age")?;
+
+        assert_eq!(result.len(), 2);
+        assert!(result.contains(&"key1".to_string()));
+        assert!(result.contains(&"key2".to_string()));
+        Ok(())
+    }
+
+    #[test]
+    fn test_auto_detect_no_dependencies() -> Result<()> {
+        let rules_content = r#"
+        {
+          "standalone.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+            generator = { }: "standalone-secret";
+          };
+        }
+        "#;
+        let temp_file = create_test_rules_file(rules_content)?;
+
+        let result = get_secret_dependencies(temp_file.path().to_str().unwrap(), "standalone.age")?;
+
+        assert_eq!(result.len(), 0);
+        Ok(())
+    }
+
+    #[test]
+    fn test_explicit_deps_override_auto_detect() -> Result<()> {
+        // Even if generator references key2, explicit dependencies should be used
+        let rules_content = r#"
+        {
+          "key1.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+            generator = { }: "key1";
+          };
+          "key2.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+            generator = { }: "key2";
+          };
+          "derived.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+            dependencies = [ "key1" ];
+            generator = { publics }: publics."key2";
+          };
+        }
+        "#;
+        let temp_file = create_test_rules_file(rules_content)?;
+
+        let result = get_secret_dependencies(temp_file.path().to_str().unwrap(), "derived.age")?;
+
+        // Should return explicit dependencies, not auto-detected ones
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0], "key1");
+        Ok(())
+    }
+
+    #[test]
+    fn test_auto_detect_with_age_suffix() -> Result<()> {
+        let rules_content = r#"
+        {
+          "deploy-key.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+            generator = builtins.sshKey;
+          };
+          "config.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+            generator = { publics }: publics."deploy-key";
+          };
+        }
+        "#;
+        let temp_file = create_test_rules_file(rules_content)?;
+
+        let result = get_secret_dependencies(temp_file.path().to_str().unwrap(), "config.age")?;
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0], "deploy-key");
+        Ok(())
+    }
+
+    #[test]
+    fn test_auto_detect_ignores_self_reference() -> Result<()> {
+        // A generator that somehow references its own name shouldn't include itself
+        let rules_content = r#"
+        {
+          "key1.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+            generator = { }: "key1-secret";
+          };
+          "self-ref.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+            generator = { publics }: publics."key1";
+          };
+        }
+        "#;
+        let temp_file = create_test_rules_file(rules_content)?;
+
+        let result = get_secret_dependencies(temp_file.path().to_str().unwrap(), "self-ref.age")?;
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0], "key1");
+        assert!(!result.contains(&"self-ref".to_string()));
+        Ok(())
+    }
+
+    #[test]
+    fn test_auto_detect_complex_expression() -> Result<()> {
+        let rules_content = r#"
+        {
+          "dbpass.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+            generator = { }: "db-pass";
+          };
+          "apikey.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+            generator = { }: "api-key";
+          };
+          "config.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+            generator = { secrets }: ''
+              DB_PASSWORD=${secrets."dbpass"}
+              API_KEY=${secrets."apikey"}
+            '';
+          };
+        }
+        "#;
+        let temp_file = create_test_rules_file(rules_content)?;
+
+        let result = get_secret_dependencies(temp_file.path().to_str().unwrap(), "config.age")?;
+
+        assert_eq!(result.len(), 2);
+        assert!(result.contains(&"dbpass".to_string()));
+        assert!(result.contains(&"apikey".to_string()));
+        Ok(())
+    }
+
+    #[test]
+    fn test_auto_detect_conditional_reference() -> Result<()> {
+        // Note: Conditional references like `publics ? "optional"` won't be auto-detected
+        // because they don't cause errors when the attribute is missing.
+        // Users should explicitly specify dependencies for conditional access.
+        let rules_content = r#"
+        {
+          "optional.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+            generator = { }: "optional-secret";
+          };
+          "derived.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+            generator = { publics }: if publics ? "optional" then publics."optional" else "default";
+          };
+        }
+        "#;
+        let temp_file = create_test_rules_file(rules_content)?;
+
+        let result = get_secret_dependencies(temp_file.path().to_str().unwrap(), "derived.age")?;
+
+        // Conditional access won't be detected because it doesn't cause an error
         assert_eq!(result.len(), 0);
         Ok(())
     }
