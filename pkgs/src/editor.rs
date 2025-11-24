@@ -45,6 +45,12 @@ fn secret_basename(name: &str) -> String {
         .to_string()
 }
 
+/// Strip .age suffix from a name if present
+fn strip_age_suffix(name: &str) -> &str {
+    name.strip_suffix(".age").unwrap_or(name)
+}
+
+
 /// Edit a file with encryption/decryption
 pub fn edit_file(
     rules_path: &str,
@@ -178,12 +184,7 @@ pub fn generate_secrets(rules_path: &str) -> Result<()> {
         rules_dir: &Path,
         generated: &HashMap<String, GeneratorOutput>,
     ) -> Result<Option<String>> {
-        let secret_name = if file.ends_with(".age") {
-            &file[..file.len() - 4]
-        } else {
-            file
-        };
-
+        let secret_name = strip_age_suffix(file);
         let normalized_name = format!("{}.age", secret_name);
 
         // Check if we just generated it - search by basename
