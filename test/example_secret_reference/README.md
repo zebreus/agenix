@@ -23,9 +23,10 @@ Generators can now reference both secret and public contents of other secrets vi
 2. Access dependent secrets' values in the generator:
    - `secrets.<name>` - the secret content (for just-generated secrets)
    - `publics.<name>` - the public content (always available if secret has public output)
-3. Generator functions can accept `{ secrets }`, `{ publics }`, `{ secrets, publics }`, or no parameters
-4. Secrets are generated in dependency order automatically
-5. Clear error messages if dependencies cannot be resolved
+3. Generator functions can accept `{ secrets }`, `{ publics }`, `{ secrets, publics }`, `{ }`, or any subset
+4. The system automatically tries different parameter combinations if the generator doesn't accept all arguments
+5. Secrets are generated in dependency order automatically
+6. Clear error messages if dependencies cannot be resolved
 
 ## Usage
 
@@ -55,7 +56,7 @@ agenix --rekey --rules ./secrets.nix
   "authorized-keys.age" = {
     publicKeys = [ user1 system1 ];
     dependencies = [ "deploy-key" ];
-    generator = { publics, ... }: 
+    generator = { publics }: 
       # Access the public key from deploy-key
       publics."deploy-key" + "\n" + "ssh-ed25519 AAAA... other-key";
   };
