@@ -125,50 +125,139 @@ pub fn rekey_all_files(rules_path: &str, identity: Option<&str>) -> Result<()> {
 /// Only generates secrets if:
 /// 1. The file has a generator function defined
 /// 2. The secret file doesn't already exist
+///
+/// Supports dependencies: generators can reference other secrets via the `secrets` and `publics`
+/// parameters. Secrets are generated in dependency order, with multiple passes to resolve dependencies.
 pub fn generate_secrets(rules_path: &str) -> Result<()> {
+    use crate::nix::generate_secret_with_context;
+    use std::collections::{HashMap, HashSet};
+
     let files = get_all_files(rules_path)?;
 
-    for file in files {
-        // Skip if the file already exists
+    // Track which secrets have been generated in-memory (not just on disk)
+    let mut generated: HashMap<String, crate::nix::GeneratorOutput> = HashMap::new();
+    let mut pending: HashSet<String> = HashSet::new();
+    let mut failed_last_round: HashSet<String> = HashSet::new();
+
+    // First pass: identify secrets that need generation
+    for file in &files {
+        // Skip if the file already exists on disk
         if Path::new(&file).exists() {
-            if let Ok(Some(_)) = generate_secret_with_public(rules_path, &file) {
+            if let Ok(Some(_)) = generate_secret_with_public(rules_path, file) {
                 eprintln!("Skipping {file}: already exists");
             }
             continue;
         }
 
         // Check if there's a generator for this file
-        if let Some(generator_output) = generate_secret_with_public(rules_path, &file)? {
-            eprintln!("Generating {file}...");
+        if let Ok(Some(_)) = generate_secret_with_public(rules_path, file) {
+            pending.insert(file.clone());
+        }
+    }
 
-            let public_keys = get_public_keys(rules_path, &file)?;
-            let armor = should_armor(rules_path, &file)?;
+    // Helper function to get the base name without .age suffix
+    let get_base_name = |file: &str| -> String {
+        if file.ends_with(".age") {
+            file[..file.len() - 4].to_string()
+        } else {
+            file.to_string()
+        }
+    };
 
-            if public_keys.is_empty() {
-                eprintln!("Warning: No public keys found for {file}, skipping");
-                continue;
-            }
+    // Multi-pass generation: keep trying until all secrets are generated or we detect a cycle
+    const MAX_PASSES: usize = 100;
+    for pass in 0..MAX_PASSES {
+        if pending.is_empty() {
+            break;
+        }
 
-            // Create temporary file with the generated secret content
-            let temp_dir = TempDir::new().context("Failed to create temporary directory")?;
-            let temp_file = temp_dir.path().join("generated_secret");
-            fs::write(&temp_file, &generator_output.secret)
-                .context("Failed to write generated content to temporary file")?;
+        let mut generated_this_round = HashSet::new();
+        let mut failed_this_round = HashSet::new();
 
-            // Encrypt the generated secret content
-            encrypt_from_file(&temp_file.to_string_lossy(), &file, &public_keys, armor)
-                .with_context(|| format!("Failed to encrypt generated secret {file}"))?;
+        for file in &pending {
+            // Try to generate this secret with the current context
+            match generate_secret_with_context(rules_path, file, &generated) {
+                Ok(Some(generator_output)) => {
+                    eprintln!("Generating {file}...");
 
-            eprintln!("Generated and encrypted {file}");
+                    let public_keys = get_public_keys(rules_path, file)?;
+                    let armor = should_armor(rules_path, file)?;
 
-            // If there's public content, write it to a .pub file
-            if let Some(public_content) = &generator_output.public {
-                let pub_file = format!("{}.pub", file);
-                fs::write(&pub_file, public_content)
-                    .with_context(|| format!("Failed to write public file {pub_file}"))?;
-                eprintln!("Generated public file {pub_file}");
+                    if public_keys.is_empty() {
+                        eprintln!("Warning: No public keys found for {file}, skipping");
+                        failed_this_round.insert(file.clone());
+                        continue;
+                    }
+
+                    // Create temporary file with the generated secret content
+                    let temp_dir =
+                        TempDir::new().context("Failed to create temporary directory")?;
+                    let temp_file = temp_dir.path().join("generated_secret");
+                    fs::write(&temp_file, &generator_output.secret)
+                        .context("Failed to write generated content to temporary file")?;
+
+                    // Encrypt the generated secret content
+                    encrypt_from_file(&temp_file.to_string_lossy(), file, &public_keys, armor)
+                        .with_context(|| format!("Failed to encrypt generated secret {file}"))?;
+
+                    eprintln!("Generated and encrypted {file}");
+
+                    // If there's public content, write it to a .pub file
+                    if let Some(public_content) = &generator_output.public {
+                        let pub_file = format!("{}.pub", file);
+                        fs::write(&pub_file, public_content)
+                            .with_context(|| format!("Failed to write public file {pub_file}"))?;
+                        eprintln!("Generated public file {pub_file}");
+                    }
+
+                    // Store in memory for other generators to use
+                    let base_name = get_base_name(file);
+                    generated.insert(base_name, generator_output);
+                    generated_this_round.insert(file.clone());
+                }
+                Ok(None) => {
+                    // No generator for this file (shouldn't happen as we checked earlier)
+                    failed_this_round.insert(file.clone());
+                }
+                Err(e) => {
+                    // Generation failed - might be due to missing dependency
+                    // We'll retry in the next pass
+                    if pass == 0 || !failed_last_round.contains(file) {
+                        // Only show error on first attempt or if it's a new failure
+                        eprintln!(
+                            "Warning: Could not generate {file} in pass {}: {}",
+                            pass + 1,
+                            e
+                        );
+                    }
+                    failed_this_round.insert(file.clone());
+                }
             }
         }
+
+        // Remove successfully generated secrets from pending
+        for file in &generated_this_round {
+            pending.remove(file);
+        }
+
+        // Check for circular dependencies: if nothing was generated this round and we still have pending secrets
+        if generated_this_round.is_empty() && !pending.is_empty() {
+            let pending_list: Vec<_> = pending.iter().collect();
+            return Err(anyhow!(
+                "Circular dependency detected or generation failed for secrets: {:?}",
+                pending_list
+            ));
+        }
+
+        failed_last_round = failed_this_round;
+    }
+
+    if !pending.is_empty() {
+        return Err(anyhow!(
+            "Failed to generate all secrets after {} passes. Remaining: {:?}",
+            MAX_PASSES,
+            pending
+        ));
     }
 
     Ok(())
@@ -249,11 +338,11 @@ mod tests {
 {{
   "{}/static-secret.age" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
-    generator = {{ }}: "static-password-123";
+    generator = {{ ... }}: "static-password-123";
   }};
   "{}/random-secret.age" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
-    generator = {{ }}: builtins.randomString 16;
+    generator = {{ ... }}: builtins.randomString 16;
   }};
   "{}/no-generator.age" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
@@ -350,7 +439,7 @@ mod tests {
 {{
   "{}/existing-secret.age" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
-    generator = {{ }}: "should-not-overwrite";
+    generator = {{ ... }}: "should-not-overwrite";
   }};
 }}
 "#,

@@ -118,11 +118,60 @@ pub fn generate_secret(rules_path: &str, file: &str) -> Result<Option<String>> {
 /// - Files ending with "ed25519", "ssh", or "ssh_key" use builtins.sshKey (SSH Ed25519 keypair)
 /// - Files ending with "x25519" use builtins.ageKey (age x25519 keypair)
 /// - Files ending with "password" or "passphrase" use builtins.randomString 32
+///
+/// The generator function receives an attrset with `secrets` and `publics` fields:
+/// - `secrets`: attrset mapping secret names (without .age) to their generated secret content
+/// - `publics`: attrset mapping secret names (without .age) to their generated public content
 pub fn generate_secret_with_public(
     rules_path: &str,
     file: &str,
 ) -> Result<Option<GeneratorOutput>> {
+    generate_secret_with_context(rules_path, file, &std::collections::HashMap::new())
+}
+
+/// Generate a secret with access to previously generated secrets
+pub fn generate_secret_with_context(
+    rules_path: &str,
+    file: &str,
+    generated: &std::collections::HashMap<String, GeneratorOutput>,
+) -> Result<Option<GeneratorOutput>> {
+    // Build the context attrset with secrets and publics from previously generated secrets
+    let mut secrets_entries = Vec::new();
+    let mut publics_entries = Vec::new();
+
+    for (name, output) in generated {
+        // Escape the secret and public content for Nix strings
+        let secret_escaped = output
+            .secret
+            .replace("\\", "\\\\")
+            .replace("\"", "\\\"")
+            .replace("\n", "\\n");
+        secrets_entries.push(format!("\"{}\" = \"{}\";", name, secret_escaped));
+
+        if let Some(public) = &output.public {
+            let public_escaped = public
+                .replace("\\", "\\\\")
+                .replace("\"", "\\\"")
+                .replace("\n", "\\n");
+            publics_entries.push(format!("\"{}\" = \"{}\";", name, public_escaped));
+        }
+    }
+
+    let secrets_attrset = if secrets_entries.is_empty() {
+        "{ }".to_string()
+    } else {
+        format!("{{ {} }}", secrets_entries.join(" "))
+    };
+
+    let publics_attrset = if publics_entries.is_empty() {
+        "{ }".to_string()
+    } else {
+        format!("{{ {} }}", publics_entries.join(" "))
+    };
+
     // Build Nix expression that checks for explicit generator or uses automatic selection
+    // Generators receive { secrets = {...}; publics = {...}; } as parameter
+    // Old-style generators with { }: will fail, they need to be updated to { ... }: or { secrets ? {}, publics ? {}, ... }:
     let nix_expr = format!(
         r#"(let 
           rules = import {rules_path};
@@ -130,15 +179,19 @@ pub fn generate_secret_with_public(
           hasSuffix = s: builtins.match ".*${{s}}(\.age)?$" name != null;
           auto = 
             if hasSuffix "ed25519" || hasSuffix "ssh" || hasSuffix "ssh_key" 
-            then builtins.sshKey
+            then ({{ ... }}: builtins.sshKey {{}})
             else if hasSuffix "x25519"
-            then builtins.ageKey
+            then ({{ ... }}: builtins.ageKey {{}})
             else if hasSuffix "password" || hasSuffix "passphrase"
-            then (_: builtins.randomString 32)
+            then ({{ ... }}: builtins.randomString 32)
             else null;
+          # Context available to generators
+          secrets = {secrets_attrset};
+          publics = {publics_attrset};
+          context = {{ inherit secrets publics; }};
           result = if builtins.hasAttr "generator" rules."{file}"
-                   then rules."{file}".generator {{}}
-                   else if auto != null then auto {{}} else null;
+                   then rules."{file}".generator context
+                   else if auto != null then auto context else null;
         in builtins.deepSeq result result)"#,
     );
 
@@ -194,6 +247,37 @@ pub fn get_all_files(rules_path: &str) -> Result<Vec<String>> {
     let keys = value_to_string_array(output)?;
 
     Ok(keys)
+}
+
+/// Get the dependencies for a secret's generator function
+/// Returns a list of secret names (without .age suffix) that this generator depends on
+pub fn get_generator_dependencies(rules_path: &str, file: &str) -> Result<Vec<String>> {
+    // We need to analyze the generator function to find references to secrets/publics
+    // For now, we'll use a heuristic: evaluate the generator with a special context that
+    // tracks attribute accesses, but this is complex. Instead, we'll parse the generator
+    // source code to find attribute references.
+
+    // Get the generator function as a string (if it exists)
+    let nix_expr = format!(
+        r#"(let 
+          rules = import {rules_path};
+        in 
+          if builtins.hasAttr "generator" rules."{file}"
+          then 
+            # We can't easily introspect function bodies in Nix, so we'll use a different approach
+            # For now, return an empty list - we'll implement proper dependency tracking later
+            []
+          else 
+            []
+        )"#
+    );
+
+    let current_dir = current_dir()?;
+    let output = eval_nix_expression(nix_expr.as_str(), &current_dir)?;
+
+    // Parse the result - this will always be [] for now
+    let deps = value_to_string_array(output)?;
+    Ok(deps)
 }
 
 #[cfg(test)]
@@ -1198,7 +1282,7 @@ mod tests {
         {
           "secret1.age" = {
             publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
-            generator = { }: "generated-secret";
+            generator = { ... }: "generated-secret";
           };
           "secret2.age" = {
             publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
@@ -1222,7 +1306,7 @@ mod tests {
         {
           "secret1.age" = {
             publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
-            generator = { }: builtins.randomString 16;
+            generator = { ... }: builtins.randomString 16;
           };
         }
         "#;
@@ -1244,7 +1328,7 @@ mod tests {
         {
           "secret1.age" = {
             publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
-            generator = { }: "just-a-secret";
+            generator = { ... }: "just-a-secret";
           };
         }
         "#;
@@ -1266,7 +1350,7 @@ mod tests {
         {
           "secret1.age" = {
             publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
-            generator = { }: { secret = "my-secret"; public = "my-public-key"; };
+            generator = { ... }: { secret = "my-secret"; public = "my-public-key"; };
           };
         }
         "#;
@@ -1288,7 +1372,7 @@ mod tests {
         {
           "secret1.age" = {
             publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
-            generator = { }: { secret = "only-secret"; };
+            generator = { ... }: { secret = "only-secret"; };
           };
         }
         "#;
@@ -1310,7 +1394,7 @@ mod tests {
         {
           "secret1.age" = {
             publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
-            generator = { }: { public = "only-public"; };
+            generator = { ... }: { public = "only-public"; };
           };
         }
         "#;
@@ -1383,7 +1467,7 @@ mod tests {
         {
           "secret1.age" = {
             publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
-            generator = { }: 
+            generator = { ... }: 
               let secret = builtins.randomString 32;
               in { secret = secret; public = "metadata-for-${secret}"; };
           };
@@ -1724,7 +1808,7 @@ mod tests {
         {
           "my-password.age" = {
             publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
-            generator = { }: "custom-fixed-value";
+            generator = { ... }: "custom-fixed-value";
           };
         }
         "#;
@@ -1927,7 +2011,7 @@ mod tests {
         {
           "generated-deploy-key.age" = {
             publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
-            generator = { }: builtins.sshKey {};
+            generator = { ... }: builtins.sshKey {};
           };
           "authorized-keys.age" = {
             publicKeys = [ 
@@ -1947,6 +2031,88 @@ mod tests {
             "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p"
         );
         assert_eq!(result[1], ssh_public_key);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_generator_with_secret_dependency() -> Result<()> {
+        // Create a rules file where one secret depends on another
+        let rules_content = r#"
+        {
+          "base-secret.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+            generator = { ... }: "base-value";
+          };
+          "derived-secret.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+            generator = { secrets, ... }: "derived-from-${secrets.base-secret or "NOT-FOUND"}";
+          };
+        }
+        "#;
+        let temp_file = create_test_rules_file(rules_content)?;
+
+        // Generate base-secret first
+        let base_output =
+            generate_secret_with_public(temp_file.path().to_str().unwrap(), "base-secret.age")?;
+        assert!(base_output.is_some());
+        assert_eq!(base_output.as_ref().unwrap().secret, "base-value");
+
+        // Now generate derived-secret with context containing base-secret
+        let mut generated = std::collections::HashMap::new();
+        generated.insert("base-secret".to_string(), base_output.unwrap());
+
+        let derived_output = generate_secret_with_context(
+            temp_file.path().to_str().unwrap(),
+            "derived-secret.age",
+            &generated,
+        )?;
+
+        assert!(derived_output.is_some());
+        assert_eq!(derived_output.unwrap().secret, "derived-from-base-value");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_generator_with_public_dependency() -> Result<()> {
+        // Create a rules file where one secret depends on another's public output
+        let rules_content = r#"
+        {
+          "ssh-key.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+            generator = { ... }: { secret = "private-key"; public = "public-key-content"; };
+          };
+          "authorized-keys.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+            generator = { publics, ... }: publics."ssh-key" or "NOT-FOUND";
+          };
+        }
+        "#;
+        let temp_file = create_test_rules_file(rules_content)?;
+
+        // Generate ssh-key first
+        let ssh_output =
+            generate_secret_with_public(temp_file.path().to_str().unwrap(), "ssh-key.age")?;
+        assert!(ssh_output.is_some());
+        assert_eq!(ssh_output.as_ref().unwrap().secret, "private-key");
+        assert_eq!(
+            ssh_output.as_ref().unwrap().public,
+            Some("public-key-content".to_string())
+        );
+
+        // Now generate authorized-keys with context containing ssh-key
+        let mut generated = std::collections::HashMap::new();
+        generated.insert("ssh-key".to_string(), ssh_output.unwrap());
+
+        let authkeys_output = generate_secret_with_context(
+            temp_file.path().to_str().unwrap(),
+            "authorized-keys.age",
+            &generated,
+        )?;
+
+        assert!(authkeys_output.is_some());
+        assert_eq!(authkeys_output.unwrap().secret, "public-key-content");
 
         Ok(())
     }
