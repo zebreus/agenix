@@ -128,15 +128,30 @@ pub fn generate_secret_with_public(
     generate_secret_with_public_and_context(rules_path, file, "{}")
 }
 
+/// Build a Nix expression that evaluates a generator with automatic fallback
+fn build_generator_nix_expression(rules_path: &str, file: &str, attempt_arg: &str) -> String {
+    format!(
+        r#"(let 
+          rules = import {rules_path};
+          name = builtins.replaceStrings ["A" "B" "C" "D" "E" "F" "G" "H" "I" "J" "K" "L" "M" "N" "O" "P" "Q" "R" "S" "T" "U" "V" "W" "X" "Y" "Z"] ["a" "b" "c" "d" "e" "f" "g" "h" "i" "j" "k" "l" "m" "n" "o" "p" "q" "r" "s" "t" "u" "v" "w" "x" "y" "z"] "{file}";
+          hasSuffix = s: builtins.match ".*${{s}}(\.age)?$" name != null;
+          auto = 
+            if hasSuffix "ed25519" || hasSuffix "ssh" || hasSuffix "ssh_key" 
+            then builtins.sshKey
+            else if hasSuffix "x25519"
+            then builtins.ageKey
+            else if hasSuffix "password" || hasSuffix "passphrase"
+            then (_: builtins.randomString 32)
+            else null;
+          secretsContext = {attempt_arg};
+          result = if builtins.hasAttr "generator" rules."{file}"
+                   then rules."{file}".generator secretsContext
+                   else if auto != null then auto secretsContext else null;
+        in builtins.deepSeq result result)"#,
+    )
+}
+
 /// Internal function that accepts a custom context for the generator
-///
-/// TODO: Refactoring opportunity - The Nix expression template (20 lines) could be extracted
-/// to a separate function or const template for better readability. The auto-generator logic
-/// adds complexity that might be better isolated. However, this would require careful testing
-/// to ensure all edge cases still work. Suggested approach:
-/// - Extract template building to `build_generator_expression()`
-/// - Move auto-generator selection to separate function
-/// User decision needed on whether complexity reduction justifies the refactoring risk.
 pub(crate) fn generate_secret_with_public_and_context(
     rules_path: &str,
     file: &str,
@@ -171,26 +186,7 @@ pub(crate) fn generate_secret_with_public_and_context(
     let mut last_error = None;
 
     for attempt_arg in &attempts {
-        // Build Nix expression that checks for explicit generator or uses automatic selection
-        let nix_expr = format!(
-            r#"(let 
-          rules = import {rules_path};
-          name = builtins.replaceStrings ["A" "B" "C" "D" "E" "F" "G" "H" "I" "J" "K" "L" "M" "N" "O" "P" "Q" "R" "S" "T" "U" "V" "W" "X" "Y" "Z"] ["a" "b" "c" "d" "e" "f" "g" "h" "i" "j" "k" "l" "m" "n" "o" "p" "q" "r" "s" "t" "u" "v" "w" "x" "y" "z"] "{file}";
-          hasSuffix = s: builtins.match ".*${{s}}(\.age)?$" name != null;
-          auto = 
-            if hasSuffix "ed25519" || hasSuffix "ssh" || hasSuffix "ssh_key" 
-            then builtins.sshKey
-            else if hasSuffix "x25519"
-            then builtins.ageKey
-            else if hasSuffix "password" || hasSuffix "passphrase"
-            then (_: builtins.randomString 32)
-            else null;
-          secretsContext = {attempt_arg};
-          result = if builtins.hasAttr "generator" rules."{file}"
-                   then rules."{file}".generator secretsContext
-                   else if auto != null then auto secretsContext else null;
-        in builtins.deepSeq result result)"#,
-        );
+        let nix_expr = build_generator_nix_expression(rules_path, file, attempt_arg);
 
         let current_dir = current_dir()?;
         match eval_nix_expression(nix_expr.as_str(), &current_dir) {
