@@ -129,6 +129,14 @@ pub fn generate_secret_with_public(
 }
 
 /// Internal function that accepts a custom context for the generator
+///
+/// TODO: Refactoring opportunity - The Nix expression template (20 lines) could be extracted
+/// to a separate function or const template for better readability. The auto-generator logic
+/// adds complexity that might be better isolated. However, this would require careful testing
+/// to ensure all edge cases still work. Suggested approach:
+/// - Extract template building to `build_generator_expression()`
+/// - Move auto-generator selection to separate function
+/// User decision needed on whether complexity reduction justifies the refactoring risk.
 pub(crate) fn generate_secret_with_public_and_context(
     rules_path: &str,
     file: &str,
@@ -136,11 +144,13 @@ pub(crate) fn generate_secret_with_public_and_context(
 ) -> Result<Option<GeneratorOutput>> {
     // Extract parameter parts for fallback attempts
     let extract_part = |prefix: &str| -> Option<String> {
-        secrets_arg.find(&format!("{} = {{", prefix)).and_then(|start| {
-            secrets_arg[start..].find("};").map(|end| {
-                format!("{{ {} }}", &secrets_arg[start..start + end + 2])
+        secrets_arg
+            .find(&format!("{} = {{", prefix))
+            .and_then(|start| {
+                secrets_arg[start..]
+                    .find("};")
+                    .map(|end| format!("{{ {} }}", &secrets_arg[start..start + end + 2]))
             })
-        })
     };
 
     let publics_part = extract_part("publics");
@@ -340,7 +350,8 @@ fn auto_detect_dependencies(rules_path: &str, file: &str) -> Result<Vec<String>>
 
                         // Look for attribute access errors mentioning secret names
                         for potential_dep in &all_files {
-                            let full_name = potential_dep.strip_suffix(".age").unwrap_or(potential_dep);
+                            let full_name =
+                                potential_dep.strip_suffix(".age").unwrap_or(potential_dep);
                             let basename = std::path::Path::new(full_name)
                                 .file_name()
                                 .and_then(|n| n.to_str())
@@ -363,7 +374,11 @@ fn auto_detect_dependencies(rules_path: &str, file: &str) -> Result<Vec<String>>
             detected_deps.sort();
             detected_deps.dedup();
             detected_deps.retain(|d| {
-                let d_normalized = if d.ends_with(".age") { d.clone() } else { format!("{}.age", d) };
+                let d_normalized = if d.ends_with(".age") {
+                    d.clone()
+                } else {
+                    format!("{}.age", d)
+                };
                 d_normalized != *file
             });
 
