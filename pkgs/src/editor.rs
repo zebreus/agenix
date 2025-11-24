@@ -297,25 +297,55 @@ pub fn generate_secrets(rules_path: &str) -> Result<()> {
                 continue;
             }
 
-            // Build the public context for the generator
+            // Build the context for the generator
+            // We build two separate attrsets: secrets and publics
+            let mut secrets_context_parts = Vec::new();
             let mut publics_context_parts = Vec::new();
 
             for dep in &deps {
+                // Add public content
                 if let Some(public_content) =
                     get_public_content(dep, rules_dir, &generated_secrets)?
                 {
                     let escaped_public = escape_nix_string(&public_content);
-                    publics_context_parts.push(format!(
-                        r#""{}" = {{ public = "{}"; }};"#,
-                        dep, escaped_public
-                    ));
+                    publics_context_parts.push(format!(r#""{}" = "{}";"#, dep, escaped_public));
+                }
+
+                // Add secret content if available (from generated_secrets)
+                let dep_basename = if dep.ends_with(".age") {
+                    dep.clone()
+                } else {
+                    format!("{}.age", dep)
+                };
+                let dep_basename_norm = secret_basename(&dep_basename);
+
+                for (key, output) in generated_secrets.iter() {
+                    if secret_basename(key) == dep_basename_norm {
+                        let escaped_secret = escape_nix_string(&output.secret);
+                        secrets_context_parts.push(format!(r#""{}" = "{}";"#, dep, escaped_secret));
+                        break;
+                    }
                 }
             }
 
-            let secrets_arg = if !publics_context_parts.is_empty() {
-                format!("{{ secrets = {{ {} }}; }}", publics_context_parts.join(" "))
-            } else {
-                "{}".to_string()
+            let secrets_arg = {
+                let secrets_part = if !secrets_context_parts.is_empty() {
+                    format!("secrets = {{ {} }};", secrets_context_parts.join(" "))
+                } else {
+                    "secrets = {};".to_string()
+                };
+                let publics_part = if !publics_context_parts.is_empty() {
+                    format!("publics = {{ {} }};", publics_context_parts.join(" "))
+                } else {
+                    "publics = {};".to_string()
+                };
+
+                if !deps.is_empty() {
+                    // Only include secrets/publics if there are dependencies
+                    format!("{{ {} {} }}", secrets_part, publics_part)
+                } else {
+                    "{}".to_string()
+                }
             };
 
             // Generate with dependencies context
@@ -685,7 +715,7 @@ mod tests {
   "{}/authorized-keys.age" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     dependencies = [ "ssh-key" ];
-    generator = {{ secrets }}: "ssh-key-pub: " + secrets."ssh-key".public;
+    generator = {{ publics, ... }}: "ssh-key-pub: " + publics."ssh-key";
   }};
 }}
 "#,
@@ -813,7 +843,7 @@ mod tests {
   "{}/derived.age" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     dependencies = [ "base" ];
-    generator = {{ secrets }}: "derived-from-" + secrets.base.public;
+    generator = {{ publics, ... }}: "derived-from-" + publics.base;
   }};
   "{}/base.age" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
@@ -852,6 +882,98 @@ mod tests {
         assert!(base_path.exists(), "base.age should be created");
         assert!(base_pub_path.exists(), "base.age.pub should be created");
         assert!(derived_path.exists(), "derived.age should be created");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_generate_secrets_with_different_generator_patterns() -> Result<()> {
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+
+        // Create a temporary directory
+        let temp_dir = tempdir()?;
+
+        // Create rules with generators accepting different parameter patterns
+        let rules_content = format!(
+            r#"
+{{
+  "{}/base-secret.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {{ }}: {{ secret = "base-secret-value"; public = "base-public-value"; }};
+  }};
+  "{}/only-publics.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    dependencies = [ "base-secret" ];
+    generator = {{ publics, ... }}: "public: " + publics."base-secret";
+  }};
+  "{}/only-secrets.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    dependencies = [ "base-secret" ];
+    generator = {{ secrets, ... }}: "secret: " + secrets."base-secret";
+  }};
+  "{}/both-secrets-and-publics.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    dependencies = [ "base-secret" ];
+    generator = {{ secrets, publics }}: "secret: " + secrets."base-secret" + ", public: " + publics."base-secret";
+  }};
+  "{}/ignore-deps-with-ellipsis.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    dependencies = [ "base-secret" ];
+    generator = {{ ... }}: "ignoring-all-params";
+  }};
+}}
+"#,
+            temp_dir.path().to_str().unwrap(),
+            temp_dir.path().to_str().unwrap(),
+            temp_dir.path().to_str().unwrap(),
+            temp_dir.path().to_str().unwrap(),
+            temp_dir.path().to_str().unwrap()
+        );
+
+        let mut temp_rules = NamedTempFile::new()?;
+        writeln!(temp_rules, "{}", rules_content)?;
+        temp_rules.flush()?;
+
+        // Generate secrets - should handle all patterns
+        let args = vec![
+            "agenix".to_string(),
+            "--generate".to_string(),
+            "--rules".to_string(),
+            temp_rules.path().to_str().unwrap().to_string(),
+        ];
+
+        let result = crate::run(args);
+        assert!(
+            result.is_ok(),
+            "Generation should succeed with different parameter patterns: {:?}",
+            result.err()
+        );
+
+        // All files should exist
+        let base_path = temp_dir.path().join("base-secret.age");
+        let only_publics_path = temp_dir.path().join("only-publics.age");
+        let only_secrets_path = temp_dir.path().join("only-secrets.age");
+        let both_path = temp_dir.path().join("both-secrets-and-publics.age");
+        let ignore_path = temp_dir.path().join("ignore-deps-with-ellipsis.age");
+
+        assert!(base_path.exists(), "base-secret.age should be created");
+        assert!(
+            only_publics_path.exists(),
+            "only-publics.age should be created"
+        );
+        assert!(
+            only_secrets_path.exists(),
+            "only-secrets.age should be created"
+        );
+        assert!(
+            both_path.exists(),
+            "both-secrets-and-publics.age should be created"
+        );
+        assert!(
+            ignore_path.exists(),
+            "ignore-deps-with-ellipsis.age should be created"
+        );
 
         Ok(())
     }
