@@ -151,13 +151,49 @@ fn build_generator_nix_expression(rules_path: &str, file: &str, attempt_arg: &st
     )
 }
 
-/// Internal function that accepts a custom context for the generator
-pub(crate) fn generate_secret_with_public_and_context(
-    rules_path: &str,
-    file: &str,
-    secrets_arg: &str,
-) -> Result<Option<GeneratorOutput>> {
-    // Extract parameter parts for fallback attempts
+/// Parse generator output from Nix evaluation result
+fn parse_generator_output(output: Value) -> Result<Option<GeneratorOutput>> {
+    const SECRET_KEY: &[u8] = b"secret";
+    const PUBLIC_KEY: &[u8] = b"public";
+
+    match output {
+        Value::Null => Ok(None),
+        Value::String(s) => Ok(Some(GeneratorOutput {
+            secret: s.as_str()?.to_owned(),
+            public: None,
+        })),
+        Value::Attrs(attrs) => {
+            let secret = attrs
+                .select(NixString::from(SECRET_KEY).as_ref())
+                .ok_or_else(|| anyhow::anyhow!("Generator attrset must have 'secret' key"))?;
+            let public = attrs
+                .select(NixString::from(PUBLIC_KEY).as_ref())
+                .map(|v| value_to_string(v.clone()))
+                .transpose()?;
+            Ok(Some(GeneratorOutput {
+                secret: value_to_string(secret.clone())?,
+                public,
+            }))
+        }
+        _ => Err(anyhow::anyhow!(
+            "Generator must return string or attrset with 'secret' key, got: {:?}",
+            output
+        )),
+    }
+}
+
+/// Check if an error indicates a parameter mismatch (should retry with different params)
+fn is_param_mismatch_error(error: &str) -> bool {
+    error.contains("Unexpected argument")
+        || error.contains("undefined variable")
+        || error.contains("attribute")
+        || error.contains("E003")
+        || error.contains("E005")
+        || error.contains("E031")
+}
+
+/// Build list of parameter attempts for generator invocation
+fn build_param_attempts(secrets_arg: &str) -> Vec<String> {
     let extract_part = |prefix: &str| -> Option<String> {
         secrets_arg
             .find(&format!("{} = {{", prefix))
@@ -168,88 +204,47 @@ pub(crate) fn generate_secret_with_public_and_context(
             })
     };
 
-    let publics_part = extract_part("publics");
-    let secrets_part = extract_part("secrets");
+    let publics = extract_part("publics");
+    let secrets = extract_part("secrets");
 
-    // Build attempts: start minimal, add parameters as needed
     let mut attempts = vec!["{}".to_string()];
-    if let Some(ref p) = publics_part {
+    if let Some(ref p) = publics {
         attempts.push(p.clone());
     }
-    if let Some(ref s) = secrets_part {
+    if let Some(ref s) = secrets {
         attempts.push(s.clone());
     }
-    if secrets_part.is_some() && publics_part.is_some() {
+    if secrets.is_some() && publics.is_some() {
         attempts.push(secrets_arg.to_string());
     }
+    attempts
+}
 
+/// Internal function that accepts a custom context for the generator
+pub(crate) fn generate_secret_with_public_and_context(
+    rules_path: &str,
+    file: &str,
+    secrets_arg: &str,
+) -> Result<Option<GeneratorOutput>> {
+    let attempts = build_param_attempts(secrets_arg);
+    let current_dir = current_dir()?;
     let mut last_error = None;
 
     for attempt_arg in &attempts {
         let nix_expr = build_generator_nix_expression(rules_path, file, attempt_arg);
 
-        let current_dir = current_dir()?;
         match eval_nix_expression(nix_expr.as_str(), &current_dir) {
-            Ok(output) => {
-                // Successfully evaluated - parse the result
-                // Commonly used attribute names as constants
-                const SECRET_KEY: &[u8] = b"secret";
-                const PUBLIC_KEY: &[u8] = b"public";
-
-                return match output {
-                    Value::Null => Ok(None),
-                    Value::String(s) => {
-                        // Generator returned just a string - this is the secret
-                        Ok(Some(GeneratorOutput {
-                            secret: s.as_str()?.to_owned(),
-                            public: None,
-                        }))
-                    }
-                    Value::Attrs(attrs) => {
-                        // Generator returned an attrset - extract secret and public
-                        let secret = attrs
-                            .select(NixString::from(SECRET_KEY).as_ref())
-                            .ok_or_else(|| {
-                                anyhow::anyhow!("Generator attrset must have 'secret' key")
-                            })?;
-                        let secret_str = value_to_string(secret.clone())?;
-
-                        let public = attrs
-                            .select(NixString::from(PUBLIC_KEY).as_ref())
-                            .map(|v| value_to_string(v.clone()))
-                            .transpose()?;
-
-                        Ok(Some(GeneratorOutput {
-                            secret: secret_str,
-                            public,
-                        }))
-                    }
-                    _ => Err(anyhow::anyhow!(
-                        "Generator must return either a string or an attrset with 'secret' and optional 'public' keys, got: {:?}",
-                        output
-                    )),
-                };
-            }
+            Ok(output) => return parse_generator_output(output),
             Err(e) => {
-                let error = e.to_string();
-                // Try next attempt if it's a parameter mismatch error
-                if error.contains("Unexpected argument")
-                    || error.contains("undefined variable")
-                    || error.contains("attribute")
-                    || error.contains("E003")
-                    || error.contains("E005")
-                    || error.contains("E031")
-                {
+                if is_param_mismatch_error(&e.to_string()) {
                     last_error = Some(e);
-                    continue;
+                } else {
+                    return Err(e);
                 }
-                // Other errors - propagate immediately
-                return Err(e);
             }
         }
     }
 
-    // All attempts failed - return the last error
     Err(last_error.unwrap_or_else(|| anyhow::anyhow!("Failed to call generator")))
 }
 
@@ -295,92 +290,89 @@ pub fn get_secret_dependencies(rules_path: &str, file: &str) -> Result<Vec<Strin
     auto_detect_dependencies(rules_path, file)
 }
 
+/// Build Nix expression to test generator with given params
+fn build_generator_test_expr(rules_path: &str, file: &str, params: &str) -> String {
+    format!(
+        r#"(let 
+          rules = import {rules_path};
+          hasGenerator = builtins.hasAttr "generator" rules."{file}";
+          result = if hasGenerator 
+                   then rules."{file}".generator {params}
+                   else null;
+        in builtins.deepSeq result result)"#,
+    )
+}
+
+/// Extract secret basename from file path
+fn extract_basename(path: &str) -> &str {
+    let name = path.strip_suffix(".age").unwrap_or(path);
+    std::path::Path::new(name)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(name)
+}
+
+/// Extract dependencies mentioned in error message from known files
+fn extract_deps_from_error(error: &str, all_files: &[String]) -> Vec<String> {
+    all_files
+        .iter()
+        .filter_map(|f| {
+            let name = f.strip_suffix(".age").unwrap_or(f);
+            let basename = extract_basename(f);
+            let patterns = [
+                format!("'{}'", name),
+                format!("\"{}\"", name),
+                format!("'{}'", basename),
+                format!("\"{}\"", basename),
+            ];
+            if patterns.iter().any(|p| error.contains(p)) {
+                Some(basename.to_string())
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
 /// Automatically detect dependencies by analyzing what the generator references
 fn auto_detect_dependencies(rules_path: &str, file: &str) -> Result<Vec<String>> {
     let all_files = get_all_files(rules_path)?;
     let current_dir = current_dir()?;
 
-    // Try calling generator with empty params to see if it needs secrets/publics
-    let nix_expr_test = format!(
-        r#"(let 
-          rules = import {rules_path};
-          hasGenerator = builtins.hasAttr "generator" rules."{file}";
-          result = if hasGenerator 
-                   then rules."{file}".generator {{ }}
-                   else null;
-        in builtins.deepSeq result result)"#,
-    );
+    // Try calling generator with empty params
+    let nix_expr = build_generator_test_expr(rules_path, file, "{ }");
+    match eval_nix_expression(&nix_expr, &current_dir) {
+        Ok(_) => return Ok(vec![]),
+        Err(e) if !e.to_string().contains("'secrets'") && !e.to_string().contains("'publics'") => {
+            return Ok(vec![]);
+        }
+        Err(_) => {}
+    }
 
-    match eval_nix_expression(nix_expr_test.as_str(), &current_dir) {
-        Ok(_) => Ok(vec![]), // Generator works with empty context - no dependencies
-        Err(e) => {
-            let error_msg = e.to_string();
-
-            // Check if the error is about missing 'secrets' or 'publics' parameters
-            if !error_msg.contains("'secrets'") && !error_msg.contains("'publics'") {
-                return Ok(vec![]); // Some other error, not related to dependencies
-            }
-
-            // Try calling with empty attrsets to see which specific secrets are referenced
-            let mut detected_deps = Vec::new();
-
-            for params in &[
-                "{ secrets = {}; publics = {}; }",
-                "{ secrets = {}; }",
-                "{ publics = {}; }",
-            ] {
-                let nix_expr_with_params = format!(
-                    r#"(let 
-                      rules = import {rules_path};
-                      hasGenerator = builtins.hasAttr "generator" rules."{file}";
-                      result = if hasGenerator 
-                               then rules."{file}".generator {params}
-                               else null;
-                    in builtins.deepSeq result result)"#,
-                );
-
-                match eval_nix_expression(nix_expr_with_params.as_str(), &current_dir) {
-                    Ok(_) => return Ok(vec![]), // Works with empty - no specific dependencies
-                    Err(e) => {
-                        let param_error = e.to_string();
-
-                        // Look for attribute access errors mentioning secret names
-                        for potential_dep in &all_files {
-                            let full_name =
-                                potential_dep.strip_suffix(".age").unwrap_or(potential_dep);
-                            let basename = std::path::Path::new(full_name)
-                                .file_name()
-                                .and_then(|n| n.to_str())
-                                .unwrap_or(full_name);
-
-                            // Check if error mentions this secret (both full path and basename)
-                            if param_error.contains(&format!("'{}'", full_name))
-                                || param_error.contains(&format!("\"{}\"", full_name))
-                                || param_error.contains(&format!("'{}'", basename))
-                                || param_error.contains(&format!("\"{}\"", basename))
-                            {
-                                detected_deps.push(basename.to_string());
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Remove duplicates and self-references
-            detected_deps.sort();
-            detected_deps.dedup();
-            detected_deps.retain(|d| {
-                let d_normalized = if d.ends_with(".age") {
-                    d.clone()
-                } else {
-                    format!("{}.age", d)
-                };
-                d_normalized != *file
-            });
-
-            Ok(detected_deps)
+    // Try with different param combinations to detect specific dependencies
+    let mut deps = Vec::new();
+    for params in [
+        "{ secrets = {}; publics = {}; }",
+        "{ secrets = {}; }",
+        "{ publics = {}; }",
+    ] {
+        let nix_expr = build_generator_test_expr(rules_path, file, params);
+        match eval_nix_expression(&nix_expr, &current_dir) {
+            Ok(_) => return Ok(vec![]),
+            Err(e) => deps.extend(extract_deps_from_error(&e.to_string(), &all_files)),
         }
     }
+
+    // Clean up: sort, dedupe, remove self-references
+    deps.sort();
+    deps.dedup();
+    let file_normalized = if file.ends_with(".age") {
+        file.to_string()
+    } else {
+        format!("{}.age", file)
+    };
+    deps.retain(|d| format!("{}.age", d) != file_normalized);
+    Ok(deps)
 }
 
 #[cfg(test)]
