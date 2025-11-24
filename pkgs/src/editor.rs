@@ -303,6 +303,7 @@ fn escape_nix_string(s: &str) -> String {
         .replace('\n', "\\n")
         .replace('\r', "\\r")
         .replace('\t', "\\t")
+        .replace('$', "\\$")
 }
 
 #[cfg(test)]
