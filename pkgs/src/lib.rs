@@ -25,8 +25,9 @@ where
             editor::rekey_all_files(&args.rules, identity.as_deref())
                 .context("Failed to rekey files")
         }
-        Some(cli::Command::Generate) => {
-            editor::generate_secrets(&args.rules).context("Failed to generate secrets")
+        Some(cli::Command::Generate { force, dry_run }) => {
+            editor::generate_secrets(&args.rules, force, dry_run)
+                .context("Failed to generate secrets")
         }
         Some(cli::Command::Decrypt {
             file,

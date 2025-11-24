@@ -365,16 +365,18 @@ fn process_single_secret(
     rules_dir: &Path,
     generated_secrets: &mut std::collections::HashMap<String, GeneratorOutput>,
     processed: &mut std::collections::HashSet<String>,
+    force: bool,
+    dry_run: bool,
 ) -> Result<ProcessResult> {
     // Skip if already processed
     if processed.contains(file) {
         return Ok(ProcessResult::AlreadyProcessed);
     }
 
-    // Skip if the file already exists
-    if Path::new(file).exists() {
+    // Skip if the file already exists (unless force is set)
+    if Path::new(file).exists() && !force {
         if let Ok(Some(_)) = generate_secret_with_public(rules_path, file) {
-            eprintln!("Skipping {file}: already exists");
+            eprintln!("Skipping {file}: already exists (use --force to overwrite)");
         }
         processed.insert(file.to_string());
         return Ok(ProcessResult::AlreadyProcessed);
@@ -413,6 +415,23 @@ fn process_single_secret(
         processed.insert(file.to_string());
         return Ok(ProcessResult::NoGenerator);
     };
+
+    // In dry-run mode, just report what would be done
+    if dry_run {
+        if Path::new(file).exists() {
+            eprintln!("Would overwrite {file}");
+        } else {
+            eprintln!("Would generate {file}");
+        }
+        if output.public.is_some() {
+            let pub_file = format!("{}.pub", file);
+            eprintln!("Would generate public file {pub_file}");
+        }
+        // Store the output for dependency resolution even in dry-run mode
+        generated_secrets.insert(file.to_string(), output);
+        processed.insert(file.to_string());
+        return Ok(ProcessResult::Generated);
+    }
 
     eprintln!("Generating {file}...");
 
@@ -485,11 +504,15 @@ fn handle_circular_dependency_error(deferred: &[String], rules_path: &str) -> Re
 /// Generate secrets using generator functions from rules
 /// Only generates secrets if:
 /// 1. The file has a generator function defined
-/// 2. The secret file doesn't already exist
+/// 2. The secret file doesn't already exist (unless force is set)
+///
+/// Options:
+/// - `force`: Overwrite existing secret files
+/// - `dry_run`: Show what would be generated without making changes
 ///
 /// This function now supports dependencies - generators can reference
 /// other secrets' public keys via the `dependencies` attribute.
-pub fn generate_secrets(rules_path: &str) -> Result<()> {
+pub fn generate_secrets(rules_path: &str, force: bool, dry_run: bool) -> Result<()> {
     use std::collections::{HashMap, HashSet};
 
     let files = get_all_files(rules_path)?;
@@ -519,6 +542,8 @@ pub fn generate_secrets(rules_path: &str) -> Result<()> {
                 rules_dir,
                 &mut generated_secrets,
                 &mut processed,
+                force,
+                dry_run,
             )? {
                 ProcessResult::Generated => progress_made = true,
                 ProcessResult::Deferred => deferred.push(file),
@@ -2198,6 +2223,326 @@ mod tests {
                 i
             );
         }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_generate_force_overwrites_existing() -> Result<()> {
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+
+        // Create a temporary directory with an existing file
+        let temp_dir = tempdir()?;
+
+        // Create the rules file with absolute paths
+        let rules_content = format!(
+            r#"
+{{
+  "{}/force-test.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {{ }}: "new-generated-content";
+  }};
+}}
+"#,
+            temp_dir.path().to_str().unwrap()
+        );
+
+        let mut temp_rules = NamedTempFile::new()?;
+        writeln!(temp_rules, "{}", rules_content)?;
+        temp_rules.flush()?;
+
+        let existing_file_path = temp_dir.path().join("force-test.age");
+        fs::write(&existing_file_path, b"existing content")?;
+
+        let original_content = fs::read(&existing_file_path)?;
+
+        // Use --force flag to overwrite
+        let args = vec![
+            "agenix".to_string(),
+            "generate".to_string(),
+            "--force".to_string(),
+            "--rules".to_string(),
+            temp_rules.path().to_str().unwrap().to_string(),
+        ];
+
+        let result = crate::run(args);
+        assert!(
+            result.is_ok(),
+            "generate --force should succeed: {:?}",
+            result.err()
+        );
+
+        // File should have been overwritten (content should be different)
+        let current_content = fs::read(&existing_file_path)?;
+        assert_ne!(
+            original_content, current_content,
+            "Existing file should be overwritten with --force"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_generate_dry_run_no_changes() -> Result<()> {
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+
+        let temp_dir = tempdir()?;
+
+        let rules_content = format!(
+            r#"
+{{
+  "{}/dry-run-test.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {{ }}: "should-not-be-created";
+  }};
+}}
+"#,
+            temp_dir.path().to_str().unwrap()
+        );
+
+        let mut temp_rules = NamedTempFile::new()?;
+        writeln!(temp_rules, "{}", rules_content)?;
+        temp_rules.flush()?;
+
+        // Use --dry-run flag
+        let args = vec![
+            "agenix".to_string(),
+            "generate".to_string(),
+            "--dry-run".to_string(),
+            "--rules".to_string(),
+            temp_rules.path().to_str().unwrap().to_string(),
+        ];
+
+        let result = crate::run(args);
+        assert!(
+            result.is_ok(),
+            "generate --dry-run should succeed: {:?}",
+            result.err()
+        );
+
+        // File should NOT have been created
+        let secret_path = temp_dir.path().join("dry-run-test.age");
+        assert!(
+            !secret_path.exists(),
+            "Secret file should not be created in dry-run mode"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_generate_dry_run_with_existing_file() -> Result<()> {
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+
+        let temp_dir = tempdir()?;
+
+        let rules_content = format!(
+            r#"
+{{
+  "{}/existing-dry-run.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {{ }}: "should-not-overwrite";
+  }};
+}}
+"#,
+            temp_dir.path().to_str().unwrap()
+        );
+
+        let mut temp_rules = NamedTempFile::new()?;
+        writeln!(temp_rules, "{}", rules_content)?;
+        temp_rules.flush()?;
+
+        let existing_file_path = temp_dir.path().join("existing-dry-run.age");
+        fs::write(&existing_file_path, b"existing content")?;
+
+        let original_content = fs::read(&existing_file_path)?;
+
+        // Use --force --dry-run flags (should preview overwrite but not change)
+        let args = vec![
+            "agenix".to_string(),
+            "generate".to_string(),
+            "--force".to_string(),
+            "--dry-run".to_string(),
+            "--rules".to_string(),
+            temp_rules.path().to_str().unwrap().to_string(),
+        ];
+
+        let result = crate::run(args);
+        assert!(
+            result.is_ok(),
+            "generate --force --dry-run should succeed: {:?}",
+            result.err()
+        );
+
+        // File should NOT have been overwritten
+        let current_content = fs::read(&existing_file_path)?;
+        assert_eq!(
+            original_content, current_content,
+            "Existing file should not be overwritten in dry-run mode even with --force"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_generate_dry_run_with_dependencies() -> Result<()> {
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+
+        let temp_dir = tempdir()?;
+
+        // Create rules with dependencies to test dry-run resolves them correctly
+        let rules_content = format!(
+            r#"
+{{
+  "{}/base-secret.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {{ }}: {{ secret = "base-secret"; public = "base-public"; }};
+  }};
+  "{}/derived-secret.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    dependencies = [ "base-secret" ];
+    generator = {{ publics }}: "derived-from-" + publics."base-secret";
+  }};
+}}
+"#,
+            temp_dir.path().to_str().unwrap(),
+            temp_dir.path().to_str().unwrap()
+        );
+
+        let mut temp_rules = NamedTempFile::new()?;
+        writeln!(temp_rules, "{}", rules_content)?;
+        temp_rules.flush()?;
+
+        // Use --dry-run flag
+        let args = vec![
+            "agenix".to_string(),
+            "generate".to_string(),
+            "--dry-run".to_string(),
+            "--rules".to_string(),
+            temp_rules.path().to_str().unwrap().to_string(),
+        ];
+
+        let result = crate::run(args);
+        assert!(
+            result.is_ok(),
+            "generate --dry-run with dependencies should succeed: {:?}",
+            result.err()
+        );
+
+        // Neither file should be created
+        assert!(
+            !temp_dir.path().join("base-secret.age").exists(),
+            "base-secret.age should not be created in dry-run mode"
+        );
+        assert!(
+            !temp_dir.path().join("derived-secret.age").exists(),
+            "derived-secret.age should not be created in dry-run mode"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_generate_force_short_flag() -> Result<()> {
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+
+        let temp_dir = tempdir()?;
+
+        let rules_content = format!(
+            r#"
+{{
+  "{}/force-short.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {{ }}: "new-content";
+  }};
+}}
+"#,
+            temp_dir.path().to_str().unwrap()
+        );
+
+        let mut temp_rules = NamedTempFile::new()?;
+        writeln!(temp_rules, "{}", rules_content)?;
+        temp_rules.flush()?;
+
+        let existing_file_path = temp_dir.path().join("force-short.age");
+        fs::write(&existing_file_path, b"existing content")?;
+
+        let original_content = fs::read(&existing_file_path)?;
+
+        // Use -f short flag for --force
+        let args = vec![
+            "agenix".to_string(),
+            "generate".to_string(),
+            "-f".to_string(),
+            "--rules".to_string(),
+            temp_rules.path().to_str().unwrap().to_string(),
+        ];
+
+        let result = crate::run(args);
+        assert!(
+            result.is_ok(),
+            "generate -f should succeed: {:?}",
+            result.err()
+        );
+
+        let current_content = fs::read(&existing_file_path)?;
+        assert_ne!(
+            original_content, current_content,
+            "Existing file should be overwritten with -f"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_generate_dry_run_short_flag() -> Result<()> {
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+
+        let temp_dir = tempdir()?;
+
+        let rules_content = format!(
+            r#"
+{{
+  "{}/dry-run-short.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {{ }}: "should-not-be-created";
+  }};
+}}
+"#,
+            temp_dir.path().to_str().unwrap()
+        );
+
+        let mut temp_rules = NamedTempFile::new()?;
+        writeln!(temp_rules, "{}", rules_content)?;
+        temp_rules.flush()?;
+
+        // Use -n short flag for --dry-run
+        let args = vec![
+            "agenix".to_string(),
+            "generate".to_string(),
+            "-n".to_string(),
+            "--rules".to_string(),
+            temp_rules.path().to_str().unwrap().to_string(),
+        ];
+
+        let result = crate::run(args);
+        assert!(
+            result.is_ok(),
+            "generate -n should succeed: {:?}",
+            result.err()
+        );
+
+        let secret_path = temp_dir.path().join("dry-run-short.age");
+        assert!(
+            !secret_path.exists(),
+            "Secret file should not be created in dry-run mode with -n"
+        );
 
         Ok(())
     }
