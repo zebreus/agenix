@@ -76,6 +76,62 @@ pub fn decrypt_to_file<P: AsRef<Path>>(
     Ok(())
 }
 
+/// Decrypt a file to a string
+pub fn decrypt_to_string(
+    input_file: &str,
+    identity: Option<&str>,
+) -> Result<String> {
+    // Read ciphertext
+    let mut ciphertext = vec![];
+    fs::File::open(input_file)
+        .with_context(|| format!("Failed to open ciphertext file {input_file}"))?
+        .read_to_end(&mut ciphertext)
+        .with_context(|| format!("Failed to read ciphertext file {input_file}"))?;
+
+    // Parse decryptor (auto-detect armored)
+    let ciphertext_bytes = if ciphertext.starts_with(b"-----BEGIN AGE ENCRYPTED FILE-----") {
+        // Armored content - decode it first
+        let mut reader = std::io::Cursor::new(&ciphertext);
+        let mut decoder = armor::ArmoredReader::new(&mut reader);
+        let mut ciphertext_bytes = Vec::new();
+        decoder
+            .read_to_end(&mut ciphertext_bytes)
+            .context("Failed to decode armored content")?;
+        ciphertext_bytes
+    } else {
+        // Binary content - use as is
+        ciphertext
+    };
+
+    let decryptor = Decryptor::new(&ciphertext_bytes[..]).context("Failed to parse age file")?;
+
+    // Collect identities
+    let identities: Vec<Box<dyn Identity>> = if let Some(id_path) = identity {
+        load_identities_from_file(id_path)?
+    } else {
+        // Load default identities, failing if any key file is corrupted
+        get_default_identities()
+            .iter()
+            .map(|path| {
+                load_identities_from_file(path)
+                    .with_context(|| format!("Failed to load identity from {path}"))
+            })
+            .flatten_ok()
+            .collect::<Result<Vec<_>>>()?
+    };
+
+    let mut reader = decryptor
+        .decrypt(identities.iter().map(|i| i.as_ref() as &dyn Identity))
+        .with_context(|| format!("Failed to decrypt {input_file}"))?;
+
+    let mut plaintext = vec![];
+    reader
+        .read_to_end(&mut plaintext)
+        .context("Failed to read decrypted plaintext")?;
+
+    String::from_utf8(plaintext).context("Decrypted content is not valid UTF-8")
+}
+
 /// Parse a recipient string or file
 ///
 /// Accepts:

@@ -118,14 +118,20 @@ pub fn generate_secret(rules_path: &str, file: &str) -> Result<Option<String>> {
 /// - Files ending with "ed25519", "ssh", or "ssh_key" use builtins.sshKey (SSH Ed25519 keypair)
 /// - Files ending with "x25519" use builtins.ageKey (age x25519 keypair)
 /// - Files ending with "password" or "passphrase" use builtins.randomString 32
-pub fn generate_secret_with_public(
+///
+/// The context parameter allows passing secrets and publics that can be referenced by the generator.
+/// It should be a Nix expression that evaluates to an attrset like:
+/// `{ secrets = { "secret1.age" = "content"; }; publics = { "secret2.age" = "pubkey"; }; }`
+pub fn generate_secret_with_public_context(
     rules_path: &str,
     file: &str,
+    context_expr: &str,
 ) -> Result<Option<GeneratorOutput>> {
     // Build Nix expression that checks for explicit generator or uses automatic selection
     let nix_expr = format!(
         r#"(let 
           rules = import {rules_path};
+          context = {context_expr};
           name = builtins.replaceStrings ["A" "B" "C" "D" "E" "F" "G" "H" "I" "J" "K" "L" "M" "N" "O" "P" "Q" "R" "S" "T" "U" "V" "W" "X" "Y" "Z"] ["a" "b" "c" "d" "e" "f" "g" "h" "i" "j" "k" "l" "m" "n" "o" "p" "q" "r" "s" "t" "u" "v" "w" "x" "y" "z"] "{file}";
           hasSuffix = s: builtins.match ".*${{s}}(\.age)?$" name != null;
           auto = 
@@ -137,8 +143,8 @@ pub fn generate_secret_with_public(
             then (_: builtins.randomString 32)
             else null;
           result = if builtins.hasAttr "generator" rules."{file}"
-                   then rules."{file}".generator {{}}
-                   else if auto != null then auto {{}} else null;
+                   then rules."{file}".generator context
+                   else if auto != null then auto context else null;
         in builtins.deepSeq result result)"#,
     );
 
@@ -180,6 +186,14 @@ pub fn generate_secret_with_public(
             output
         )),
     }
+}
+
+/// Wrapper for generate_secret_with_public_context with empty context for backward compatibility
+pub fn generate_secret_with_public(
+    rules_path: &str,
+    file: &str,
+) -> Result<Option<GeneratorOutput>> {
+    generate_secret_with_public_context(rules_path, file, "{}")
 }
 
 /// Get all file names from the rules
