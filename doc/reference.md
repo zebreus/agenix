@@ -124,7 +124,7 @@ Example:
 ### `age.secrets.<name>.symlink`
 
 `age.secrets.<name>.symlink` is a boolean. If true (the default),
-secrets are symlinked to `age.secrets.<name>.path`. If false, secerts
+secrets are symlinked to `age.secrets.<name>.path`. If false, secrets
 are copied to `age.secrets.<name>.path`. Usually, you want to keep
 this as true, because it secure cleanup of secrets no longer
 used. (The symlink will still be there, but it will be broken.) If
@@ -196,7 +196,7 @@ secret in question. Overriding `age.identityPaths` example:
 ### `age.secretsDir`
 
 `age.secretsDir` is the directory where secrets are symlinked to by
-default.Usually, you don't need to change this. Defaults to
+default. Usually, you don't need to change this. Defaults to
 `/run/agenix`.
 
 Overriding `age.secretsDir` example:
@@ -229,13 +229,18 @@ agenix - edit and rekey age secret files
 
 agenix -e FILE [-i PRIVATE_KEY]
 agenix -r [-i PRIVATE_KEY]
+agenix -g [--rules RULES_FILE]
 
 options:
 -h, --help                show help
 -e, --edit FILE           edits FILE using $EDITOR
 -r, --rekey               re-encrypts all secrets with specified recipients
 -d, --decrypt FILE        decrypts FILE to STDOUT
+-g, --generate            generates secrets using generator functions from rules file
+-o, --output FILE         write decrypt output to FILE instead of STDOUT
 -i, --identity            identity to use when decrypting
+--rules FILE              path to Nix rules file (default: ./secrets.nix)
+--editor EDITOR           editor to use (default: $EDITOR or vi)
 -v, --verbose             verbose output
 
 FILE an age-encrypted file
@@ -248,3 +253,6 @@ If STDIN is not interactive, EDITOR will be set to "cp /dev/stdin"
 
 RULES environment variable with path to Nix file specifying recipient public keys.
 Defaults to './secrets.nix'
+```
+
+For the full CLI reference including generator functions, automatic generator selection, and advanced features, see the [agenix CLI documentation](../pkgs/README.md).

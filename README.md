@@ -761,191 +761,23 @@ on Linux and `$(getconf DARWIN_USER_TEMP_DIR)/agenix.d` on Darwin.
 
 ### agenix CLI reference
 
-```
-agenix - edit and rekey age secret files
-
-agenix -e FILE [-i PRIVATE_KEY]
-agenix -r [-i PRIVATE_KEY]
-agenix -g [--rules RULES_FILE]
-
-options:
--h, --help                show help
--e, --edit FILE           edits FILE using $EDITOR
--r, --rekey               re-encrypts all secrets with specified recipients
--d, --decrypt FILE        decrypts FILE to STDOUT
--g, --generate            generates secrets using generator functions from rules file
--i, --identity            identity to use when decrypting
--v, --verbose             verbose output
-
-FILE an age-encrypted file
-
-PRIVATE_KEY a path to a private SSH key used to decrypt file
-
-EDITOR environment variable of editor to use when editing FILE
-
-If STDIN is not interactive, EDITOR will be set to "cp /dev/stdin"
-
-RULES environment variable with path to Nix file specifying recipient public keys.
-Defaults to './secrets.nix'
-```
-
-#### Generating secrets with public output
-
-Generator functions can produce public output alongside the encrypted secret.
-This is useful for generating SSH keypairs or other scenarios where you need
-both a private secret and a public value.
-
-When a generator function returns an attrset with both `secret` and `public`
-keys, the secret is encrypted to a `.age` file and the public value is written
-to a `.pub` file.
-
-Example in `secrets.nix`:
-
-```nix
-{
-  # Simple generator - just returns a string
-  "api-token.age" = {
-    publicKeys = [ ... ];
-    generator = {}: builtins.randomString 32;
-  };
-  
-  # Generator with public output - returns an attrset
-  "ssh-key.age" = {
-    publicKeys = [ ... ];
-    generator = builtins.sshKey;
-  };
-  
-  # Generator with metadata
-  "database-password.age" = {
-    publicKeys = [ ... ];
-    generator = {}: 
-      let password = builtins.randomString 32;
-      in {
-        secret = password;
-        public = "Generated on $(date)";
-      };
-  };
-}
-```
-
-Generate the secrets:
+Basic usage examples:
 
 ```ShellSession
-$ agenix --generate
+# Edit a secret (creates if doesn't exist)
+$ agenix -e secret.age
+
+# Decrypt a secret to stdout
+$ agenix -d secret.age
+
+# Rekey all secrets (re-encrypt with current recipients)
+$ agenix -r
+
+# Generate secrets using generator functions
+$ agenix -g
 ```
 
-This will create:
-- `api-token.age` (encrypted secret only)
-- `ssh-key.age` (encrypted private key) and `ssh-key.age.pub` (public key)
-- `database-password.age` (encrypted password) and `database-password.age.pub` (metadata)
-
-You can access the public files in your NixOS configuration:
-
-```nix
-{
-  age.secrets.ssh-key.file = ../secrets/ssh-key.age;
-  
-  # Use the public key
-  users.users.myuser.openssh.authorizedKeys.keyFiles = 
-    lib.optional (config.age.secrets.ssh-key.public.path != null)
-      config.age.secrets.ssh-key.public.path;
-      
-  # Or access the content directly
-  environment.etc."ssh-key.pub".text = 
-    config.age.secrets.ssh-key.public.content or "";
-}
-```
-
-#### Automatic generator selection
-
-If no explicit `generator` is provided, agenix automatically selects an appropriate generator based on the secret file's ending (case-insensitive):
-
-| File ending | Generator | Output |
-|-------------|-----------|--------|
-| `*ed25519.age` | `builtins.sshKey` | SSH Ed25519 keypair with `.pub` file |
-| `*ssh.age` | `builtins.sshKey` | SSH Ed25519 keypair with `.pub` file |
-| `*ssh_key.age` | `builtins.sshKey` | SSH Ed25519 keypair with `.pub` file |
-| `*x25519.age` | `builtins.ageKey` | age x25519 keypair with `.pub` file |
-| `*password.age` | `builtins.randomString 32` | 32-character random password |
-| `*passphrase.age` | `builtins.randomString 32` | 32-character random password |
-
-Example in `secrets.nix`:
-
-```nix
-{
-  # Automatically generates SSH Ed25519 keypair
-  "server-ed25519.age" = {
-    publicKeys = [ ... ];
-  };
-  
-  # Automatically generates age x25519 keypair
-  "identity-x25519.age" = {
-    publicKeys = [ ... ];
-  };
-  
-  # Automatically generates 32-character random password
-  "database-password.age" = {
-    publicKeys = [ ... ];
-  };
-  
-  # No automatic generation (no matching ending)
-  "api-token.age" = {
-    publicKeys = [ ... ];
-  };
-  
-  # Explicit generator overrides automatic selection
-  "custom-password.age" = {
-    publicKeys = [ ... ];
-    generator = {}: "my-custom-value";
-  };
-}
-```
-
-Run `agenix --generate` to generate all secrets. Files with matching endings will be automatically generated even without an explicit `generator` attribute.
-
-#### Referencing generated public keys
-
-When you generate secrets with public output (like SSH keys), you can reference the public key in the `publicKeys` field of other secrets. Simply use the secret name (with or without the `.age` suffix) instead of the actual public key.
-
-Example in `secrets.nix`:
-
-```nix
-{
-  # Generate an SSH keypair for deployment
-  "deploy-key.age" = {
-    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
-    generator = {}: builtins.sshKey {};
-  };
-  
-  # Use the deploy key's public key for another secret
-  "authorized-keys.age" = {
-    publicKeys = [ 
-      "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p"
-      "deploy-key"  # References the public key from deploy-key.age.pub
-    ];
-  };
-  
-  # Also works with automatic generators
-  "server-ssh.age" = {
-    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
-    # Automatically generates SSH key due to naming
-  };
-  
-  "backup-authorized-keys.age" = {
-    publicKeys = [ 
-      "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p"
-      "server-ssh.age"  # Can also use with .age suffix
-    ];
-  };
-}
-```
-
-After generating secrets with `agenix --generate`, the `.pub` files are created alongside the `.age` files. When encrypting or rekeying secrets, agenix automatically resolves secret name references to their corresponding public keys from the `.pub` files.
-
-This makes it easy to:
-- Use generated SSH keys for authentication while encrypting config secrets
-- Share generated age keys between multiple secrets
-- Maintain consistency when rotating keys (just regenerate and rekey)
+For the full CLI reference including all options, generator functions, automatic generator selection, and advanced features, see the [agenix CLI documentation](pkgs/README.md).
 
 #### Rekeying
 
