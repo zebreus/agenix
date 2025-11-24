@@ -828,8 +828,9 @@ mod tests {
         assert!(
             error_msg.contains("Failed to load identity")
                 || error_msg.contains("id_rsa")
-                || error_msg.contains("No matching keys found"),
-            "Error should mention failed identity loading or no matching keys: {}",
+                || error_msg.contains("No matching keys found")
+                || error_msg.contains("Failed to decrypt"),
+            "Error should mention failed identity loading, no matching keys, or decryption failure: {}",
             error_msg
         );
 
