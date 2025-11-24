@@ -182,50 +182,50 @@ pub fn rekey_all_files(rules_path: &str, identity: Option<&str>) -> Result<()> {
 fn get_public_content(
     file: &str,
     rules_dir: &Path,
-    generated: &HashMap<String, GeneratorOutput>,
+    generated: &std::collections::HashMap<String, GeneratorOutput>,
 ) -> Result<Option<String>> {
-        let secret_name = strip_age_suffix(file);
-        let normalized_name = format!("{}.age", secret_name);
+    let secret_name = strip_age_suffix(file);
+    let normalized_name = format!("{}.age", secret_name);
 
-        // Check if we just generated it - search by basename
-        let basename = secret_basename(&normalized_name);
+    // Check if we just generated it - search by basename
+    let basename = secret_basename(&normalized_name);
 
-        for (key, output) in generated.iter() {
-            if secret_basename(key) == basename {
-                if let Some(ref public) = output.public {
-                    return Ok(Some(public.clone()));
-                }
+    for (key, output) in generated.iter() {
+        if secret_basename(key) == basename {
+            if let Some(ref public) = output.public {
+                return Ok(Some(public.clone()));
             }
         }
-
-        // Check for .pub file
-        // If secret_name looks like an absolute path, use it directly
-        // Otherwise, join with rules_dir
-        let pub_file_paths = if secret_name.starts_with('/') || secret_name.starts_with('\\') {
-            // Absolute path - use directly
-            vec![
-                PathBuf::from(format!("{}.age.pub", secret_name)),
-                PathBuf::from(format!("{}.pub", secret_name)),
-            ]
-        } else {
-            // Relative path - join with rules_dir
-            vec![
-                rules_dir.join(format!("{}.age.pub", secret_name)),
-                rules_dir.join(format!("{}.pub", secret_name)),
-            ]
-        };
-
-        for pub_file_path in &pub_file_paths {
-            if pub_file_path.exists() {
-                let content = fs::read_to_string(pub_file_path).with_context(|| {
-                    format!("Failed to read public file: {}", pub_file_path.display())
-                })?;
-                return Ok(Some(content.trim().to_string()));
-            }
-        }
-
-        Ok(None)
     }
+
+    // Check for .pub file
+    // If secret_name looks like an absolute path, use it directly
+    // Otherwise, join with rules_dir
+    let pub_file_paths = if secret_name.starts_with('/') || secret_name.starts_with('\\') {
+        // Absolute path - use directly
+        vec![
+            PathBuf::from(format!("{}.age.pub", secret_name)),
+            PathBuf::from(format!("{}.pub", secret_name)),
+        ]
+    } else {
+        // Relative path - join with rules_dir
+        vec![
+            rules_dir.join(format!("{}.age.pub", secret_name)),
+            rules_dir.join(format!("{}.pub", secret_name)),
+        ]
+    };
+
+    for pub_file_path in &pub_file_paths {
+        if pub_file_path.exists() {
+            let content = fs::read_to_string(pub_file_path).with_context(|| {
+                format!("Failed to read public file: {}", pub_file_path.display())
+            })?;
+            return Ok(Some(content.trim().to_string()));
+        }
+    }
+
+    Ok(None)
+}
 
 /// Check if a single dependency is satisfied (has public content available)
 fn check_dependency_satisfied(
@@ -289,14 +289,8 @@ fn are_all_dependencies_satisfied(
     let mut missing_deps = Vec::new();
 
     for dep in deps {
-        let (satisfied, is_missing) = check_dependency_satisfied(
-            dep,
-            file,
-            files,
-            rules_dir,
-            generated_secrets,
-            processed,
-        )?;
+        let (satisfied, is_missing) =
+            check_dependency_satisfied(dep, file, files, rules_dir, generated_secrets, processed)?;
 
         if is_missing {
             missing_deps.push(dep.clone());
@@ -418,49 +412,14 @@ pub fn generate_secrets(rules_path: &str) -> Result<()> {
             let deps = get_secret_dependencies(rules_path, &file).unwrap_or_default();
 
             // Check if all dependencies are satisfied (public keys available)
-            let mut all_deps_satisfied = true;
-            let mut missing_deps = Vec::new();
-
-            for dep in &deps {
-                // Map dependency name to full file path
-                let dep_file = resolve_dependency_path(dep, &files);
-
-                // Normalize the dependency name
-                let dep_normalized = if dep_file.ends_with(".age") {
-                    dep_file.to_string()
-                } else {
-                    format!("{}.age", dep_file)
-                };
-
-                // Check if the dependency will be generated (exists in files list)
-                let dep_basename = secret_basename(&dep_normalized);
-                let will_be_generated = files.iter().any(|f| secret_basename(f) == dep_basename);
-
-                // Check if dependency file exists
-                let dep_file_path = rules_dir.join(&dep_normalized);
-                let exists = dep_file_path.exists();
-
-                // Check if we have public content already (use full path for lookup)
-                let has_public_content =
-                    get_public_content(dep_file, rules_dir, &generated_secrets)?.is_some();
-
-                if !will_be_generated && !exists && !has_public_content {
-                    // Dependency cannot be satisfied at all
-                    all_deps_satisfied = false;
-                    missing_deps.push(dep.clone());
-                } else if will_be_generated && !has_public_content {
-                    // Check if dependency has been processed
-                    let is_processed = processed.iter().any(|p| secret_basename(p) == dep_basename);
-
-                    if !is_processed {
-                        // Dependency will be generated but hasn't been yet
-                        all_deps_satisfied = false;
-                    }
-                } else if exists && !has_public_content {
-                    // File exists but no public content available - might need to decrypt
-                    all_deps_satisfied = false;
-                }
-            }
+            let (all_deps_satisfied, missing_deps) = are_all_dependencies_satisfied(
+                &file,
+                &deps,
+                &files,
+                rules_dir,
+                &generated_secrets,
+                &processed,
+            )?;
 
             if !all_deps_satisfied && !missing_deps.is_empty() {
                 return Err(anyhow::anyhow!(
@@ -477,62 +436,8 @@ pub fn generate_secrets(rules_path: &str) -> Result<()> {
             }
 
             // Build the context for the generator
-            // We build two separate attrsets: secrets and publics
-            let mut secrets_context_parts = Vec::new();
-            let mut publics_context_parts = Vec::new();
-
-            for dep in &deps {
-                // Map dependency name to full file path
-                let dep_file = resolve_dependency_path(dep, &files);
-
-                // Extract basename for use as key in context
-                let dep_key = normalize_secret_name(dep_file);
-
-                // Add public content
-                if let Some(public_content) =
-                    get_public_content(dep_file, rules_dir, &generated_secrets)?
-                {
-                    let escaped_public = escape_nix_string(&public_content);
-                    publics_context_parts.push(format!(r#""{}" = "{}";"#, dep_key, escaped_public));
-                }
-
-                // Add secret content if available (from generated_secrets)
-                let dep_basename = if dep_file.ends_with(".age") {
-                    dep_file.to_string()
-                } else {
-                    format!("{}.age", dep_file)
-                };
-                let dep_basename_norm = secret_basename(&dep_basename);
-
-                for (key, output) in generated_secrets.iter() {
-                    if secret_basename(key) == dep_basename_norm {
-                        let escaped_secret = escape_nix_string(&output.secret);
-                        secrets_context_parts
-                            .push(format!(r#""{}" = "{}";"#, dep_key, escaped_secret));
-                        break;
-                    }
-                }
-            }
-
-            let secrets_arg = {
-                let secrets_part = if !secrets_context_parts.is_empty() {
-                    format!("secrets = {{ {} }};", secrets_context_parts.join(" "))
-                } else {
-                    "secrets = {};".to_string()
-                };
-                let publics_part = if !publics_context_parts.is_empty() {
-                    format!("publics = {{ {} }};", publics_context_parts.join(" "))
-                } else {
-                    "publics = {};".to_string()
-                };
-
-                if !deps.is_empty() {
-                    // Only include secrets/publics if there are dependencies
-                    format!("{{ {} {} }}", secrets_part, publics_part)
-                } else {
-                    "{}".to_string()
-                }
-            };
+            let secrets_arg =
+                build_dependency_context(&deps, &files, rules_dir, &generated_secrets)?;
 
             // Generate with dependencies context
             let generator_output = if !deps.is_empty() {
