@@ -291,25 +291,10 @@ pub fn get_secret_dependencies(rules_path: &str, file: &str) -> Result<Vec<Strin
 
 /// Automatically detect dependencies by analyzing what the generator references
 fn auto_detect_dependencies(rules_path: &str, file: &str) -> Result<Vec<String>> {
-    // Get all available secrets from the rules
     let all_files = get_all_files(rules_path)?;
-
-    // Try to extract the generator source code to analyze it
-    let nix_expr_source = format!(
-        r#"(let 
-          rules = import {rules_path};
-          hasGenerator = builtins.hasAttr "generator" rules."{file}";
-          generatorStr = if hasGenerator 
-                         then builtins.toString (builtins.toJSON rules."{file}".generator)
-                         else "null";
-        in builtins.deepSeq generatorStr generatorStr)"#,
-    );
-
     let current_dir = current_dir()?;
 
-    // First, try to get the generator source
-    // This won't give us the actual source but let's try calling with empty params
-    // and see what errors we get
+    // Try calling generator with empty params to see if it needs secrets/publics
     let nix_expr_test = format!(
         r#"(let 
           rules = import {rules_path};
@@ -321,26 +306,18 @@ fn auto_detect_dependencies(rules_path: &str, file: &str) -> Result<Vec<String>>
     );
 
     match eval_nix_expression(nix_expr_test.as_str(), &current_dir) {
-        Ok(_) => {
-            // Generator works with empty context - no dependencies
-            Ok(vec![])
-        }
+        Ok(_) => Ok(vec![]), // Generator works with empty context - no dependencies
         Err(e) => {
             let error_msg = e.to_string();
 
             // Check if the error is about missing 'secrets' or 'publics' parameters
-            let needs_secrets = error_msg.contains("'secrets'");
-            let needs_publics = error_msg.contains("'publics'");
-
-            if !needs_secrets && !needs_publics {
-                // Some other error, not related to dependencies
-                return Ok(vec![]);
+            if !error_msg.contains("'secrets'") && !error_msg.contains("'publics'") {
+                return Ok(vec![]); // Some other error, not related to dependencies
             }
 
-            // Now try calling with the required parameters to see which specific secrets are used
+            // Try calling with empty attrsets to see which specific secrets are referenced
             let mut detected_deps = Vec::new();
 
-            // Build test contexts with empty attrsets
             for params in &[
                 "{ secrets = {}; publics = {}; }",
                 "{ secrets = {}; }",
@@ -357,36 +334,24 @@ fn auto_detect_dependencies(rules_path: &str, file: &str) -> Result<Vec<String>>
                 );
 
                 match eval_nix_expression(nix_expr_with_params.as_str(), &current_dir) {
-                    Ok(_) => {
-                        // Works with empty - no specific dependencies detected
-                        return Ok(vec![]);
-                    }
+                    Ok(_) => return Ok(vec![]), // Works with empty - no specific dependencies
                     Err(e) => {
                         let param_error = e.to_string();
 
-                        // Look for attribute access errors like: attribute 'name' missing
+                        // Look for attribute access errors mentioning secret names
                         for potential_dep in &all_files {
-                            // Extract basename from full path for matching
-                            let full_name = if potential_dep.ends_with(".age") {
-                                &potential_dep[..potential_dep.len() - 4]
-                            } else {
-                                potential_dep.as_str()
-                            };
-
-                            // Get just the basename (filename without directory)
+                            let full_name = potential_dep.strip_suffix(".age").unwrap_or(potential_dep);
                             let basename = std::path::Path::new(full_name)
                                 .file_name()
                                 .and_then(|n| n.to_str())
                                 .unwrap_or(full_name);
 
-                            // Check various error patterns - both full name and basename
-                            // This handles cases where files use full paths but errors reference basenames
+                            // Check if error mentions this secret (both full path and basename)
                             if param_error.contains(&format!("'{}'", full_name))
                                 || param_error.contains(&format!("\"{}\"", full_name))
                                 || param_error.contains(&format!("'{}'", basename))
                                 || param_error.contains(&format!("\"{}\"", basename))
                             {
-                                // Return the basename without .age (what generators reference)
                                 detected_deps.push(basename.to_string());
                             }
                         }
@@ -394,15 +359,11 @@ fn auto_detect_dependencies(rules_path: &str, file: &str) -> Result<Vec<String>>
                 }
             }
 
-            // Remove duplicates and the current file itself
+            // Remove duplicates and self-references
             detected_deps.sort();
             detected_deps.dedup();
             detected_deps.retain(|d| {
-                let d_normalized = if d.ends_with(".age") {
-                    d.clone()
-                } else {
-                    format!("{}.age", d)
-                };
+                let d_normalized = if d.ends_with(".age") { d.clone() } else { format!("{}.age", d) };
                 d_normalized != *file
             });
 
