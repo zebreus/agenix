@@ -237,21 +237,22 @@ COMMANDS:
     generate  Generate secrets using generator functions from rules (alias: g)
 
 GLOBAL OPTIONS:
-    -r, --rules <FILE>   Path to Nix rules file (default: ./secrets.nix)
-    -v, --verbose        Verbose output
-    -h, --help           Print help
-    -V, --version        Print version
+    -r, --rules <FILE>          Path to Nix rules file (default: ./secrets.nix)
+    -i, --identity <KEY>        Identity (private key) to use when decrypting.
+                                Can be specified multiple times. Identities are
+                                tried in order: explicitly specified first, then
+                                default system identities.
+        --no-system-identities  Do not use default system identities
+                                (~/.ssh/id_rsa, ~/.ssh/id_ed25519)
+    -v, --verbose               Verbose output
+    -h, --help                  Print help
+    -V, --version               Print version
 
 EDIT OPTIONS:
-    -i, --identity <KEY>     Identity (private key) to use when decrypting
     -e, --editor <COMMAND>   Editor to use (default: $EDITOR or vi)
 
 DECRYPT OPTIONS:
-    -i, --identity <KEY>   Identity (private key) to use when decrypting
     -o, --output <FILE>    Output file (defaults to stdout)
-
-REKEY OPTIONS:
-    -i, --identity <KEY>   Identity (private key) to use when decrypting
 
 GENERATE OPTIONS:
     -f, --force     Overwrite existing secret files
@@ -259,7 +260,8 @@ GENERATE OPTIONS:
 
 EXAMPLES:
     agenix edit secret.age
-    agenix decrypt secret.age -o plaintext.txt
+    agenix -i ~/.ssh/id_ed25519 decrypt secret.age -o plaintext.txt
+    agenix -i key1 -i key2 --no-system-identities decrypt secret.age
     agenix rekey
     agenix generate --dry-run
 
