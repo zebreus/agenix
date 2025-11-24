@@ -52,20 +52,24 @@ fn strip_age_suffix(name: &str) -> &str {
 
 /// Normalize a secret name: extract basename and strip .age suffix
 fn normalize_secret_name(name: &str) -> String {
-    let basename = secret_basename(name);
-    strip_age_suffix(&basename).to_string()
+    strip_age_suffix(&secret_basename(name)).to_string()
+}
+
+/// Add .age suffix if not already present
+fn ensure_age_suffix(name: &str) -> String {
+    if name.ends_with(".age") {
+        name.to_string()
+    } else {
+        format!("{}.age", name)
+    }
 }
 
 /// Resolve a dependency name to its full file path from the files list
-/// Maps simple names like "level2" to full paths like "/tmp/test/level2.age"
 fn resolve_dependency_path<'a>(dep: &'a str, files: &'a [String]) -> &'a str {
+    let dep_normalized = strip_age_suffix(dep);
     files
         .iter()
-        .find(|f| {
-            let f_normalized = normalize_secret_name(f);
-            let dep_normalized = strip_age_suffix(dep);
-            f_normalized == dep_normalized
-        })
+        .find(|f| normalize_secret_name(f) == dep_normalized)
         .map(|s| s.as_str())
         .unwrap_or(dep)
 }
@@ -230,77 +234,83 @@ fn get_public_content(
 /// Check if a single dependency is satisfied (has public content available)
 fn check_dependency_satisfied(
     dep: &str,
-    file: &str,
     files: &[String],
     rules_dir: &Path,
     generated_secrets: &std::collections::HashMap<String, GeneratorOutput>,
     processed: &std::collections::HashSet<String>,
 ) -> Result<(bool, bool)> {
-    // Map dependency name to full file path
     let dep_file = resolve_dependency_path(dep, files);
-
-    // Normalize the dependency name
-    let dep_normalized = if dep_file.ends_with(".age") {
-        dep_file.to_string()
-    } else {
-        format!("{}.age", dep_file)
-    };
-
-    // Check if the dependency will be generated (exists in files list)
+    let dep_normalized = ensure_age_suffix(dep_file);
     let dep_basename = secret_basename(&dep_normalized);
+
     let will_be_generated = files.iter().any(|f| secret_basename(f) == dep_basename);
+    let exists = rules_dir.join(&dep_normalized).exists();
+    let has_public = get_public_content(dep_file, rules_dir, generated_secrets)?.is_some();
 
-    // Check if dependency file exists
-    let dep_file_path = rules_dir.join(&dep_normalized);
-    let exists = dep_file_path.exists();
-
-    // Check if we have public content already (use full path for lookup)
-    let has_public_content = get_public_content(dep_file, rules_dir, generated_secrets)?.is_some();
-
-    if !will_be_generated && !exists && !has_public_content {
-        // Dependency cannot be satisfied at all
-        return Ok((false, true)); // (not satisfied, is missing)
-    } else if will_be_generated && !has_public_content {
-        // Check if dependency has been processed
-        let is_processed = processed.iter().any(|p| secret_basename(p) == dep_basename);
-
-        if !is_processed {
-            // Dependency will be generated but hasn't been yet
-            return Ok((false, false)); // (not satisfied, not missing - just pending)
-        }
-    } else if exists && !has_public_content {
-        // File exists but no public content available
-        return Ok((false, false)); // (not satisfied, not missing - just no public)
+    // Missing: cannot be satisfied at all
+    if !will_be_generated && !exists && !has_public {
+        return Ok((false, true));
     }
 
-    Ok((true, false)) // (satisfied, not missing)
+    // Pending: will be generated but hasn't been processed yet
+    if will_be_generated && !has_public {
+        let is_processed = processed.iter().any(|p| secret_basename(p) == dep_basename);
+        if !is_processed {
+            return Ok((false, false));
+        }
+    }
+
+    // Exists but no public content
+    if exists && !has_public {
+        return Ok((false, false));
+    }
+
+    Ok((true, false))
 }
 
 /// Check if all dependencies for a secret are satisfied
 fn are_all_dependencies_satisfied(
-    file: &str,
     deps: &[String],
     files: &[String],
     rules_dir: &Path,
     generated_secrets: &std::collections::HashMap<String, GeneratorOutput>,
     processed: &std::collections::HashSet<String>,
 ) -> Result<(bool, Vec<String>)> {
-    let mut all_deps_satisfied = true;
-    let mut missing_deps = Vec::new();
+    let mut all_satisfied = true;
+    let mut missing = Vec::new();
 
     for dep in deps {
         let (satisfied, is_missing) =
-            check_dependency_satisfied(dep, file, files, rules_dir, generated_secrets, processed)?;
-
+            check_dependency_satisfied(dep, files, rules_dir, generated_secrets, processed)?;
         if is_missing {
-            missing_deps.push(dep.clone());
+            missing.push(dep.clone());
         }
         if !satisfied {
-            all_deps_satisfied = false;
+            all_satisfied = false;
         }
     }
 
-    Ok((all_deps_satisfied, missing_deps))
+    Ok((all_satisfied, missing))
+}
+
+/// Find generated secret content by basename matching
+fn find_generated_secret<'a>(
+    basename: &str,
+    generated_secrets: &'a std::collections::HashMap<String, GeneratorOutput>,
+) -> Option<&'a str> {
+    generated_secrets
+        .iter()
+        .find(|(key, _)| secret_basename(key) == basename)
+        .map(|(_, output)| output.secret.as_str())
+}
+
+/// Build Nix attrset string from key-value pairs
+fn format_nix_attrset(name: &str, parts: &[String]) -> String {
+    if parts.is_empty() {
+        format!("{} = {{}};", name)
+    } else {
+        format!("{} = {{ {} }};", name, parts.join(" "))
+    }
 }
 
 /// Build the Nix context (secrets and publics attrsets) for dependencies
@@ -314,52 +324,37 @@ fn build_dependency_context(
         return Ok("{}".to_string());
     }
 
-    let mut secrets_context_parts = Vec::new();
-    let mut publics_context_parts = Vec::new();
+    let mut secrets_parts = Vec::new();
+    let mut publics_parts = Vec::new();
 
     for dep in deps {
-        // Map dependency name to full file path
         let dep_file = resolve_dependency_path(dep, files);
-
-        // Extract basename for use as key in context
         let dep_key = normalize_secret_name(dep_file);
+        let dep_basename = secret_basename(&ensure_age_suffix(dep_file));
 
-        // Add public content
-        if let Some(public_content) = get_public_content(dep_file, rules_dir, generated_secrets)? {
-            let escaped_public = escape_nix_string(&public_content);
-            publics_context_parts.push(format!(r#""{}" = "{}";"#, dep_key, escaped_public));
+        // Add public content if available
+        if let Some(public) = get_public_content(dep_file, rules_dir, generated_secrets)? {
+            publics_parts.push(format!(
+                r#""{}" = "{}";"#,
+                dep_key,
+                escape_nix_string(&public)
+            ));
         }
 
         // Add secret content if available (from generated_secrets)
-        let dep_basename = if dep_file.ends_with(".age") {
-            dep_file.to_string()
-        } else {
-            format!("{}.age", dep_file)
-        };
-        let dep_basename_norm = secret_basename(&dep_basename);
-
-        for (key, output) in generated_secrets.iter() {
-            if secret_basename(key) == dep_basename_norm {
-                let escaped_secret = escape_nix_string(&output.secret);
-                secrets_context_parts.push(format!(r#""{}" = "{}";"#, dep_key, escaped_secret));
-                break;
-            }
+        if let Some(secret) = find_generated_secret(&dep_basename, generated_secrets) {
+            secrets_parts.push(format!(
+                r#""{}" = "{}";"#,
+                dep_key,
+                escape_nix_string(secret)
+            ));
         }
     }
 
-    let secrets_part = if !secrets_context_parts.is_empty() {
-        format!("secrets = {{ {} }};", secrets_context_parts.join(" "))
-    } else {
-        "secrets = {};".to_string()
-    };
+    let secrets_str = format_nix_attrset("secrets", &secrets_parts);
+    let publics_str = format_nix_attrset("publics", &publics_parts);
 
-    let publics_part = if !publics_context_parts.is_empty() {
-        format!("publics = {{ {} }};", publics_context_parts.join(" "))
-    } else {
-        "publics = {};".to_string()
-    };
-
-    Ok(format!("{{ {} {} }}", secrets_part, publics_part))
+    Ok(format!("{{ {} {} }}", secrets_str, publics_str))
 }
 
 /// Process a single secret file - check dependencies, generate, encrypt, and store
@@ -371,8 +366,6 @@ fn process_single_secret(
     generated_secrets: &mut std::collections::HashMap<String, GeneratorOutput>,
     processed: &mut std::collections::HashSet<String>,
 ) -> Result<ProcessResult> {
-    use std::collections::HashMap;
-
     // Skip if already processed
     if processed.contains(file) {
         return Ok(ProcessResult::AlreadyProcessed);
@@ -391,39 +384,32 @@ fn process_single_secret(
     let deps = get_secret_dependencies(rules_path, file).unwrap_or_default();
 
     // Check if all dependencies are satisfied
-    let (all_deps_satisfied, missing_deps) = are_all_dependencies_satisfied(
-        file,
-        &deps,
-        files,
-        rules_dir,
-        generated_secrets,
-        processed,
-    )?;
+    let (all_satisfied, missing) =
+        are_all_dependencies_satisfied(&deps, files, rules_dir, generated_secrets, processed)?;
 
-    if !all_deps_satisfied && !missing_deps.is_empty() {
+    if !all_satisfied && !missing.is_empty() {
         return Err(anyhow::anyhow!(
             "Secret '{}' depends on '{}' which cannot be found or generated",
             file,
-            missing_deps.join("', '")
+            missing.join("', '")
         ));
     }
 
-    if !all_deps_satisfied {
+    if !all_satisfied {
         return Ok(ProcessResult::Deferred);
     }
 
     // Build the context for the generator
-    let secrets_arg = build_dependency_context(&deps, files, rules_dir, generated_secrets)?;
+    let context = build_dependency_context(&deps, files, rules_dir, generated_secrets)?;
 
     // Generate with dependencies context
-    let generator_output = if !deps.is_empty() {
-        generate_secret_with_public_and_context(rules_path, file, &secrets_arg)?
+    let output = if !deps.is_empty() {
+        generate_secret_with_public_and_context(rules_path, file, &context)?
     } else {
         generate_secret_with_public(rules_path, file)?
     };
 
-    // Check if there's a generator for this file
-    let Some(generator_output) = generator_output else {
+    let Some(output) = output else {
         processed.insert(file.to_string());
         return Ok(ProcessResult::NoGenerator);
     };
@@ -442,7 +428,7 @@ fn process_single_secret(
     // Create temporary file with the generated secret content
     let temp_dir = TempDir::new().context("Failed to create temporary directory")?;
     let temp_file = temp_dir.path().join("generated_secret");
-    fs::write(&temp_file, &generator_output.secret)
+    fs::write(&temp_file, &output.secret)
         .context("Failed to write generated content to temporary file")?;
 
     // Encrypt the generated secret content
@@ -452,10 +438,10 @@ fn process_single_secret(
     eprintln!("Generated and encrypted {file}");
 
     // Store the generated output for dependencies
-    generated_secrets.insert(file.to_string(), generator_output.clone());
+    generated_secrets.insert(file.to_string(), output.clone());
 
     // If there's public content, write it to a .pub file
-    if let Some(public_content) = &generator_output.public {
+    if let Some(public_content) = &output.public {
         let pub_file = format!("{}.pub", file);
         fs::write(&pub_file, public_content)
             .with_context(|| format!("Failed to write public file {pub_file}"))?;
