@@ -35,40 +35,106 @@ This tool provides the following functionality:
 
 ```bash
 # Edit a secret (creates if doesn't exist)
-agenix -e secret.age
+agenix edit secret.age
 
-# Edit with custom rules file
-agenix -e secret.age --rules /path/to/secrets.nix
+# Edit with custom rules file (global option before command)
+agenix -r /path/to/secrets.nix edit secret.age
 
 # Decrypt to stdout
-agenix -d secret.age
+agenix decrypt secret.age
 
 # Decrypt to a file
-agenix -d secret.age -o decrypted.txt
+agenix decrypt secret.age -o decrypted.txt
 
 # Decrypt with specific identity
-agenix -d secret.age -i ~/.ssh/id_rsa
+agenix decrypt secret.age -i ~/.ssh/id_rsa
 
 # Rekey all secrets (re-encrypt with current recipients)
-agenix -r
+agenix rekey
+
+# Generate secrets from rules file
+agenix generate
+
+# Generate with dry-run to see what would be created
+agenix generate --dry-run
+
+# Force overwrite existing generated secrets
+agenix generate --force
 
 # Use custom editor
-agenix -e secret.age --editor nano
+agenix edit secret.age -e nano
 
-# Verbose output
-agenix -v -e secret.age
+# Verbose output (global option)
+agenix -v edit secret.age
 ```
 
-## CLI Options
+## CLI Commands
 
-- `-e, --edit <FILE>` - Edit FILE using $EDITOR
-- `-d, --decrypt <FILE>` - Decrypt FILE to STDOUT (or to --output)
-- `-o, --output <FILE>` - Write decrypt output to FILE instead of STDOUT
-- `-i, --identity <PRIVATE_KEY>` - Identity to use when decrypting
-- `-r, --rekey` - Re-encrypt all secrets with specified recipients
-- `-g, --generate` - Generate secrets using generator functions from rules file
-- `--rules <FILE>` - Path to Nix rules file (default: ./secrets.nix, can also use RULES env var)
-- `--editor <EDITOR>` - Editor to use (default: $EDITOR or vi/cat depending on TTY)
+agenix uses subcommands for different operations:
+
+### `agenix edit <FILE>` (alias: `e`)
+
+Edit a secret file using your configured editor.
+
+Options:
+- `-i, --identity <KEY>` - Identity (private key) to use when decrypting
+- `-e, --editor <COMMAND>` - Editor command to use (defaults to $EDITOR or vi)
+
+Examples:
+```bash
+agenix edit secret.age
+agenix edit secret.age -i ~/.ssh/id_ed25519
+agenix edit secret.age -e nano
+```
+
+### `agenix decrypt <FILE>` (alias: `d`)
+
+Decrypt a secret file to stdout or a file.
+
+Options:
+- `-i, --identity <KEY>` - Identity (private key) to use when decrypting
+- `-o, --output <FILE>` - Output file (defaults to stdout)
+
+Examples:
+```bash
+agenix decrypt secret.age
+agenix decrypt secret.age -o plaintext.txt
+agenix decrypt secret.age -i ~/.ssh/id_rsa
+```
+
+### `agenix rekey` (alias: `r`)
+
+Re-encrypt all secrets with updated recipients from the rules file.
+
+Options:
+- `-i, --identity <KEY>` - Identity (private key) to use when decrypting
+
+Examples:
+```bash
+agenix rekey
+agenix rekey -i ~/.ssh/id_ed25519
+```
+
+### `agenix generate` (alias: `g`)
+
+Generate secrets using generator functions defined in the rules file.
+
+Options:
+- `-f, --force` - Overwrite existing secret files
+- `-n, --dry-run` - Show what would be generated without making changes
+
+Examples:
+```bash
+agenix generate
+agenix generate --dry-run
+agenix generate --force
+```
+
+## Global Options
+
+These options can be used with any subcommand:
+
+- `-r, --rules <FILE>` - Path to Nix rules file (default: ./secrets.nix, can also use RULES env var)
 - `-v, --verbose` - Verbose output
 - `-h, --help` - Print help
 - `-V, --version` - Print version
@@ -125,7 +191,7 @@ When a generator function returns an attrset with both `secret` and `public` key
 Generate the secrets:
 
 ```bash
-agenix --generate
+agenix generate
 ```
 
 This creates:
@@ -218,7 +284,7 @@ When you generate secrets with public output (like SSH keys), you can reference 
 }
 ```
 
-After generating secrets with `agenix --generate`, the `.pub` files are created alongside the `.age` files. When encrypting or rekeying secrets, agenix automatically resolves secret name references to their corresponding public keys from the `.pub` files.
+After generating secrets with `agenix generate`, the `.pub` files are created alongside the `.age` files. When encrypting or rekeying secrets, agenix automatically resolves secret name references to their corresponding public keys from the `.pub` files.
 
 This makes it easy to:
 - Use generated SSH keys for authentication while encrypting config secrets
@@ -230,7 +296,7 @@ This makes it easy to:
 If you change the public keys in your rules file, you should rekey your secrets:
 
 ```bash
-agenix --rekey
+agenix rekey
 ```
 
 To rekey a secret, you must be able to decrypt it. Because of randomness in age's encryption algorithms, the files always change when rekeyed, even if the identities do not.

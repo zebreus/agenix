@@ -227,32 +227,47 @@ Overriding `age.secretsMountPoint` example:
 ```
 agenix - edit and rekey age secret files
 
-agenix -e FILE [-i PRIVATE_KEY]
-agenix -r [-i PRIVATE_KEY]
-agenix -g [--rules RULES_FILE]
+USAGE:
+    agenix [OPTIONS] <COMMAND>
 
-options:
--h, --help                show help
--e, --edit FILE           edits FILE using $EDITOR
--r, --rekey               re-encrypts all secrets with specified recipients
--d, --decrypt FILE        decrypts FILE to STDOUT
--g, --generate            generates secrets using generator functions from rules file
--o, --output FILE         write decrypt output to FILE instead of STDOUT
--i, --identity            identity to use when decrypting
---rules FILE              path to Nix rules file (default: ./secrets.nix)
---editor EDITOR           editor to use (default: $EDITOR or vi)
--v, --verbose             verbose output
+COMMANDS:
+    edit      Edit a secret file using $EDITOR (alias: e)
+    decrypt   Decrypt a secret file to stdout or a file (alias: d)
+    rekey     Re-encrypt all secrets with updated recipients (alias: r)
+    generate  Generate secrets using generator functions from rules (alias: g)
 
-FILE an age-encrypted file
+GLOBAL OPTIONS:
+    -r, --rules <FILE>   Path to Nix rules file (default: ./secrets.nix)
+    -v, --verbose        Verbose output
+    -h, --help           Print help
+    -V, --version        Print version
 
-PRIVATE_KEY a path to a private SSH key used to decrypt file
+EDIT OPTIONS:
+    -i, --identity <KEY>     Identity (private key) to use when decrypting
+    -e, --editor <COMMAND>   Editor to use (default: $EDITOR or vi)
 
-EDITOR environment variable of editor to use when editing FILE
+DECRYPT OPTIONS:
+    -i, --identity <KEY>   Identity (private key) to use when decrypting
+    -o, --output <FILE>    Output file (defaults to stdout)
+
+REKEY OPTIONS:
+    -i, --identity <KEY>   Identity (private key) to use when decrypting
+
+GENERATE OPTIONS:
+    -f, --force     Overwrite existing secret files
+    -n, --dry-run   Show what would be generated without making changes
+
+EXAMPLES:
+    agenix edit secret.age
+    agenix decrypt secret.age -o plaintext.txt
+    agenix rekey
+    agenix generate --dry-run
+
+ENVIRONMENT VARIABLES:
+    EDITOR   Editor to use when editing secrets (default: vi)
+    RULES    Path to Nix file specifying recipient public keys (default: ./secrets.nix)
 
 If STDIN is not interactive, EDITOR will be set to "cp /dev/stdin"
-
-RULES environment variable with path to Nix file specifying recipient public keys.
-Defaults to './secrets.nix'
 ```
 
 For the full CLI reference including generator functions, automatic generator selection, and advanced features, see the [agenix CLI documentation](../pkgs/README.md).

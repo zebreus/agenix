@@ -351,7 +351,7 @@ e.g. inside your `flake.nix` file:
    * from GitHub like https://github.com/ryantm.keys.
 4. Create a secret file:
    ```ShellSession
-   $ agenix -e secret1.age
+   $ agenix edit secret1.age
    ```
    It will open a temporary file in the app configured in your $EDITOR environment variable.
    When you save that file its content will be encrypted with all the public keys mentioned in the `secrets.nix` file.
@@ -381,13 +381,13 @@ e.g. inside your `flake.nix` file:
    Then it will be decrypted and mounted as described before.
 8. Edit secret files:
    ```ShellSession
-   $ agenix -e secret1.age
+   $ agenix edit secret1.age
    ```
    It assumes your SSH private key is in `~/.ssh/`.
    In order to decrypt and open a `.age` file for editing you need the private key of one of the public keys
    it was encrypted with. You can pass the private key you want to use explicitly with `-i`, e.g.
    ```ShellSession
-   $ agenix -e secret1.age -i ~/.ssh/id_ed25519
+   $ agenix edit secret1.age -i ~/.ssh/id_ed25519
    ```
 
 ### Using agenix with home-manager
@@ -765,16 +765,16 @@ Basic usage examples:
 
 ```ShellSession
 # Edit a secret (creates if doesn't exist)
-$ agenix -e secret.age
+$ agenix edit secret.age
 
 # Decrypt a secret to stdout
-$ agenix -d secret.age
+$ agenix decrypt secret.age
 
 # Rekey all secrets (re-encrypt with current recipients)
-$ agenix -r
+$ agenix rekey
 
 # Generate secrets using generator functions
-$ agenix -g
+$ agenix generate
 ```
 
 For the full CLI reference including all options, generator functions, automatic generator selection, and advanced features, see the [agenix CLI documentation](pkgs/README.md).
@@ -785,7 +785,7 @@ If you change the public keys in `secrets.nix`, you should rekey your
 secrets:
 
 ```ShellSession
-$ agenix --rekey
+$ agenix rekey
 ```
 
 To rekey a secret, you have to be able to decrypt it. Because of

@@ -33,7 +33,7 @@
    ```
 4. Edit secret files (these instructions assume your SSH private key is in ~/.ssh/):
    ```ShellSession
-   $ agenix -e secret1.age
+   $ agenix edit secret1.age
    ```
 5. Add secret to a NixOS module config:
    ```nix
