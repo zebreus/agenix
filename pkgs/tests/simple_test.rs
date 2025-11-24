@@ -25,10 +25,10 @@ fn test_simple_generate() -> Result<()> {
     writeln!(temp_rules, "{}", rules_content)?;
     temp_rules.flush()?;
 
-    // Use the CLI interface via the run function
+    // Use the CLI interface via the run function with subcommand
     let args = vec![
         "agenix".to_string(),
-        "--generate".to_string(),
+        "generate".to_string(),
         "--rules".to_string(),
         temp_rules.path().to_str().unwrap().to_string(),
     ];
