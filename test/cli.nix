@@ -112,7 +112,6 @@ pkgs.runCommand "agenix-cli-test"
       pkgs.age
       pkgs.diffutils
       pkgs.coreutils
-      pkgs.openssh
     ]
     ++ pkgs.lib.optionals (!pkgs.stdenv.isDarwin) [
       # unixtools.script is needed for the rekey test on non-Darwin systems
