@@ -5,6 +5,9 @@ source "$(dirname "$0")/common_setup.sh"
 
 echo "=== Test: Multiple identities with -i flag ==="
 
+# Reset secret1.age to known content first (other tests may have modified it)
+echo "hello" | agenix edit secret1.age
+
 # Test that -i flag works with the known identity
 decrypted=$(agenix decrypt secret1.age -i "$HOME/.ssh/id_ed25519" --no-system-identities)
 if [ "$decrypted" = "hello" ]; then
