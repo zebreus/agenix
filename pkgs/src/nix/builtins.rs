@@ -19,10 +19,26 @@ pub mod impure_builtins {
     use rand::distr::Alphanumeric;
     use rand::rng;
     use snix_eval::ErrorKind;
+    use snix_eval::NixAttrs;
     use snix_eval::NixString;
     use snix_eval::Value;
     use snix_eval::generators::Gen;
     use snix_eval::generators::GenCo;
+    use std::collections::BTreeMap;
+
+    /// Creates a Nix attribute set containing `secret` and `public` keys from a keypair.
+    fn create_keypair_attrset(private_key: String, public_key: String) -> Value {
+        let mut attrs: BTreeMap<NixString, Value> = BTreeMap::new();
+        attrs.insert(
+            NixString::from("secret".as_bytes()),
+            Value::String(NixString::from(private_key.as_bytes())),
+        );
+        attrs.insert(
+            NixString::from("public".as_bytes()),
+            Value::String(NixString::from(public_key.as_bytes())),
+        );
+        Value::Attrs(Box::new(NixAttrs::from(attrs)))
+    }
 
     /// Generates a random alphanumeric string of given length
     #[builtin("randomString")]
@@ -153,50 +169,22 @@ pub mod impure_builtins {
     #[builtin("sshKey")]
     async fn builtin_ssh_key(co: GenCo, _var: Value) -> Result<Value, ErrorKind> {
         use crate::nix::keypair::generate_ed25519_keypair;
-        use snix_eval::NixAttrs;
-        use std::collections::BTreeMap;
 
-        // Generate the SSH keypair
         let (private_key, public_key) = generate_ed25519_keypair()
             .map_err(|e| ErrorKind::Abort(format!("Failed to generate SSH keypair: {}", e)))?;
 
-        // Create a Nix attribute set with `secret` and `public`
-        let mut attrs: BTreeMap<NixString, Value> = BTreeMap::new();
-        attrs.insert(
-            NixString::from("secret".as_bytes()),
-            Value::String(NixString::from(private_key.as_bytes())),
-        );
-        attrs.insert(
-            NixString::from("public".as_bytes()),
-            Value::String(NixString::from(public_key.as_bytes())),
-        );
-
-        Ok(Value::Attrs(Box::new(NixAttrs::from(attrs))))
+        Ok(create_keypair_attrset(private_key, public_key))
     }
 
     /// Generates an age x25519 keypair
     #[builtin("ageKey")]
     async fn builtin_age_key(co: GenCo, _var: Value) -> Result<Value, ErrorKind> {
         use crate::nix::keypair::generate_age_x25519_keypair;
-        use snix_eval::NixAttrs;
-        use std::collections::BTreeMap;
 
-        // Generate the age x25519 keypair
         let (private_key, public_key) = generate_age_x25519_keypair()
             .map_err(|e| ErrorKind::Abort(format!("Failed to generate age keypair: {}", e)))?;
 
-        // Create a Nix attribute set with `secret` and `public`
-        let mut attrs: BTreeMap<NixString, Value> = BTreeMap::new();
-        attrs.insert(
-            NixString::from("secret".as_bytes()),
-            Value::String(NixString::from(private_key.as_bytes())),
-        );
-        attrs.insert(
-            NixString::from("public".as_bytes()),
-            Value::String(NixString::from(public_key.as_bytes())),
-        );
-
-        Ok(Value::Attrs(Box::new(NixAttrs::from(attrs))))
+        Ok(create_keypair_attrset(private_key, public_key))
     }
 
     /// Generates an RSA SSH keypair with configurable key size
@@ -206,8 +194,6 @@ pub mod impure_builtins {
     #[builtin("rsaKey")]
     async fn builtin_rsa_key(co: GenCo, var: Value) -> Result<Value, ErrorKind> {
         use crate::nix::keypair::generate_rsa_keypair;
-        use snix_eval::NixAttrs;
-        use std::collections::BTreeMap;
 
         // Get key size from options, default to 4096
         let key_size = match &var {
@@ -230,22 +216,10 @@ pub mod impure_builtins {
             )));
         }
 
-        // Generate the RSA keypair
         let (private_key, public_key) = generate_rsa_keypair(key_size)
             .map_err(|e| ErrorKind::Abort(format!("Failed to generate RSA keypair: {}", e)))?;
 
-        // Create a Nix attribute set with `secret` and `public`
-        let mut attrs: BTreeMap<NixString, Value> = BTreeMap::new();
-        attrs.insert(
-            NixString::from("secret".as_bytes()),
-            Value::String(NixString::from(private_key.as_bytes())),
-        );
-        attrs.insert(
-            NixString::from("public".as_bytes()),
-            Value::String(NixString::from(public_key.as_bytes())),
-        );
-
-        Ok(Value::Attrs(Box::new(NixAttrs::from(attrs))))
+        Ok(create_keypair_attrset(private_key, public_key))
     }
 }
 
@@ -256,6 +230,26 @@ mod tests {
     use anyhow::Result;
     use snix_eval::Value;
     use std::env::current_dir;
+
+    /// Helper function to extract secret and public keys from a keypair attrset Value
+    fn extract_keypair(value: Value) -> Result<(String, String)> {
+        let attrs = match value {
+            Value::Attrs(attrs) => attrs,
+            _ => anyhow::bail!("Expected attribute set"),
+        };
+
+        let (mut secret, mut public) = (String::new(), String::new());
+        for (k, v) in attrs.into_iter_sorted() {
+            let key = k.as_str().map(|s| s.to_owned()).unwrap_or_default();
+            let value = value_to_string(v.clone()).unwrap_or_default();
+            match key.as_str() {
+                "secret" => secret = value,
+                "public" => public = value,
+                _ => {}
+            }
+        }
+        Ok((secret, public))
+    }
 
     #[test]
     fn test_generate_ssh_key_builtin() -> Result<()> {
@@ -301,48 +295,12 @@ mod tests {
         let output1 = eval_nix_expression(nix_expr1, &current_dir)?;
         let output2 = eval_nix_expression(nix_expr2, &current_dir)?;
 
-        // Extract the values as attribute sets
-        let attrs1 = match output1 {
-            Value::Attrs(attrs) => attrs,
-            _ => panic!("Expected attribute set"),
-        };
-        let attrs2 = match output2 {
-            Value::Attrs(attrs) => attrs,
-            _ => panic!("Expected attribute set"),
-        };
-
-        let (private1, public1) =
-            attrs1
-                .into_iter_sorted()
-                .fold((String::new(), String::new()), |mut acc, (k, v)| {
-                    let key = k.as_str().unwrap().to_owned();
-                    let value = value_to_string(v.clone()).unwrap();
-                    if key == "secret" {
-                        acc.0 = value;
-                    } else if key == "public" {
-                        acc.1 = value;
-                    }
-                    acc
-                });
-        let (private2, public2) =
-            attrs2
-                .into_iter_sorted()
-                .fold((String::new(), String::new()), |mut acc, (k, v)| {
-                    let key = k.as_str().unwrap().to_owned();
-                    let value = value_to_string(v.clone()).unwrap();
-                    if key == "secret" {
-                        acc.0 = value;
-                    } else if key == "public" {
-                        acc.1 = value;
-                    }
-                    acc
-                });
-        // Get public keys from both calls
+        let (private1, public1) = extract_keypair(output1)?;
+        let (private2, public2) = extract_keypair(output2)?;
 
         // Keys should be different each time
         assert_ne!(public1, public2);
         assert_ne!(private1, private2);
-        eprintln!("public1: {}", public1);
 
         // Both should be valid SSH keys
         assert!(public1.starts_with("ssh-ed25519 "));
