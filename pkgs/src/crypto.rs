@@ -11,29 +11,18 @@ use std::io::{Read, Write};
 use std::path::Path;
 use std::str::FromStr;
 
-/// Configuration for identity management
-pub struct IdentityConfig<'a> {
-    /// Explicitly specified identities (in order)
-    pub identities: &'a [String],
-    /// Whether to exclude system identities
-    pub no_system_identities: bool,
-}
-
-impl<'a> IdentityConfig<'a> {
-    /// Create a new identity configuration from explicit identities and a flag
-    pub fn new(identities: &'a [String], no_system_identities: bool) -> Self {
-        Self {
-            identities,
-            no_system_identities,
-        }
-    }
-}
-
 /// Decrypt a file to another file
+///
+/// # Arguments
+/// * `input_file` - Path to the encrypted file
+/// * `output_file` - Path to write the decrypted content
+/// * `identities` - Explicit identities to try first (in order)
+/// * `no_system_identities` - If true, don't add default system identities
 pub fn decrypt_to_file<P: AsRef<Path>>(
     input_file: &str,
     output_file: P,
-    identity_config: &IdentityConfig,
+    identities: &[String],
+    no_system_identities: bool,
 ) -> Result<()> {
     // Read ciphertext
     let mut ciphertext = vec![];
@@ -61,10 +50,10 @@ pub fn decrypt_to_file<P: AsRef<Path>>(
     let decryptor = Decryptor::new(&ciphertext_bytes[..]).context("Failed to parse age file")?;
 
     // Collect identities: explicit identities first, then system defaults (unless disabled)
-    let identities = collect_identities(identity_config)?;
+    let all_identities = collect_identities(identities, no_system_identities)?;
 
     let mut reader = decryptor
-        .decrypt(identities.iter().map(|i| i.as_ref() as &dyn Identity))
+        .decrypt(all_identities.iter().map(|i| i.as_ref() as &dyn Identity))
         .with_context(|| format!("Failed to decrypt {input_file}"))?;
 
     let mut plaintext = vec![];
@@ -84,18 +73,21 @@ pub fn decrypt_to_file<P: AsRef<Path>>(
 
 /// Collect identities based on the configuration
 /// Order: explicit identities first, then system defaults (unless no_system_identities is set)
-fn collect_identities(config: &IdentityConfig) -> Result<Vec<Box<dyn Identity>>> {
+fn collect_identities(
+    explicit_identities: &[String],
+    no_system_identities: bool,
+) -> Result<Vec<Box<dyn Identity>>> {
     let mut identities: Vec<Box<dyn Identity>> = Vec::new();
 
     // First, add explicitly specified identities (in order)
-    for id_path in config.identities {
+    for id_path in explicit_identities {
         let loaded = load_identities_from_file(id_path)
             .with_context(|| format!("Failed to load identity from {id_path}"))?;
         identities.extend(loaded);
     }
 
     // Then, add system default identities (unless disabled)
-    if !config.no_system_identities {
+    if !no_system_identities {
         let default_paths = get_default_identities();
         for path in default_paths {
             let loaded = load_identities_from_file(&path)
@@ -326,11 +318,12 @@ mod tests {
 
         // Test decryption
         let identities = vec![identity_file.path().to_str().unwrap().to_string()];
-        let config = IdentityConfig::new(&identities, true);
+
         decrypt_to_file(
             encrypted_file.path().to_str().unwrap(),
             decrypted_file.path(),
-            &config,
+            &identities,
+            true,
         )?;
 
         // Verify content matches
@@ -376,11 +369,12 @@ mod tests {
 
         // Test decryption
         let identities = vec![identity_file.path().to_str().unwrap().to_string()];
-        let config = IdentityConfig::new(&identities, true);
+
         decrypt_to_file(
             encrypted_file.path().to_str().unwrap(),
             decrypted_file.path(),
-            &config,
+            &identities,
+            true,
         )?;
 
         // Verify content matches
@@ -440,20 +434,20 @@ mod tests {
 
         // Test decryption with first key
         let identities1 = vec![identity_file1.path().to_str().unwrap().to_string()];
-        let config1 = IdentityConfig::new(&identities1, true);
         decrypt_to_file(
             encrypted_file.path().to_str().unwrap(),
             decrypted_file1.path(),
-            &config1,
+            &identities1,
+            true,
         )?;
 
         // Test decryption with second key
         let identities2 = vec![identity_file2.path().to_str().unwrap().to_string()];
-        let config2 = IdentityConfig::new(&identities2, true);
         decrypt_to_file(
             encrypted_file.path().to_str().unwrap(),
             decrypted_file2.path(),
-            &config2,
+            &identities2,
+            true,
         )?;
 
         // Verify both decryptions match original
@@ -506,17 +500,19 @@ mod tests {
 
         // Decrypt both versions
         let identities = vec![identity_file.path().to_str().unwrap().to_string()];
-        let config = IdentityConfig::new(&identities, true);
+
         decrypt_to_file(
             armored_file.path().to_str().unwrap(),
             decrypted_armored.path(),
-            &config,
+            &identities,
+            true,
         )?;
 
         decrypt_to_file(
             binary_file.path().to_str().unwrap(),
             decrypted_binary.path(),
-            &config,
+            &identities,
+            true,
         )?;
 
         // Both should decrypt to the same content
@@ -596,11 +592,12 @@ mod tests {
         }
 
         // Try to decrypt without explicit identity (should fail due to bogus default key)
-        let config = IdentityConfig::new(&[], false); // Use system defaults
+        // Use system defaults (empty identities, no_system_identities = false)
         let _result = decrypt_to_file(
             encrypted_file.path().to_str().unwrap(),
             temp_home.path().join("decrypted.txt"),
-            &config,
+            &[],
+            false,
         );
 
         // Restore original HOME
@@ -673,11 +670,12 @@ mod tests {
 
         // Try to decrypt WITH explicit valid identity and no_system_identities=true
         let identities = vec![valid_identity_file.path().to_str().unwrap().to_string()];
-        let config = IdentityConfig::new(&identities, true); // Exclude bogus system identities
+        // Exclude bogus system identities
         let result = decrypt_to_file(
             encrypted_file.path().to_str().unwrap(),
             decrypted_file.path(),
-            &config,
+            &identities,
+            true,
         );
 
         // Restore original HOME
@@ -759,11 +757,12 @@ mod tests {
 
         // Now try to decrypt WITHOUT explicit identity
         // This should fail because there's a bogus id_rsa
-        let config = IdentityConfig::new(&[], false); // Use system defaults
+        // Use system defaults (empty identities, no_system_identities = false)
         let result = decrypt_to_file(
             encrypted_file.path().to_str().unwrap(),
             decrypted_file.path(),
-            &config,
+            &[],
+            false,
         );
 
         // Restore HOME
@@ -821,11 +820,12 @@ mod tests {
         // Try to decrypt using the bogus identity file explicitly
         // This should fail because the identity file is invalid
         let identities = vec![bogus_identity_file.path().to_str().unwrap().to_string()];
-        let config = IdentityConfig::new(&identities, true);
+
         let result = decrypt_to_file(
             encrypted_file.path().to_str().unwrap(),
             &decrypted_file.path(),
-            &config,
+            &identities,
+            true,
         );
 
         // The fix ensures this fails properly
@@ -891,11 +891,12 @@ mod tests {
         }
 
         // This should fail - bogus default identity should cause failure
-        let config = IdentityConfig::new(&[], false); // Use system defaults
+        // Use system defaults (empty identities, no_system_identities = false)
         let result = decrypt_to_file(
             encrypted_file.path().to_str().unwrap(),
             &decrypted_file.path(),
-            &config,
+            &[],
+            false,
         );
 
         // Restore HOME immediately to avoid affecting other tests
