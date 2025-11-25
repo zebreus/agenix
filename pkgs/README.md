@@ -201,6 +201,10 @@ This creates:
 ### Available Builtin Generators
 
 - `builtins.randomString <length>` - Generate a random alphanumeric string
+- `builtins.randomHex <length>` - Generate a random hexadecimal string (lowercase)
+- `builtins.randomBase64 <bytes>` - Generate a random base64-encoded string from the specified number of bytes
+- `builtins.passwordSafe <length>` - Generate a random password-safe string (alphanumeric + safe special chars: `-_+=.`)
+- `builtins.uuid` or `builtins.uuid {}` - Generate a random UUIDv4 string
 - `builtins.sshKey` or `builtins.sshKey {}` - Generate an SSH Ed25519 keypair (returns `{secret, public}`)
 - `builtins.ageKey` or `builtins.ageKey {}` - Generate an age x25519 keypair (returns `{secret, public}`)
 
