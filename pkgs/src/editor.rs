@@ -179,13 +179,46 @@ pub fn decrypt_file(
     Ok(())
 }
 
-/// Rekey all files in the rules (no-op editor used to avoid launching an editor)
-pub fn rekey_all_files(
+/// Filter files based on specified secrets
+/// If secrets is empty, return all files. Otherwise, return files that match any of the specified secrets.
+fn filter_files(files: &[String], secrets: &[String]) -> Vec<String> {
+    if secrets.is_empty() {
+        return files.to_vec();
+    }
+
+    files
+        .iter()
+        .filter(|file| {
+            let normalized = normalize_secret_name(file);
+            let basename = secret_basename(file);
+            secrets.iter().any(|s| {
+                let s_normalized = normalize_secret_name(s);
+                s_normalized == normalized
+                    || s_normalized == secret_basename(&basename)
+                    || s == *file
+            })
+        })
+        .cloned()
+        .collect()
+}
+
+/// Rekey files in the rules (no-op editor used to avoid launching an editor)
+/// If secrets is empty, rekeys all secrets. Otherwise, only rekeys the specified secrets.
+pub fn rekey_files(
     rules_path: &str,
+    secrets: &[String],
     identities: &[String],
     no_system_identities: bool,
 ) -> Result<()> {
-    let files = get_all_files(rules_path)?;
+    let all_files = get_all_files(rules_path)?;
+    let files = filter_files(&all_files, secrets);
+
+    if files.is_empty() && !secrets.is_empty() {
+        return Err(anyhow!(
+            "No matching secrets found in rules file for: {}",
+            secrets.join(", ")
+        ));
+    }
 
     files.iter().try_for_each(|file| {
         eprintln!("Rekeying {file}...");
@@ -514,6 +547,29 @@ fn handle_circular_dependency_error(deferred: &[String], rules_path: &str) -> Re
     ))
 }
 
+/// Collect all dependencies of a secret recursively
+fn collect_dependencies(
+    file: &str,
+    rules_path: &str,
+    all_files: &[String],
+    collected: &mut std::collections::HashSet<String>,
+) {
+    let deps = get_secret_dependencies(rules_path, file).unwrap_or_default();
+    for dep in deps {
+        let dep_file = resolve_dependency_path(&dep, all_files);
+        let dep_normalized = normalize_secret_name(dep_file);
+
+        // Find the actual file in all_files that matches this dependency
+        for f in all_files {
+            if normalize_secret_name(f) == dep_normalized && !collected.contains(f) {
+                collected.insert(f.clone());
+                // Recursively collect dependencies of this dependency
+                collect_dependencies(f, rules_path, all_files, collected);
+            }
+        }
+    }
+}
+
 /// Generate secrets using generator functions from rules
 /// Only generates secrets if:
 /// 1. The file has a generator function defined
@@ -522,25 +578,60 @@ fn handle_circular_dependency_error(deferred: &[String], rules_path: &str) -> Re
 /// Options:
 /// - `force`: Overwrite existing secret files
 /// - `dry_run`: Show what would be generated without making changes
+/// - `with_dependencies`: Also generate dependencies of specified secrets
+/// - `secrets`: If empty, generates all secrets; otherwise only specified secrets
 ///
 /// This function now supports dependencies - generators can reference
 /// other secrets' public keys via the `dependencies` attribute.
-pub fn generate_secrets(rules_path: &str, force: bool, dry_run: bool) -> Result<()> {
+pub fn generate_secrets(
+    rules_path: &str,
+    force: bool,
+    dry_run: bool,
+    with_dependencies: bool,
+    secrets: &[String],
+) -> Result<()> {
     use std::collections::{HashMap, HashSet};
 
-    let files = get_all_files(rules_path)?;
+    let all_files = get_all_files(rules_path)?;
     let rules_dir = Path::new(rules_path)
         .parent()
         .unwrap_or_else(|| Path::new("."));
+
+    // Filter files based on specified secrets
+    let mut files_to_process = if secrets.is_empty() {
+        all_files.clone()
+    } else {
+        let filtered = filter_files(&all_files, secrets);
+        if filtered.is_empty() {
+            return Err(anyhow!(
+                "No matching secrets found in rules file for: {}",
+                secrets.join(", ")
+            ));
+        }
+        filtered
+    };
+
+    // If with_dependencies is set, expand the list to include dependencies
+    if with_dependencies && !secrets.is_empty() {
+        let mut deps_to_add: HashSet<String> = HashSet::new();
+        for file in &files_to_process {
+            collect_dependencies(file, rules_path, &all_files, &mut deps_to_add);
+        }
+        for dep in deps_to_add {
+            if !files_to_process.contains(&dep) {
+                files_to_process.push(dep);
+            }
+        }
+    }
 
     // Track which secrets have been generated
     let mut generated_secrets: HashMap<String, GeneratorOutput> = HashMap::new();
     let mut processed: HashSet<String> = HashSet::new();
 
     // Process secrets, handling dependencies
-    let mut to_process: Vec<String> = files.clone();
+    let mut to_process: Vec<String> = files_to_process.clone();
     let mut iteration = 0;
-    let max_iterations = files.len() + 10;
+    let max_iterations = all_files.len() + 10;
 
     while !to_process.is_empty() && iteration < max_iterations {
         iteration += 1;
@@ -551,7 +642,7 @@ pub fn generate_secrets(rules_path: &str, force: bool, dry_run: bool) -> Result<
             match process_single_secret(
                 &file,
                 rules_path,
-                &files,
+                &all_files,
                 rules_dir,
                 &mut generated_secrets,
                 &mut processed,
@@ -609,7 +700,7 @@ mod tests {
         // With nonexistent rules this will early error if keys empty; simulate empty by pointing to test file
         let rules = "./test_secrets.nix";
         // Should error, but specifically via missing keys, not editor invocation failure.
-        let result = rekey_all_files(rules, &[], false);
+        let result = rekey_files(rules, &[], &[], false);
         assert!(result.is_err());
     }
 
@@ -2556,6 +2647,427 @@ mod tests {
         assert!(
             !secret_path.exists(),
             "Secret file should not be created in dry-run mode with -n"
+        );
+
+        Ok(())
+    }
+
+    // Tests for positional secrets filtering
+
+    #[test]
+    fn test_generate_specific_secrets() -> Result<()> {
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+
+        let temp_dir = tempdir()?;
+
+        let rules_content = format!(
+            r#"
+{{
+  "{}/secret1.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {{ }}: "content1";
+  }};
+  "{}/secret2.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {{ }}: "content2";
+  }};
+  "{}/secret3.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {{ }}: "content3";
+  }};
+}}
+"#,
+            temp_dir.path().to_str().unwrap(),
+            temp_dir.path().to_str().unwrap(),
+            temp_dir.path().to_str().unwrap()
+        );
+
+        let mut temp_rules = NamedTempFile::new()?;
+        writeln!(temp_rules, "{}", rules_content)?;
+        temp_rules.flush()?;
+
+        // Only generate secret1.age
+        let args = vec![
+            "agenix".to_string(),
+            "generate".to_string(),
+            "--rules".to_string(),
+            temp_rules.path().to_str().unwrap().to_string(),
+            "secret1".to_string(),
+        ];
+
+        let result = crate::run(args);
+        assert!(
+            result.is_ok(),
+            "Generate specific secrets should succeed: {:?}",
+            result.err()
+        );
+
+        // Only secret1.age should be created
+        assert!(
+            temp_dir.path().join("secret1.age").exists(),
+            "secret1.age should be created"
+        );
+        assert!(
+            !temp_dir.path().join("secret2.age").exists(),
+            "secret2.age should NOT be created"
+        );
+        assert!(
+            !temp_dir.path().join("secret3.age").exists(),
+            "secret3.age should NOT be created"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_generate_multiple_specific_secrets() -> Result<()> {
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+
+        let temp_dir = tempdir()?;
+
+        let rules_content = format!(
+            r#"
+{{
+  "{}/secret1.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {{ }}: "content1";
+  }};
+  "{}/secret2.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {{ }}: "content2";
+  }};
+  "{}/secret3.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {{ }}: "content3";
+  }};
+}}
+"#,
+            temp_dir.path().to_str().unwrap(),
+            temp_dir.path().to_str().unwrap(),
+            temp_dir.path().to_str().unwrap()
+        );
+
+        let mut temp_rules = NamedTempFile::new()?;
+        writeln!(temp_rules, "{}", rules_content)?;
+        temp_rules.flush()?;
+
+        // Generate secret1 and secret3
+        let args = vec![
+            "agenix".to_string(),
+            "generate".to_string(),
+            "--rules".to_string(),
+            temp_rules.path().to_str().unwrap().to_string(),
+            "secret1".to_string(),
+            "secret3".to_string(),
+        ];
+
+        let result = crate::run(args);
+        assert!(
+            result.is_ok(),
+            "Generate multiple specific secrets should succeed: {:?}",
+            result.err()
+        );
+
+        // secret1 and secret3 should be created, secret2 should not
+        assert!(
+            temp_dir.path().join("secret1.age").exists(),
+            "secret1.age should be created"
+        );
+        assert!(
+            !temp_dir.path().join("secret2.age").exists(),
+            "secret2.age should NOT be created"
+        );
+        assert!(
+            temp_dir.path().join("secret3.age").exists(),
+            "secret3.age should be created"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_generate_with_age_suffix_in_filter() -> Result<()> {
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+
+        let temp_dir = tempdir()?;
+
+        let rules_content = format!(
+            r#"
+{{
+  "{}/secret1.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {{ }}: "content1";
+  }};
+  "{}/secret2.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {{ }}: "content2";
+  }};
+}}
+"#,
+            temp_dir.path().to_str().unwrap(),
+            temp_dir.path().to_str().unwrap()
+        );
+
+        let mut temp_rules = NamedTempFile::new()?;
+        writeln!(temp_rules, "{}", rules_content)?;
+        temp_rules.flush()?;
+
+        // Test with .age suffix
+        let args = vec![
+            "agenix".to_string(),
+            "generate".to_string(),
+            "--rules".to_string(),
+            temp_rules.path().to_str().unwrap().to_string(),
+            "secret1.age".to_string(),
+        ];
+
+        let result = crate::run(args);
+        assert!(
+            result.is_ok(),
+            "Generate with .age suffix should succeed: {:?}",
+            result.err()
+        );
+
+        assert!(
+            temp_dir.path().join("secret1.age").exists(),
+            "secret1.age should be created"
+        );
+        assert!(
+            !temp_dir.path().join("secret2.age").exists(),
+            "secret2.age should NOT be created"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_generate_nonexistent_secret_filter() {
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+
+        let temp_dir = tempdir().unwrap();
+
+        let rules_content = format!(
+            r#"
+{{
+  "{}/existing.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {{ }}: "content";
+  }};
+}}
+"#,
+            temp_dir.path().to_str().unwrap()
+        );
+
+        let mut temp_rules = NamedTempFile::new().unwrap();
+        writeln!(temp_rules, "{}", rules_content).unwrap();
+        temp_rules.flush().unwrap();
+
+        // Try to generate a nonexistent secret
+        let args = vec![
+            "agenix".to_string(),
+            "generate".to_string(),
+            "--rules".to_string(),
+            temp_rules.path().to_str().unwrap().to_string(),
+            "nonexistent".to_string(),
+        ];
+
+        let result = crate::run(args);
+        assert!(result.is_err(), "Generate nonexistent secret should fail");
+        let err_msg = format!("{:?}", result.unwrap_err());
+        assert!(
+            err_msg.contains("No matching secrets"),
+            "Error should mention no matching secrets: {}",
+            err_msg
+        );
+    }
+
+    #[test]
+    fn test_generate_with_dependencies_flag() -> Result<()> {
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+
+        let temp_dir = tempdir()?;
+
+        // Create a dependency chain: base -> derived
+        let rules_content = format!(
+            r#"
+{{
+  "{}/base.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {{ }}: {{ secret = "base-secret"; public = "base-public"; }};
+  }};
+  "{}/derived.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    dependencies = [ "base" ];
+    generator = {{ publics }}: "derived-" + publics."base";
+  }};
+  "{}/unrelated.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {{ }}: "unrelated";
+  }};
+}}
+"#,
+            temp_dir.path().to_str().unwrap(),
+            temp_dir.path().to_str().unwrap(),
+            temp_dir.path().to_str().unwrap()
+        );
+
+        let mut temp_rules = NamedTempFile::new()?;
+        writeln!(temp_rules, "{}", rules_content)?;
+        temp_rules.flush()?;
+
+        // Generate only derived.age with --with-dependencies
+        let args = vec![
+            "agenix".to_string(),
+            "generate".to_string(),
+            "--with-dependencies".to_string(),
+            "--rules".to_string(),
+            temp_rules.path().to_str().unwrap().to_string(),
+            "derived".to_string(),
+        ];
+
+        let result = crate::run(args);
+        assert!(
+            result.is_ok(),
+            "Generate with dependencies should succeed: {:?}",
+            result.err()
+        );
+
+        // Both derived and its dependency base should be created
+        assert!(
+            temp_dir.path().join("base.age").exists(),
+            "base.age (dependency) should be created"
+        );
+        assert!(
+            temp_dir.path().join("derived.age").exists(),
+            "derived.age should be created"
+        );
+        // unrelated should NOT be created
+        assert!(
+            !temp_dir.path().join("unrelated.age").exists(),
+            "unrelated.age should NOT be created"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_generate_without_dependencies_flag_fails_on_missing_dep() {
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+
+        let temp_dir = tempdir().unwrap();
+
+        // Create a dependency chain: base -> derived
+        let rules_content = format!(
+            r#"
+{{
+  "{}/base.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {{ }}: {{ secret = "base-secret"; public = "base-public"; }};
+  }};
+  "{}/derived.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    dependencies = [ "base" ];
+    generator = {{ publics }}: "derived-" + publics."base";
+  }};
+}}
+"#,
+            temp_dir.path().to_str().unwrap(),
+            temp_dir.path().to_str().unwrap()
+        );
+
+        let mut temp_rules = NamedTempFile::new().unwrap();
+        writeln!(temp_rules, "{}", rules_content).unwrap();
+        temp_rules.flush().unwrap();
+
+        // Generate only derived.age WITHOUT --with-dependencies
+        // This should fail because base.age doesn't exist
+        let args = vec![
+            "agenix".to_string(),
+            "generate".to_string(),
+            "--rules".to_string(),
+            temp_rules.path().to_str().unwrap().to_string(),
+            "derived".to_string(),
+        ];
+
+        let result = crate::run(args);
+        assert!(
+            result.is_err(),
+            "Generate without dependencies should fail when dependency is missing"
+        );
+    }
+
+    #[test]
+    fn test_generate_transitive_dependencies() -> Result<()> {
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+
+        let temp_dir = tempdir()?;
+
+        // Chain: a -> b -> c
+        let rules_content = format!(
+            r#"
+{{
+  "{}/a.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {{ }}: {{ secret = "a-secret"; public = "a-public"; }};
+  }};
+  "{}/b.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    dependencies = [ "a" ];
+    generator = {{ publics }}: {{ secret = "b-" + publics."a"; public = "b-public"; }};
+  }};
+  "{}/c.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    dependencies = [ "b" ];
+    generator = {{ publics }}: "c-" + publics."b";
+  }};
+}}
+"#,
+            temp_dir.path().to_str().unwrap(),
+            temp_dir.path().to_str().unwrap(),
+            temp_dir.path().to_str().unwrap()
+        );
+
+        let mut temp_rules = NamedTempFile::new()?;
+        writeln!(temp_rules, "{}", rules_content)?;
+        temp_rules.flush()?;
+
+        // Generate only c.age with --with-dependencies
+        // Should generate a, b, and c
+        let args = vec![
+            "agenix".to_string(),
+            "generate".to_string(),
+            "--with-dependencies".to_string(),
+            "--rules".to_string(),
+            temp_rules.path().to_str().unwrap().to_string(),
+            "c".to_string(),
+        ];
+
+        let result = crate::run(args);
+        assert!(
+            result.is_ok(),
+            "Generate with transitive dependencies should succeed: {:?}",
+            result.err()
+        );
+
+        // All three should be created
+        assert!(
+            temp_dir.path().join("a.age").exists(),
+            "a.age should be created"
+        );
+        assert!(
+            temp_dir.path().join("b.age").exists(),
+            "b.age should be created"
+        );
+        assert!(
+            temp_dir.path().join("c.age").exists(),
+            "c.age should be created"
         );
 
         Ok(())

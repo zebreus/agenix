@@ -66,9 +66,13 @@ pub enum Command {
         output: Option<String>,
     },
 
-    /// Re-encrypt all secrets with updated recipients
+    /// Re-encrypt secrets with updated recipients
     #[command(visible_alias = "r")]
-    Rekey {},
+    Rekey {
+        /// Secrets to rekey (if none specified, rekeys all secrets from the rules file)
+        #[arg(value_name = "SECRET")]
+        secrets: Vec<String>,
+    },
 
     /// Generate secrets using generator functions from rules
     #[command(visible_alias = "g")]
@@ -80,6 +84,14 @@ pub enum Command {
         /// Show what would be generated without making changes
         #[arg(short = 'n', long)]
         dry_run: bool,
+
+        /// Also generate dependencies of specified secrets
+        #[arg(long)]
+        with_dependencies: bool,
+
+        /// Secrets to generate (if none specified, generates all secrets from the rules file)
+        #[arg(value_name = "SECRET")]
+        secrets: Vec<String>,
     },
 }
 
@@ -237,9 +249,17 @@ mod tests {
     fn test_generate_subcommand() {
         let args = Args::try_parse_from(["agenix", "generate"]).unwrap();
         assert!(matches!(args.command, Some(Command::Generate { .. })));
-        if let Some(Command::Generate { force, dry_run }) = args.command {
+        if let Some(Command::Generate {
+            force,
+            dry_run,
+            with_dependencies,
+            secrets,
+        }) = args.command
+        {
             assert!(!force);
             assert!(!dry_run);
+            assert!(!with_dependencies);
+            assert!(secrets.is_empty());
         }
     }
 
@@ -252,9 +272,17 @@ mod tests {
     #[test]
     fn test_generate_force_flag() {
         let args = Args::try_parse_from(["agenix", "generate", "--force"]).unwrap();
-        if let Some(Command::Generate { force, dry_run }) = args.command {
+        if let Some(Command::Generate {
+            force,
+            dry_run,
+            with_dependencies,
+            secrets,
+        }) = args.command
+        {
             assert!(force);
             assert!(!dry_run);
+            assert!(!with_dependencies);
+            assert!(secrets.is_empty());
         } else {
             panic!("Expected Generate command");
         }
@@ -263,7 +291,7 @@ mod tests {
     #[test]
     fn test_generate_force_short_flag() {
         let args = Args::try_parse_from(["agenix", "generate", "-f"]).unwrap();
-        if let Some(Command::Generate { force, dry_run }) = args.command {
+        if let Some(Command::Generate { force, dry_run, .. }) = args.command {
             assert!(force);
             assert!(!dry_run);
         } else {
@@ -274,7 +302,7 @@ mod tests {
     #[test]
     fn test_generate_dry_run_flag() {
         let args = Args::try_parse_from(["agenix", "generate", "--dry-run"]).unwrap();
-        if let Some(Command::Generate { force, dry_run }) = args.command {
+        if let Some(Command::Generate { force, dry_run, .. }) = args.command {
             assert!(!force);
             assert!(dry_run);
         } else {
@@ -285,7 +313,7 @@ mod tests {
     #[test]
     fn test_generate_dry_run_short_flag() {
         let args = Args::try_parse_from(["agenix", "generate", "-n"]).unwrap();
-        if let Some(Command::Generate { force, dry_run }) = args.command {
+        if let Some(Command::Generate { force, dry_run, .. }) = args.command {
             assert!(!force);
             assert!(dry_run);
         } else {
@@ -296,7 +324,7 @@ mod tests {
     #[test]
     fn test_generate_force_and_dry_run() {
         let args = Args::try_parse_from(["agenix", "generate", "--force", "--dry-run"]).unwrap();
-        if let Some(Command::Generate { force, dry_run }) = args.command {
+        if let Some(Command::Generate { force, dry_run, .. }) = args.command {
             assert!(force);
             assert!(dry_run);
         } else {
@@ -307,7 +335,7 @@ mod tests {
     #[test]
     fn test_generate_short_flags_combined() {
         let args = Args::try_parse_from(["agenix", "generate", "-f", "-n"]).unwrap();
-        if let Some(Command::Generate { force, dry_run }) = args.command {
+        if let Some(Command::Generate { force, dry_run, .. }) = args.command {
             assert!(force);
             assert!(dry_run);
         } else {
@@ -534,5 +562,151 @@ mod tests {
         .unwrap();
         assert_eq!(args.identity, vec!["/key1".to_string()]);
         assert!(args.no_system_identities);
+    }
+
+    // Tests for positional secrets argument in rekey
+
+    #[test]
+    fn test_rekey_with_positional_secrets() {
+        let args = Args::try_parse_from(["agenix", "rekey", "secret1.age", "secret2.age"]).unwrap();
+        if let Some(Command::Rekey { secrets }) = args.command {
+            assert_eq!(
+                secrets,
+                vec!["secret1.age".to_string(), "secret2.age".to_string()]
+            );
+        } else {
+            panic!("Expected Rekey command");
+        }
+    }
+
+    #[test]
+    fn test_rekey_without_positional_secrets() {
+        let args = Args::try_parse_from(["agenix", "rekey"]).unwrap();
+        if let Some(Command::Rekey { secrets }) = args.command {
+            assert!(secrets.is_empty());
+        } else {
+            panic!("Expected Rekey command");
+        }
+    }
+
+    #[test]
+    fn test_rekey_single_secret() {
+        let args = Args::try_parse_from(["agenix", "rekey", "single.age"]).unwrap();
+        if let Some(Command::Rekey { secrets }) = args.command {
+            assert_eq!(secrets, vec!["single.age".to_string()]);
+        } else {
+            panic!("Expected Rekey command");
+        }
+    }
+
+    // Tests for positional secrets argument in generate
+
+    #[test]
+    fn test_generate_with_positional_secrets() {
+        let args =
+            Args::try_parse_from(["agenix", "generate", "secret1.age", "secret2.age"]).unwrap();
+        if let Some(Command::Generate { secrets, .. }) = args.command {
+            assert_eq!(
+                secrets,
+                vec!["secret1.age".to_string(), "secret2.age".to_string()]
+            );
+        } else {
+            panic!("Expected Generate command");
+        }
+    }
+
+    #[test]
+    fn test_generate_without_positional_secrets() {
+        let args = Args::try_parse_from(["agenix", "generate"]).unwrap();
+        if let Some(Command::Generate { secrets, .. }) = args.command {
+            assert!(secrets.is_empty());
+        } else {
+            panic!("Expected Generate command");
+        }
+    }
+
+    #[test]
+    fn test_generate_single_secret() {
+        let args = Args::try_parse_from(["agenix", "generate", "single.age"]).unwrap();
+        if let Some(Command::Generate { secrets, .. }) = args.command {
+            assert_eq!(secrets, vec!["single.age".to_string()]);
+        } else {
+            panic!("Expected Generate command");
+        }
+    }
+
+    #[test]
+    fn test_generate_with_dependencies_flag() {
+        let args =
+            Args::try_parse_from(["agenix", "generate", "--with-dependencies", "secret.age"])
+                .unwrap();
+        if let Some(Command::Generate {
+            with_dependencies,
+            secrets,
+            ..
+        }) = args.command
+        {
+            assert!(with_dependencies);
+            assert_eq!(secrets, vec!["secret.age".to_string()]);
+        } else {
+            panic!("Expected Generate command");
+        }
+    }
+
+    #[test]
+    fn test_generate_with_flags_and_positional_secrets() {
+        let args = Args::try_parse_from([
+            "agenix",
+            "generate",
+            "--force",
+            "--dry-run",
+            "secret1.age",
+            "secret2.age",
+        ])
+        .unwrap();
+        if let Some(Command::Generate {
+            force,
+            dry_run,
+            secrets,
+            ..
+        }) = args.command
+        {
+            assert!(force);
+            assert!(dry_run);
+            assert_eq!(
+                secrets,
+                vec!["secret1.age".to_string(), "secret2.age".to_string()]
+            );
+        } else {
+            panic!("Expected Generate command");
+        }
+    }
+
+    #[test]
+    fn test_generate_secrets_after_flags() {
+        let args = Args::try_parse_from([
+            "agenix",
+            "generate",
+            "-f",
+            "-n",
+            "--with-dependencies",
+            "a.age",
+            "b.age",
+        ])
+        .unwrap();
+        if let Some(Command::Generate {
+            force,
+            dry_run,
+            with_dependencies,
+            secrets,
+        }) = args.command
+        {
+            assert!(force);
+            assert!(dry_run);
+            assert!(with_dependencies);
+            assert_eq!(secrets, vec!["a.age".to_string(), "b.age".to_string()]);
+        } else {
+            panic!("Expected Generate command");
+        }
     }
 }

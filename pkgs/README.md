@@ -104,30 +104,40 @@ agenix decrypt secret.age -i ~/.ssh/id_rsa
 
 ### `agenix rekey` (alias: `r`)
 
-Re-encrypt all secrets with updated recipients from the rules file.
+Re-encrypt secrets with updated recipients from the rules file.
+
+Arguments:
+- `[SECRET]...` - Secrets to rekey (if none specified, rekeys all secrets from the rules file)
 
 Options:
 - `-i, --identity <KEY>` - Identity (private key) to use when decrypting
 
 Examples:
 ```bash
-agenix rekey
-agenix rekey -i ~/.ssh/id_ed25519
+agenix rekey                              # Rekey all secrets
+agenix rekey secret1.age secret2.age      # Rekey specific secrets
+agenix rekey -i ~/.ssh/id_ed25519         # Rekey all with specific identity
 ```
 
 ### `agenix generate` (alias: `g`)
 
 Generate secrets using generator functions defined in the rules file.
 
+Arguments:
+- `[SECRET]...` - Secrets to generate (if none specified, generates all secrets from the rules file)
+
 Options:
 - `-f, --force` - Overwrite existing secret files
 - `-n, --dry-run` - Show what would be generated without making changes
+- `--with-dependencies` - Also generate dependencies of specified secrets
 
 Examples:
 ```bash
-agenix generate
-agenix generate --dry-run
-agenix generate --force
+agenix generate                              # Generate all secrets
+agenix generate secret1.age                  # Generate specific secret
+agenix generate --dry-run                    # Preview what would be generated
+agenix generate --force                      # Overwrite existing secrets
+agenix generate --with-dependencies secret.age  # Generate secret and its dependencies
 ```
 
 ## Global Options
