@@ -203,13 +203,9 @@ fn filter_files(files: &[String], secrets: &[String]) -> Vec<String> {
 /// Rekey files in the rules (no-op editor used to avoid launching an editor)
 /// If secrets is empty, rekeys all secrets. Otherwise, only rekeys the specified secrets.
 ///
-/// If `partial` is false (default), the function will:
-/// 1. First verify all secrets can be decrypted (pre-flight check)
-/// 2. Only then proceed to rekey all secrets
-/// 3. Fail with helpful error message listing all undecryptable secrets
-///
-/// If `partial` is true, the function will continue rekeying other secrets even if some fail,
-/// and report all failures at the end.
+/// Pre-flight check always runs first to verify which secrets can be decrypted.
+/// In strict mode (partial=false), fails if any secrets cannot be decrypted.
+/// In partial mode (partial=true), proceeds with only the decryptable secrets.
 pub fn rekey_files(
     rules_path: &str,
     secrets: &[String],
@@ -227,84 +223,103 @@ pub fn rekey_files(
         ));
     }
 
-    // Filter to only existing files for pre-flight check (non-existing files don't need decryption verification)
+    // Filter to only existing files (non-existing files don't need rekeying)
     let existing_files: Vec<_> = files
         .iter()
         .filter(|f| Path::new(f).exists())
         .cloned()
         .collect();
 
-    if !partial {
-        // Pre-flight check: verify all existing files can be decrypted before making any changes
-        eprintln!(
-            "Checking decryption for {} secrets...",
-            existing_files.len()
-        );
-        let mut undecryptable: Vec<(String, String)> = Vec::new();
+    // Pre-flight check: verify which files can be decrypted
+    // This runs for both partial and non-partial modes
+    eprintln!(
+        "Checking decryption for {} secrets...",
+        existing_files.len()
+    );
+    let mut decryptable: Vec<String> = Vec::new();
+    let mut undecryptable: Vec<(String, String)> = Vec::new();
 
-        for file in &existing_files {
-            if let Err(e) = crate::crypto::can_decrypt(file, identities, no_system_identities) {
-                undecryptable.push((file.clone(), format!("{e:#}")));
-            }
+    for file in &existing_files {
+        if let Err(e) = crate::crypto::can_decrypt(file, identities, no_system_identities) {
+            undecryptable.push((file.clone(), format!("{e:#}")));
+        } else {
+            decryptable.push(file.clone());
         }
+    }
 
-        if !undecryptable.is_empty() {
-            let file_list: Vec<String> = undecryptable
-                .iter()
-                .map(|(f, e)| format!("  - {}: {}", f, e))
-                .collect();
+    // Handle undecryptable files based on mode
+    if !undecryptable.is_empty() {
+        let file_list: Vec<String> = undecryptable
+            .iter()
+            .map(|(f, e)| format!("  - {}: {}", f, e))
+            .collect();
+
+        if !partial {
+            // Strict mode: fail if any secrets cannot be decrypted
             return Err(anyhow!(
                 "Cannot rekey: the following {} secret(s) cannot be decrypted with the available identities:\n{}\n\nNo secrets were modified.\n\nHint: Use --partial to rekey only the secrets that can be decrypted.",
                 undecryptable.len(),
                 file_list.join("\n")
             ));
+        } else {
+            // Partial mode: warn about skipped files and continue with decryptable ones
+            eprintln!(
+                "Warning: Skipping {} undecryptable secret(s):\n{}",
+                undecryptable.len(),
+                file_list.join("\n")
+            );
         }
-        eprintln!("All secrets can be decrypted. Proceeding with rekey...");
     }
 
-    if partial {
-        // In partial mode, collect errors and continue
-        let mut failed_files: Vec<(String, String)> = Vec::new();
-        let mut success_count = 0;
+    if decryptable.is_empty() && !existing_files.is_empty() {
+        return Err(anyhow!("No secrets could be decrypted. Nothing to rekey."));
+    }
 
-        for file in &files {
-            eprintln!("Rekeying {file}...");
-            if let Err(e) = edit_file(rules_path, file, ":", identities, no_system_identities) {
+    if decryptable.is_empty() {
+        eprintln!("No existing secrets to rekey.");
+        return Ok(());
+    }
+
+    eprintln!("Proceeding to rekey {} secrets...", decryptable.len());
+
+    // Unified code path: rekey all decryptable files
+    // In non-partial mode, we already verified all files are decryptable
+    // In partial mode, we only process the decryptable files
+    let mut failed_files: Vec<(String, String)> = Vec::new();
+    let mut success_count = 0;
+
+    for file in &decryptable {
+        eprintln!("Rekeying {file}...");
+        if let Err(e) = edit_file(rules_path, file, ":", identities, no_system_identities) {
+            // This shouldn't happen after pre-flight check, but handle it gracefully
+            if partial {
                 failed_files.push((file.clone(), format!("{e:#}")));
             } else {
-                success_count += 1;
-            }
-        }
-
-        if !failed_files.is_empty() {
-            eprintln!();
-            eprintln!(
-                "Warning: Failed to rekey {} of {} secrets:",
-                failed_files.len(),
-                files.len()
-            );
-            for (file, err) in &failed_files {
-                eprintln!("  - {}: {}", file, err);
-            }
-            if success_count > 0 {
-                eprintln!();
-                eprintln!("Successfully rekeyed {} secrets.", success_count);
-            }
-        }
-    } else {
-        // In strict mode (default), proceed with rekeying (pre-flight check already passed)
-        // We iterate over all `files`, not just `existing_files`, because edit_file handles
-        // non-existing files gracefully by printing a warning and returning Ok
-        for file in &files {
-            eprintln!("Rekeying {file}...");
-            if let Err(e) = edit_file(rules_path, file, ":", identities, no_system_identities) {
                 return Err(anyhow!(
-                    "Failed to rekey '{}': {}\n\nHint: Use --partial to continue rekeying other secrets even when some fail.",
+                    "Unexpected error rekeying '{}': {}\n\nThis is unexpected after pre-flight check passed.",
                     file,
                     e
                 ));
             }
+        } else {
+            success_count += 1;
         }
+    }
+
+    // Report results
+    if !failed_files.is_empty() {
+        eprintln!();
+        eprintln!(
+            "Warning: Failed to rekey {} secret(s) during processing:",
+            failed_files.len()
+        );
+        for (file, err) in &failed_files {
+            eprintln!("  - {}: {}", file, err);
+        }
+    }
+
+    if success_count > 0 {
+        eprintln!("Successfully rekeyed {} secrets.", success_count);
     }
 
     Ok(())
@@ -3480,6 +3495,7 @@ mod tests {
     #[test]
     fn test_rekey_partial_continues_on_error() {
         // Test that with --partial, rekey continues even when some files fail
+        // Now with preflight check, partial mode skips undecryptable files instead of failing
         use std::io::Write;
         use tempfile::NamedTempFile;
 
@@ -3504,7 +3520,7 @@ mod tests {
         let secret_path = temp_dir.path().join("secret.age");
         fs::write(&secret_path, "not-a-valid-age-file").unwrap();
 
-        // With --partial, rekey should not return an error (it prints warnings instead)
+        // With --partial and only one undecryptable file, should fail (nothing to rekey)
         let args = vec![
             "agenix".to_string(),
             "rekey".to_string(),
@@ -3514,11 +3530,10 @@ mod tests {
         ];
 
         let result = crate::run(args);
-        // With --partial, we should succeed (errors become warnings)
+        // With --partial but all files undecryptable, should fail
         assert!(
-            result.is_ok(),
-            "Rekey with --partial should succeed even with errors: {:?}",
-            result.err()
+            result.is_err(),
+            "Rekey with --partial should fail when all files are undecryptable"
         );
     }
 
@@ -4027,9 +4042,9 @@ mod tests {
     }
 
     #[test]
-    fn test_rekey_partial_skips_preflight_check() {
-        // Test that --partial mode doesn't do preflight check
-        // It should attempt to rekey each file individually
+    fn test_rekey_partial_runs_preflight_but_continues() {
+        // Test that --partial mode runs preflight check but continues with decryptable files
+        // It should skip undecryptable files and not fail
         use std::io::Write;
         use tempfile::NamedTempFile;
 
@@ -4054,7 +4069,7 @@ mod tests {
         writeln!(temp_rules, "{}", rules_content).unwrap();
         temp_rules.flush().unwrap();
 
-        // Both files are invalid
+        // Both files are invalid (can't be decrypted)
         fs::write(temp_dir.path().join("secret1.age"), "invalid1").unwrap();
         fs::write(temp_dir.path().join("secret2.age"), "invalid2").unwrap();
 
@@ -4066,12 +4081,17 @@ mod tests {
             temp_rules.path().to_str().unwrap().to_string(),
         ];
 
-        // With --partial, the command should succeed (errors become warnings)
+        // With --partial and all files undecryptable, it should fail with "nothing to rekey"
         let result = crate::run(args);
         assert!(
-            result.is_ok(),
-            "Rekey with --partial should succeed: {:?}",
-            result.err()
+            result.is_err(),
+            "Rekey with --partial should fail when all files are undecryptable"
+        );
+        let err_msg = format!("{:?}", result.unwrap_err());
+        assert!(
+            err_msg.contains("No secrets could be decrypted"),
+            "Error should mention no secrets could be decrypted: {}",
+            err_msg
         );
     }
 
