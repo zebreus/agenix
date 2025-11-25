@@ -21,11 +21,8 @@ snix-eval = { git = "https://cl.snix.dev/snix", rev = "6b08b3382f68417111a15721b
 rnix = "0.12.0"
 rand = "0.9.2"
 base64 = "0.22"
-ed25519-dalek = { version = "2.2.0", features = [
-    "rand_core",
-    "pkcs8",
-    "pem",
-    "digest",
-] }
 cosmian_crypto_core = "10.3.0"
+pkcs8 = { version = "0.10", features = ["pem"] }
 rsa = "0.9"
+sha2 = "0.10"
+hex = "0.4"
