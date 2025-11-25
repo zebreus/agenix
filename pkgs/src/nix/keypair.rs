@@ -121,14 +121,14 @@ pub fn generate_rsa_keypair(key_size: u32) -> Result<(String, String)> {
 /// Write a byte slice as an SSH mpint (multi-precision integer)
 /// SSH mpint format: length (4 bytes) + data (with leading 0 byte if high bit is set)
 fn write_ssh_mpint(output: &mut Vec<u8>, bytes: &[u8]) {
-    // Skip leading zeros but keep at least one byte
-    let bytes = if bytes.len() > 1 && bytes[0] == 0 {
-        &bytes[1..]
-    } else {
-        bytes
-    };
+    // Skip all leading zeros, but keep at least one byte
+    let mut start = 0;
+    while start + 1 < bytes.len() && bytes[start] == 0 {
+        start += 1;
+    }
+    let bytes = &bytes[start..];
 
-    // If high bit is set, prepend a zero byte (SSH mpint is signed)
+    // If high bit is set, prepend a zero byte (SSH mpint is signed, and we want positive)
     if !bytes.is_empty() && (bytes[0] & 0x80) != 0 {
         output.extend_from_slice(&((bytes.len() + 1) as u32).to_be_bytes());
         output.push(0);
