@@ -227,7 +227,7 @@ pub fn rekey_files(
         ));
     }
 
-    // Filter to only existing files (non-existing files don't need rekeying)
+    // Filter to only existing files for pre-flight check (non-existing files don't need decryption verification)
     let existing_files: Vec<_> = files
         .iter()
         .filter(|f| Path::new(f).exists())
@@ -235,7 +235,7 @@ pub fn rekey_files(
         .collect();
 
     if !partial {
-        // Pre-flight check: verify all files can be decrypted before making any changes
+        // Pre-flight check: verify all existing files can be decrypted before making any changes
         eprintln!(
             "Checking decryption for {} secrets...",
             existing_files.len()
@@ -293,6 +293,8 @@ pub fn rekey_files(
         }
     } else {
         // In strict mode (default), proceed with rekeying (pre-flight check already passed)
+        // We iterate over all `files`, not just `existing_files`, because edit_file handles
+        // non-existing files gracefully by printing a warning and returning Ok
         for file in &files {
             eprintln!("Rekeying {file}...");
             if let Err(e) = edit_file(rules_path, file, ":", identities, no_system_identities) {
