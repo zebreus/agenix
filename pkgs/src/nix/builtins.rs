@@ -9,7 +9,6 @@
 //! - `sshKey` - Generate SSH Ed25519 keypairs
 //! - `rsaKey` - Generate SSH RSA keypairs (with configurable key size)
 //! - `ageKey` - Generate age x25519 keypairs
-//! - `blake3` - Compute BLAKE3 hash of a string
 //! - `blake2b` - Compute BLAKE2b-512 hash of a string
 //! - `blake2s` - Compute BLAKE2s-256 hash of a string
 //! - `keccak` - Compute SHA3-256 (Keccak) hash of a string
@@ -42,22 +41,6 @@ pub mod impure_builtins {
             Value::String(NixString::from(public_key.as_bytes())),
         );
         Value::Attrs(Box::new(NixAttrs::from(attrs)))
-    }
-
-    /// Computes a BLAKE3 hash of a string
-    /// Usage: builtins.blake3 "data to hash"
-    /// Returns the hash as a lowercase hex string
-    #[builtin("blake3")]
-    async fn builtin_blake3(co: GenCo, var: Value) -> Result<Value, ErrorKind> {
-        let data_nix_str = var
-            .to_str()
-            .map_err(|_| ErrorKind::Abort("blake3: argument must be a string".to_string()))?;
-        let data_bytes = data_nix_str.as_bytes();
-
-        let hash = blake3::hash(data_bytes);
-        let hash_hex = hash.to_hex().to_string();
-
-        Ok(Value::String(NixString::from(hash_hex.as_bytes())))
     }
 
     /// Computes a BLAKE2b-512 hash of a string
@@ -900,44 +883,6 @@ mod tests {
         Ok(())
     }
 
-    // Tests for blake3 builtin
-    #[test]
-    fn test_blake3() -> Result<()> {
-        let nix_expr = r#"builtins.blake3 "hello""#;
-        let current_dir = current_dir()?;
-        let output = eval_nix_expression(nix_expr, &current_dir)?;
-
-        let hash = value_to_string(output)?;
-
-        // Blake3 produces 64 hex characters (256 bits)
-        assert_eq!(hash.len(), 64);
-        // Known BLAKE3 hash of "hello"
-        assert_eq!(
-            hash,
-            "ea8f163db38682925e4491c5e58d4bb3506ef8c14eb78a86e908c5624a67200f"
-        );
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_blake3_different_data() -> Result<()> {
-        let nix_expr = r#"builtins.blake3 "world""#;
-        let current_dir = current_dir()?;
-        let output = eval_nix_expression(nix_expr, &current_dir)?;
-
-        let hash = value_to_string(output)?;
-
-        // Verify it's different from "hello"
-        assert_ne!(
-            hash,
-            "ea8f163db38682925e4491c5e58d4bb3506ef8c14eb78a86e908c5624a67200f"
-        );
-        assert_eq!(hash.len(), 64);
-
-        Ok(())
-    }
-
     // Tests for blake2b builtin
     #[test]
     fn test_blake2b() -> Result<()> {
@@ -951,6 +896,26 @@ mod tests {
         assert_eq!(hash.len(), 128);
         // Verify it's valid hex
         assert!(hash.chars().all(|c| c.is_ascii_hexdigit()));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_blake2b_different_data() -> Result<()> {
+        let nix_expr1 = r#"builtins.blake2b "hello""#;
+        let nix_expr2 = r#"builtins.blake2b "world""#;
+        let current_dir = current_dir()?;
+
+        let output1 = eval_nix_expression(nix_expr1, &current_dir)?;
+        let output2 = eval_nix_expression(nix_expr2, &current_dir)?;
+
+        let hash1 = value_to_string(output1)?;
+        let hash2 = value_to_string(output2)?;
+
+        // Verify they're different
+        assert_ne!(hash1, hash2);
+        assert_eq!(hash1.len(), 128);
+        assert_eq!(hash2.len(), 128);
 
         Ok(())
     }
