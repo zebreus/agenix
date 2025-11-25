@@ -60,7 +60,9 @@ pub fn can_decrypt(
     // Read a small amount to verify decryption actually works
     // (the decrypt call above may succeed but reading could still fail)
     let mut buf = [0u8; 1];
-    let _ = reader.read(&mut buf);
+    reader
+        .read(&mut buf)
+        .with_context(|| format!("Failed to read decrypted content from {input_file}"))?;
 
     Ok(())
 }
