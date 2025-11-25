@@ -1,12 +1,19 @@
 //! Custom Nix builtins for secret generation.
 //!
-//! Provides `randomString`, `sshKey`, and `ageKey` builtins for use in
-//! Nix expressions to generate secrets and keypairs.
+//! Provides various builtins for generating secrets and keypairs in Nix expressions:
+//! - `randomString` - Generate random alphanumeric strings
+//! - `randomHex` - Generate random hexadecimal strings
+//! - `randomBase64` - Generate random base64-encoded strings
+//! - `passwordSafe` - Generate random password-safe strings
+//! - `uuid` - Generate random UUIDv4 strings
+//! - `sshKey` - Generate SSH Ed25519 keypairs
+//! - `ageKey` - Generate age x25519 keypairs
 
 use snix_eval::builtin_macros;
 
 #[builtin_macros::builtins]
 pub mod impure_builtins {
+    use base64::{Engine as _, engine::general_purpose};
     use rand::Rng;
     use rand::distr::Alphanumeric;
     use rand::rng;
@@ -32,6 +39,113 @@ pub mod impure_builtins {
             .map(char::from)
             .collect();
         Ok(Value::String(NixString::from(random_string.as_bytes())))
+    }
+
+    /// Generates a random hexadecimal string of given length (number of hex characters)
+    #[builtin("randomHex")]
+    async fn builtin_random_hex(co: GenCo, var: Value) -> Result<Value, ErrorKind> {
+        let length = var.as_int()?;
+        if length < 0 || length > 2i64.pow(16) {
+            return Err(ErrorKind::Abort(
+                "Length for randomHex must be between 0 and 2^16".to_string(),
+            ));
+        }
+
+        // Each byte gives 2 hex characters, so we need length/2 bytes (rounded up)
+        let byte_count = (usize::try_from(length).unwrap() + 1) / 2;
+        let mut bytes = vec![0u8; byte_count];
+        rng().fill(&mut bytes[..]);
+
+        // Convert to hex and truncate to exact length
+        let hex_string: String = bytes
+            .iter()
+            .flat_map(|b| [b >> 4, b & 0x0f])
+            .take(usize::try_from(length).unwrap())
+            .map(|n| {
+                if n < 10 {
+                    (b'0' + n) as char
+                } else {
+                    (b'a' + n - 10) as char
+                }
+            })
+            .collect();
+        Ok(Value::String(NixString::from(hex_string.as_bytes())))
+    }
+
+    /// Generates a random base64-encoded string from given number of bytes
+    #[builtin("randomBase64")]
+    async fn builtin_random_base64(co: GenCo, var: Value) -> Result<Value, ErrorKind> {
+        let byte_count = var.as_int()?;
+        if byte_count < 0 || byte_count > 2i64.pow(16) {
+            return Err(ErrorKind::Abort(
+                "Byte count for randomBase64 must be between 0 and 2^16".to_string(),
+            ));
+        }
+
+        let mut bytes = vec![0u8; usize::try_from(byte_count).unwrap()];
+        rng().fill(&mut bytes[..]);
+
+        let base64_string = general_purpose::STANDARD.encode(&bytes);
+        Ok(Value::String(NixString::from(base64_string.as_bytes())))
+    }
+
+    /// Generates a random password-safe string (alphanumeric + safe special chars)
+    /// Uses characters that are safe in most contexts (no quotes, backslashes, etc.)
+    #[builtin("passwordSafe")]
+    async fn builtin_password_safe(co: GenCo, var: Value) -> Result<Value, ErrorKind> {
+        let length = var.as_int()?;
+        if length < 0 || length > 2i64.pow(16) {
+            return Err(ErrorKind::Abort(
+                "Length for passwordSafe must be between 0 and 2^16".to_string(),
+            ));
+        }
+
+        // Safe character set: alphanumeric + some special chars that don't need escaping
+        const CHARSET: &[u8] =
+            b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_+=.";
+        let mut rng = rng();
+
+        let password: String = (0..length)
+            .map(|_| {
+                let idx = rng.random_range(0..CHARSET.len());
+                CHARSET[idx] as char
+            })
+            .collect();
+        Ok(Value::String(NixString::from(password.as_bytes())))
+    }
+
+    /// Generates a random UUIDv4 string
+    #[builtin("uuid")]
+    async fn builtin_uuid(co: GenCo, _var: Value) -> Result<Value, ErrorKind> {
+        let mut bytes = [0u8; 16];
+        rng().fill(&mut bytes);
+
+        // Set version to 4 (random UUID)
+        bytes[6] = (bytes[6] & 0x0f) | 0x40;
+        // Set variant to RFC 4122
+        bytes[8] = (bytes[8] & 0x3f) | 0x80;
+
+        // Format as UUID string
+        let uuid = format!(
+            "{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
+            bytes[0],
+            bytes[1],
+            bytes[2],
+            bytes[3],
+            bytes[4],
+            bytes[5],
+            bytes[6],
+            bytes[7],
+            bytes[8],
+            bytes[9],
+            bytes[10],
+            bytes[11],
+            bytes[12],
+            bytes[13],
+            bytes[14],
+            bytes[15]
+        );
+        Ok(Value::String(NixString::from(uuid.as_bytes())))
     }
 
     /// Generates an SSH Ed25519 keypair
@@ -277,6 +391,246 @@ mod tests {
         assert!(public2.starts_with("age1"));
         assert!(private1.starts_with("AGE-SECRET-KEY-1"));
         assert!(private2.starts_with("AGE-SECRET-KEY-1"));
+
+        Ok(())
+    }
+
+    // Tests for randomHex builtin
+    #[test]
+    fn test_random_hex_builtin() -> Result<()> {
+        let nix_expr = "builtins.randomHex 32";
+        let current_dir = current_dir()?;
+        let output = eval_nix_expression(nix_expr, &current_dir)?;
+
+        let hex_string = value_to_string(output)?;
+
+        // Verify length and hex characters
+        assert_eq!(hex_string.len(), 32);
+        assert!(hex_string.chars().all(|c| c.is_ascii_hexdigit()));
+        assert!(
+            hex_string
+                .chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_random_hex_zero_length() -> Result<()> {
+        let nix_expr = "builtins.randomHex 0";
+        let current_dir = current_dir()?;
+        let output = eval_nix_expression(nix_expr, &current_dir)?;
+
+        let hex_string = value_to_string(output)?;
+        assert_eq!(hex_string.len(), 0);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_random_hex_odd_length() -> Result<()> {
+        let nix_expr = "builtins.randomHex 7";
+        let current_dir = current_dir()?;
+        let output = eval_nix_expression(nix_expr, &current_dir)?;
+
+        let hex_string = value_to_string(output)?;
+        assert_eq!(hex_string.len(), 7);
+        assert!(hex_string.chars().all(|c| c.is_ascii_hexdigit()));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_random_hex_different_each_time() -> Result<()> {
+        let nix_expr1 = "builtins.randomHex 32";
+        let nix_expr2 = "builtins.randomHex 32";
+        let current_dir = current_dir()?;
+
+        let output1 = eval_nix_expression(nix_expr1, &current_dir)?;
+        let output2 = eval_nix_expression(nix_expr2, &current_dir)?;
+
+        let hex1 = value_to_string(output1)?;
+        let hex2 = value_to_string(output2)?;
+
+        assert_ne!(hex1, hex2);
+
+        Ok(())
+    }
+
+    // Tests for randomBase64 builtin
+    #[test]
+    fn test_random_base64_builtin() -> Result<()> {
+        let nix_expr = "builtins.randomBase64 32";
+        let current_dir = current_dir()?;
+        let output = eval_nix_expression(nix_expr, &current_dir)?;
+
+        let base64_string = value_to_string(output)?;
+
+        // 32 bytes = 44 base64 characters (with padding)
+        assert_eq!(base64_string.len(), 44);
+        assert!(
+            base64_string.ends_with("==")
+                || base64_string.ends_with("=")
+                || base64_string
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '/')
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_random_base64_zero_bytes() -> Result<()> {
+        let nix_expr = "builtins.randomBase64 0";
+        let current_dir = current_dir()?;
+        let output = eval_nix_expression(nix_expr, &current_dir)?;
+
+        let base64_string = value_to_string(output)?;
+        assert_eq!(base64_string.len(), 0);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_random_base64_different_each_time() -> Result<()> {
+        let nix_expr1 = "builtins.randomBase64 32";
+        let nix_expr2 = "builtins.randomBase64 32";
+        let current_dir = current_dir()?;
+
+        let output1 = eval_nix_expression(nix_expr1, &current_dir)?;
+        let output2 = eval_nix_expression(nix_expr2, &current_dir)?;
+
+        let base64_1 = value_to_string(output1)?;
+        let base64_2 = value_to_string(output2)?;
+
+        assert_ne!(base64_1, base64_2);
+
+        Ok(())
+    }
+
+    // Tests for passwordSafe builtin
+    #[test]
+    fn test_password_safe_builtin() -> Result<()> {
+        let nix_expr = "builtins.passwordSafe 32";
+        let current_dir = current_dir()?;
+        let output = eval_nix_expression(nix_expr, &current_dir)?;
+
+        let password = value_to_string(output)?;
+
+        assert_eq!(password.len(), 32);
+        // Verify only safe characters are used
+        let safe_chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_+=.";
+        assert!(password.chars().all(|c| safe_chars.contains(c)));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_password_safe_zero_length() -> Result<()> {
+        let nix_expr = "builtins.passwordSafe 0";
+        let current_dir = current_dir()?;
+        let output = eval_nix_expression(nix_expr, &current_dir)?;
+
+        let password = value_to_string(output)?;
+        assert_eq!(password.len(), 0);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_password_safe_different_each_time() -> Result<()> {
+        let nix_expr1 = "builtins.passwordSafe 32";
+        let nix_expr2 = "builtins.passwordSafe 32";
+        let current_dir = current_dir()?;
+
+        let output1 = eval_nix_expression(nix_expr1, &current_dir)?;
+        let output2 = eval_nix_expression(nix_expr2, &current_dir)?;
+
+        let password1 = value_to_string(output1)?;
+        let password2 = value_to_string(output2)?;
+
+        assert_ne!(password1, password2);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_password_safe_no_dangerous_chars() -> Result<()> {
+        // Generate a longer password to have higher probability of hitting special chars
+        let nix_expr = "builtins.passwordSafe 256";
+        let current_dir = current_dir()?;
+        let output = eval_nix_expression(nix_expr, &current_dir)?;
+
+        let password = value_to_string(output)?;
+
+        // These characters can cause issues in shell scripts, config files, etc.
+        let dangerous_chars = "\"'`\\$!#&|;<>(){}[]^~*?";
+        assert!(!password.chars().any(|c| dangerous_chars.contains(c)));
+
+        Ok(())
+    }
+
+    // Tests for uuid builtin
+    #[test]
+    fn test_uuid_builtin() -> Result<()> {
+        let nix_expr = "builtins.uuid {}";
+        let current_dir = current_dir()?;
+        let output = eval_nix_expression(nix_expr, &current_dir)?;
+
+        let uuid = value_to_string(output)?;
+
+        // UUID format: xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx
+        assert_eq!(uuid.len(), 36);
+        assert_eq!(uuid.chars().filter(|&c| c == '-').count(), 4);
+
+        // Verify dashes are in correct positions
+        let parts: Vec<&str> = uuid.split('-').collect();
+        assert_eq!(parts.len(), 5);
+        assert_eq!(parts[0].len(), 8);
+        assert_eq!(parts[1].len(), 4);
+        assert_eq!(parts[2].len(), 4);
+        assert_eq!(parts[3].len(), 4);
+        assert_eq!(parts[4].len(), 12);
+
+        // Verify version 4 (character at position 14 should be '4')
+        assert_eq!(uuid.chars().nth(14), Some('4'));
+
+        // Verify variant (character at position 19 should be 8, 9, a, or b)
+        let variant_char = uuid.chars().nth(19).unwrap();
+        assert!(
+            variant_char == '8'
+                || variant_char == '9'
+                || variant_char == 'a'
+                || variant_char == 'b',
+            "Invalid variant character: {}",
+            variant_char
+        );
+
+        // Verify all characters are hex (except dashes)
+        assert!(uuid.chars().all(|c| c.is_ascii_hexdigit() || c == '-'));
+        assert!(
+            uuid.chars()
+                .filter(|c| c.is_ascii())
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_uuid_different_each_time() -> Result<()> {
+        let nix_expr1 = "builtins.uuid {}";
+        let nix_expr2 = "builtins.uuid {}";
+        let current_dir = current_dir()?;
+
+        let output1 = eval_nix_expression(nix_expr1, &current_dir)?;
+        let output2 = eval_nix_expression(nix_expr2, &current_dir)?;
+
+        let uuid1 = value_to_string(output1)?;
+        let uuid2 = value_to_string(output2)?;
+
+        assert_ne!(uuid1, uuid2);
 
         Ok(())
     }
