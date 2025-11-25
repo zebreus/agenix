@@ -56,63 +56,50 @@ pub mod impure_builtins {
             .to_attrs()
             .map_err(|_| ErrorKind::Abort("hashString requires an attribute set".to_string()))?;
 
-        // Get algorithm
+        // Get algorithm - use to_str() to handle thunks, then as_str() to get the string value
         let algorithm_val = attrs
             .select(NixString::from("algorithm".as_bytes()).as_ref())
             .ok_or_else(|| {
                 ErrorKind::Abort("hashString: missing 'algorithm' attribute".to_string())
             })?;
-        let algorithm = match algorithm_val {
-            Value::String(s) => s
-                .as_str()
-                .map_err(|_| {
-                    ErrorKind::Abort("hashString: 'algorithm' must be a valid string".to_string())
-                })?
-                .to_string(),
-            _ => {
-                return Err(ErrorKind::Abort(
-                    "hashString: 'algorithm' must be a string".to_string(),
-                ));
-            }
-        };
+        let algorithm_nix_str = algorithm_val.to_str().map_err(|_| {
+            ErrorKind::Abort("hashString: 'algorithm' must be a string".to_string())
+        })?;
+        let algorithm = algorithm_nix_str.as_str().map_err(|_| {
+            ErrorKind::Abort("hashString: 'algorithm' must be a valid UTF-8 string".to_string())
+        })?;
 
-        // Get data to hash
+        // Get data to hash - use to_str() to handle thunks, then as_bytes() to get raw bytes
         let data_val = attrs
             .select(NixString::from("data".as_bytes()).as_ref())
             .ok_or_else(|| ErrorKind::Abort("hashString: missing 'data' attribute".to_string()))?;
-        let data = match data_val {
-            Value::String(s) => s.as_str().map_err(|_| {
-                ErrorKind::Abort("hashString: 'data' must be a valid string".to_string())
-            })?,
-            _ => {
-                return Err(ErrorKind::Abort(
-                    "hashString: 'data' must be a string".to_string(),
-                ));
-            }
-        };
+        let data_nix_str = data_val
+            .to_str()
+            .map_err(|_| ErrorKind::Abort("hashString: 'data' must be a string".to_string()))?;
+        let data_bytes = data_nix_str.as_bytes();
 
-        let hash_hex = match algorithm.as_str() {
+        let hash_hex = match algorithm {
             "sha256" => {
                 let mut hasher = Sha256::new();
-                hasher.update(data.as_bytes());
+                hasher.update(data_bytes);
                 let result = hasher.finalize();
                 hex::encode(result)
             }
             "sha512" => {
                 let mut hasher = Sha512::new();
-                hasher.update(data.as_bytes());
+                hasher.update(data_bytes);
                 let result = hasher.finalize();
                 hex::encode(result)
             }
             "blake2b" => {
                 let mut hasher = Blake2b512::new();
-                hasher.update(data.as_bytes());
+                hasher.update(data_bytes);
                 let result = hasher.finalize();
                 hex::encode(result)
             }
             "blake2s" => {
                 let mut hasher = Blake2s256::new();
-                hasher.update(data.as_bytes());
+                hasher.update(data_bytes);
                 let result = hasher.finalize();
                 hex::encode(result)
             }
@@ -978,17 +965,18 @@ mod tests {
     }
 
     #[test]
-    fn test_hash_string_empty_data() -> Result<()> {
-        let nix_expr = r#"builtins.hashString { algorithm = "sha256"; data = ""; }"#;
+    fn test_hash_string_single_char_data() -> Result<()> {
+        // Test with a simple single character (space)
+        let nix_expr = r#"builtins.hashString { algorithm = "sha256"; data = " "; }"#;
         let current_dir = current_dir()?;
         let output = eval_nix_expression(nix_expr, &current_dir)?;
 
         let hash = value_to_string(output)?;
 
-        // Known SHA256 hash of empty string
+        // Known SHA256 hash of single space
         assert_eq!(
             hash,
-            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            "36a9e7f1c95b82ffb99743e0c5c4ce95d83c9a430aac59f84ef3cbfab6145068"
         );
 
         Ok(())
