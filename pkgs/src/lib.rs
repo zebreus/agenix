@@ -21,19 +21,20 @@ where
     let args = cli::Args::parse_from(iter);
 
     match args.command {
-        Some(cli::Command::Rekey { secrets }) => editor::rekey_files(
+        Some(cli::Command::Rekey { secrets, partial }) => editor::rekey_files(
             &args.rules,
             &secrets,
             &args.identity,
             args.no_system_identities,
+            partial,
         )
         .context("Failed to rekey files"),
         Some(cli::Command::Generate {
             force,
             dry_run,
-            with_dependencies,
+            no_dependencies,
             secrets,
-        }) => editor::generate_secrets(&args.rules, force, dry_run, with_dependencies, &secrets)
+        }) => editor::generate_secrets(&args.rules, force, dry_run, !no_dependencies, &secrets)
             .context("Failed to generate secrets"),
         Some(cli::Command::Decrypt { file, output }) => editor::decrypt_file(
             &args.rules,
