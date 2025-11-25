@@ -211,6 +211,27 @@ This creates:
   - Example: `builtins.rsaKey { keySize = 2048; }`
 - `builtins.ageKey` or `builtins.ageKey {}` - Generate an age x25519 keypair (returns `{secret, public}`)
 
+### Available Hash Functions
+
+- `builtins.blake3 <string>` - Compute BLAKE3 hash (256-bit, returns 64 hex chars)
+- `builtins.blake2b <string>` - Compute BLAKE2b-512 hash (512-bit, returns 128 hex chars)
+- `builtins.blake2s <string>` - Compute BLAKE2s-256 hash (256-bit, returns 64 hex chars)
+- `builtins.keccak <string>` - Compute SHA3-256 (Keccak) hash (256-bit, returns 64 hex chars)
+
+Example usage:
+```nix
+{
+  # Hash a string with BLAKE3
+  hash = builtins.blake3 "hello world";  # Returns hex string
+  
+  # Use in a generator
+  "derived-secret.age" = {
+    publicKeys = [ "age1..." ];
+    generator = {}: builtins.blake3 "some-seed-value";
+  };
+}
+```
+
 ### Automatic Generator Selection
 
 If no explicit `generator` is provided, agenix automatically selects an appropriate generator based on the secret file's ending (case-insensitive):

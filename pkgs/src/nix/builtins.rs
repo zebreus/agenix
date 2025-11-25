@@ -9,7 +9,10 @@
 //! - `sshKey` - Generate SSH Ed25519 keypairs
 //! - `rsaKey` - Generate SSH RSA keypairs (with configurable key size)
 //! - `ageKey` - Generate age x25519 keypairs
-//! - `hashString` - Compute cryptographic hash of a string
+//! - `blake3` - Compute BLAKE3 hash of a string
+//! - `blake2b` - Compute BLAKE2b-512 hash of a string
+//! - `blake2s` - Compute BLAKE2s-256 hash of a string
+//! - `keccak` - Compute SHA3-256 (Keccak) hash of a string
 
 use snix_eval::builtin_macros;
 
@@ -41,75 +44,79 @@ pub mod impure_builtins {
         Value::Attrs(Box::new(NixAttrs::from(attrs)))
     }
 
-    /// Computes a cryptographic hash of a string
-    /// Options:
-    /// - `algorithm` (required): Hash algorithm to use. Supported: "sha256", "sha512", "blake2b", "blake2s"
-    /// - `data` (required): The string to hash
+    /// Computes a BLAKE3 hash of a string
+    /// Usage: builtins.blake3 "data to hash"
     /// Returns the hash as a lowercase hex string
-    #[builtin("hashString")]
-    async fn builtin_hash_string(co: GenCo, var: Value) -> Result<Value, ErrorKind> {
-        use cosmian_crypto_core::blake2::{Blake2b512, Blake2s256, Digest};
-        use sha2::{Sha256, Sha512};
-
-        // Parse options from the attribute set
-        let attrs = var
-            .to_attrs()
-            .map_err(|_| ErrorKind::Abort("hashString requires an attribute set".to_string()))?;
-
-        // Get algorithm - use to_str() to handle thunks, then as_str() to get the string value
-        let algorithm_val = attrs
-            .select(NixString::from("algorithm".as_bytes()).as_ref())
-            .ok_or_else(|| {
-                ErrorKind::Abort("hashString: missing 'algorithm' attribute".to_string())
-            })?;
-        let algorithm_nix_str = algorithm_val.to_str().map_err(|_| {
-            ErrorKind::Abort("hashString: 'algorithm' must be a string".to_string())
-        })?;
-        let algorithm = algorithm_nix_str.as_str().map_err(|_| {
-            ErrorKind::Abort("hashString: 'algorithm' must be a valid UTF-8 string".to_string())
-        })?;
-
-        // Get data to hash - use to_str() to handle thunks, then as_bytes() to get raw bytes
-        let data_val = attrs
-            .select(NixString::from("data".as_bytes()).as_ref())
-            .ok_or_else(|| ErrorKind::Abort("hashString: missing 'data' attribute".to_string()))?;
-        let data_nix_str = data_val
+    #[builtin("blake3")]
+    async fn builtin_blake3(co: GenCo, var: Value) -> Result<Value, ErrorKind> {
+        let data_nix_str = var
             .to_str()
-            .map_err(|_| ErrorKind::Abort("hashString: 'data' must be a string".to_string()))?;
+            .map_err(|_| ErrorKind::Abort("blake3: argument must be a string".to_string()))?;
         let data_bytes = data_nix_str.as_bytes();
 
-        let hash_hex = match algorithm {
-            "sha256" => {
-                let mut hasher = Sha256::new();
-                hasher.update(data_bytes);
-                let result = hasher.finalize();
-                hex::encode(result)
-            }
-            "sha512" => {
-                let mut hasher = Sha512::new();
-                hasher.update(data_bytes);
-                let result = hasher.finalize();
-                hex::encode(result)
-            }
-            "blake2b" => {
-                let mut hasher = Blake2b512::new();
-                hasher.update(data_bytes);
-                let result = hasher.finalize();
-                hex::encode(result)
-            }
-            "blake2s" => {
-                let mut hasher = Blake2s256::new();
-                hasher.update(data_bytes);
-                let result = hasher.finalize();
-                hex::encode(result)
-            }
-            _ => {
-                return Err(ErrorKind::Abort(format!(
-                    "hashString: unsupported algorithm '{}'. Supported: sha256, sha512, blake2b, blake2s",
-                    algorithm
-                )));
-            }
-        };
+        let hash = blake3::hash(data_bytes);
+        let hash_hex = hash.to_hex().to_string();
+
+        Ok(Value::String(NixString::from(hash_hex.as_bytes())))
+    }
+
+    /// Computes a BLAKE2b-512 hash of a string
+    /// Usage: builtins.blake2b "data to hash"
+    /// Returns the hash as a lowercase hex string
+    #[builtin("blake2b")]
+    async fn builtin_blake2b(co: GenCo, var: Value) -> Result<Value, ErrorKind> {
+        use cosmian_crypto_core::blake2::{Blake2b512, Digest};
+
+        let data_nix_str = var
+            .to_str()
+            .map_err(|_| ErrorKind::Abort("blake2b: argument must be a string".to_string()))?;
+        let data_bytes = data_nix_str.as_bytes();
+
+        let mut hasher = Blake2b512::new();
+        hasher.update(data_bytes);
+        let result = hasher.finalize();
+        let hash_hex = hex::encode(result);
+
+        Ok(Value::String(NixString::from(hash_hex.as_bytes())))
+    }
+
+    /// Computes a BLAKE2s-256 hash of a string
+    /// Usage: builtins.blake2s "data to hash"
+    /// Returns the hash as a lowercase hex string
+    #[builtin("blake2s")]
+    async fn builtin_blake2s(co: GenCo, var: Value) -> Result<Value, ErrorKind> {
+        use cosmian_crypto_core::blake2::{Blake2s256, Digest};
+
+        let data_nix_str = var
+            .to_str()
+            .map_err(|_| ErrorKind::Abort("blake2s: argument must be a string".to_string()))?;
+        let data_bytes = data_nix_str.as_bytes();
+
+        let mut hasher = Blake2s256::new();
+        hasher.update(data_bytes);
+        let result = hasher.finalize();
+        let hash_hex = hex::encode(result);
+
+        Ok(Value::String(NixString::from(hash_hex.as_bytes())))
+    }
+
+    /// Computes a SHA3-256 (Keccak) hash of a string
+    /// Usage: builtins.keccak "data to hash"
+    /// Returns the hash as a lowercase hex string
+    #[builtin("keccak")]
+    async fn builtin_keccak(co: GenCo, var: Value) -> Result<Value, ErrorKind> {
+        use cosmian_crypto_core::reexport::tiny_keccak::{Hasher, Sha3};
+
+        let data_nix_str = var
+            .to_str()
+            .map_err(|_| ErrorKind::Abort("keccak: argument must be a string".to_string()))?;
+        let data_bytes = data_nix_str.as_bytes();
+
+        let mut hasher = Sha3::v256();
+        hasher.update(data_bytes);
+        let mut result = [0u8; 32];
+        hasher.finalize(&mut result);
+        let hash_hex = hex::encode(result);
 
         Ok(Value::String(NixString::from(hash_hex.as_bytes())))
     }
@@ -893,48 +900,48 @@ mod tests {
         Ok(())
     }
 
-    // Tests for hashString builtin
+    // Tests for blake3 builtin
     #[test]
-    fn test_hash_string_sha256() -> Result<()> {
-        let nix_expr = r#"builtins.hashString { algorithm = "sha256"; data = "hello"; }"#;
+    fn test_blake3() -> Result<()> {
+        let nix_expr = r#"builtins.blake3 "hello""#;
         let current_dir = current_dir()?;
         let output = eval_nix_expression(nix_expr, &current_dir)?;
 
         let hash = value_to_string(output)?;
 
-        // SHA256 produces 64 hex characters
+        // Blake3 produces 64 hex characters (256 bits)
         assert_eq!(hash.len(), 64);
-        // Known SHA256 hash of "hello"
+        // Known BLAKE3 hash of "hello"
         assert_eq!(
             hash,
-            "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+            "ea8f163db38682925e4491c5e58d4bb3506ef8c14eb78a86e908c5624a67200f"
         );
 
         Ok(())
     }
 
     #[test]
-    fn test_hash_string_sha512() -> Result<()> {
-        let nix_expr = r#"builtins.hashString { algorithm = "sha512"; data = "hello"; }"#;
+    fn test_blake3_different_data() -> Result<()> {
+        let nix_expr = r#"builtins.blake3 "world""#;
         let current_dir = current_dir()?;
         let output = eval_nix_expression(nix_expr, &current_dir)?;
 
         let hash = value_to_string(output)?;
 
-        // SHA512 produces 128 hex characters
-        assert_eq!(hash.len(), 128);
-        // Known SHA512 hash of "hello"
-        assert_eq!(
+        // Verify it's different from "hello"
+        assert_ne!(
             hash,
-            "9b71d224bd62f3785d96d46ad3ea3d73319bfbc2890caadae2dff72519673ca72323c3d99ba5c11d7c7acc6e14b8c5da0c4663475c2e5c3adef46f73bcdec043"
+            "ea8f163db38682925e4491c5e58d4bb3506ef8c14eb78a86e908c5624a67200f"
         );
+        assert_eq!(hash.len(), 64);
 
         Ok(())
     }
 
+    // Tests for blake2b builtin
     #[test]
-    fn test_hash_string_blake2b() -> Result<()> {
-        let nix_expr = r#"builtins.hashString { algorithm = "blake2b"; data = "hello"; }"#;
+    fn test_blake2b() -> Result<()> {
+        let nix_expr = r#"builtins.blake2b "hello""#;
         let current_dir = current_dir()?;
         let output = eval_nix_expression(nix_expr, &current_dir)?;
 
@@ -948,9 +955,10 @@ mod tests {
         Ok(())
     }
 
+    // Tests for blake2s builtin
     #[test]
-    fn test_hash_string_blake2s() -> Result<()> {
-        let nix_expr = r#"builtins.hashString { algorithm = "blake2s"; data = "hello"; }"#;
+    fn test_blake2s() -> Result<()> {
+        let nix_expr = r#"builtins.blake2s "hello""#;
         let current_dir = current_dir()?;
         let output = eval_nix_expression(nix_expr, &current_dir)?;
 
@@ -964,48 +972,41 @@ mod tests {
         Ok(())
     }
 
+    // Tests for keccak builtin (SHA3-256)
     #[test]
-    fn test_hash_string_single_char_data() -> Result<()> {
-        // Test with a simple single character (space)
-        let nix_expr = r#"builtins.hashString { algorithm = "sha256"; data = " "; }"#;
+    fn test_keccak() -> Result<()> {
+        let nix_expr = r#"builtins.keccak "hello""#;
         let current_dir = current_dir()?;
         let output = eval_nix_expression(nix_expr, &current_dir)?;
 
         let hash = value_to_string(output)?;
 
-        // Known SHA256 hash of single space
+        // SHA3-256 produces 64 hex characters
+        assert_eq!(hash.len(), 64);
+        // Known SHA3-256 hash of "hello"
         assert_eq!(
             hash,
-            "36a9e7f1c95b82ffb99743e0c5c4ce95d83c9a430aac59f84ef3cbfab6145068"
+            "3338be694f50c5f338814986cdf0686453a888b84f424d792af4b9202398f392"
         );
 
         Ok(())
     }
 
     #[test]
-    fn test_hash_string_invalid_algorithm() {
-        let nix_expr = r#"builtins.hashString { algorithm = "md5"; data = "hello"; }"#;
-        let current_dir = current_dir().unwrap();
+    fn test_keccak_different_data() -> Result<()> {
+        let nix_expr = r#"builtins.keccak "world""#;
+        let current_dir = current_dir()?;
+        let output = eval_nix_expression(nix_expr, &current_dir)?;
 
-        let result = eval_nix_expression(nix_expr, &current_dir);
-        assert!(result.is_err());
-    }
+        let hash = value_to_string(output)?;
 
-    #[test]
-    fn test_hash_string_missing_algorithm() {
-        let nix_expr = r#"builtins.hashString { data = "hello"; }"#;
-        let current_dir = current_dir().unwrap();
+        // Verify it's different from "hello"
+        assert_ne!(
+            hash,
+            "3338be694f50c5f338814986cdf0686453a888b84f424d792af4b9202398f392"
+        );
+        assert_eq!(hash.len(), 64);
 
-        let result = eval_nix_expression(nix_expr, &current_dir);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_hash_string_missing_data() {
-        let nix_expr = r#"builtins.hashString { algorithm = "sha256"; }"#;
-        let current_dir = current_dir().unwrap();
-
-        let result = eval_nix_expression(nix_expr, &current_dir);
-        assert!(result.is_err());
+        Ok(())
     }
 }
