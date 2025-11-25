@@ -12,3 +12,8 @@ disable_pipefail() {
 enable_pipefail() {
   set -o pipefail
 }
+
+# Reset secret1.age to known content (useful since tests may modify it)
+reset_secret1() {
+  echo "hello" | agenix edit secret1.age
+}
