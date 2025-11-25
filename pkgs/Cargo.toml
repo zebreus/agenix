@@ -26,4 +26,3 @@ pkcs8 = { version = "0.10", features = ["pem"] }
 # RSA crate needed for SSH public key generation (cosmian_crypto_core uses this version internally)
 rsa = "0.9"
 hex = "0.4"
-blake3 = "1.8.2"
