@@ -1,33 +1,35 @@
 //! Custom Nix builtins for secret generation.
 //!
-//! Provides various builtins for generating secrets and keypairs in Nix expressions:
-//! - `randomString` - Generate random alphanumeric strings
-//! - `randomHex` - Generate random hexadecimal strings
-//! - `randomBase64` - Generate random base64-encoded strings
-//! - `passwordSafe` - Generate random password-safe strings
-//! - `uuid` - Generate random UUIDv4 strings
-//! - `sshKey` - Generate SSH Ed25519 keypairs
-//! - `rsaKey` - Generate SSH RSA keypairs (with configurable key size)
-//! - `ageKey` - Generate age x25519 keypairs
-//! - `blake2b` - Compute BLAKE2b-512 hash of a string
-//! - `blake2s` - Compute BLAKE2s-256 hash of a string
-//! - `keccak` - Compute SHA3-256 (Keccak) hash of a string
+//! Provides builtins for generating secrets and keypairs:
+//! - Random strings: `randomString`, `randomHex`, `randomBase64`, `passwordSafe`
+//! - UUIDs: `uuid`
+//! - Keypairs: `sshKey` (Ed25519), `rsaKey` (RSA), `ageKey` (x25519)
+//! - Hash functions: `blake2b`, `blake2s`, `keccak`
 
 use snix_eval::builtin_macros;
 
 #[builtin_macros::builtins]
 pub mod impure_builtins {
     use base64::{Engine as _, engine::general_purpose};
-    use rand::Rng;
     use rand::distr::Alphanumeric;
-    use rand::rng;
-    use snix_eval::ErrorKind;
-    use snix_eval::NixAttrs;
-    use snix_eval::NixString;
-    use snix_eval::Value;
-    use snix_eval::generators::Gen;
-    use snix_eval::generators::GenCo;
+    use rand::{Rng, rng};
+    use snix_eval::generators::{Gen, GenCo};
+    use snix_eval::{ErrorKind, NixAttrs, NixString, Value};
     use std::collections::BTreeMap;
+
+    /// Maximum length for random string generation (2^16).
+    const MAX_LENGTH: i64 = 65536;
+
+    /// Validates length argument for random generators.
+    fn validate_length(length: i64, name: &str) -> Result<usize, ErrorKind> {
+        if length < 0 || length > MAX_LENGTH {
+            return Err(ErrorKind::Abort(format!(
+                "{}: length must be between 0 and {}",
+                name, MAX_LENGTH
+            )));
+        }
+        Ok(length as usize)
+    }
 
     /// Creates a Nix attribute set containing `secret` and `public` keys from a keypair.
     fn create_keypair_attrset(private_key: String, public_key: String) -> Value {
@@ -43,105 +45,78 @@ pub mod impure_builtins {
         Value::Attrs(Box::new(NixAttrs::from(attrs)))
     }
 
-    /// Computes a BLAKE2b-512 hash of a string
-    /// Usage: builtins.blake2b "data to hash"
-    /// Returns the hash as a lowercase hex string
+    /// Computes a BLAKE2b-512 hash of a string.
     #[builtin("blake2b")]
     async fn builtin_blake2b(co: GenCo, var: Value) -> Result<Value, ErrorKind> {
         use cosmian_crypto_core::blake2::{Blake2b512, Digest};
-
-        let data_nix_str = var
+        let _ = co;
+        let data = var
             .to_str()
-            .map_err(|_| ErrorKind::Abort("blake2b: argument must be a string".to_string()))?;
-        let data_bytes = data_nix_str.as_bytes();
-
+            .map_err(|_| ErrorKind::Abort("blake2b: argument must be a string".into()))?;
         let mut hasher = Blake2b512::new();
-        hasher.update(data_bytes);
-        let result = hasher.finalize();
-        let hash_hex = hex::encode(result);
-
-        Ok(Value::String(NixString::from(hash_hex.as_bytes())))
+        hasher.update(data.as_bytes());
+        Ok(Value::String(NixString::from(
+            hex::encode(hasher.finalize()).as_bytes(),
+        )))
     }
 
-    /// Computes a BLAKE2s-256 hash of a string
-    /// Usage: builtins.blake2s "data to hash"
-    /// Returns the hash as a lowercase hex string
+    /// Computes a BLAKE2s-256 hash of a string.
     #[builtin("blake2s")]
     async fn builtin_blake2s(co: GenCo, var: Value) -> Result<Value, ErrorKind> {
         use cosmian_crypto_core::blake2::{Blake2s256, Digest};
-
-        let data_nix_str = var
+        let _ = co;
+        let data = var
             .to_str()
-            .map_err(|_| ErrorKind::Abort("blake2s: argument must be a string".to_string()))?;
-        let data_bytes = data_nix_str.as_bytes();
-
+            .map_err(|_| ErrorKind::Abort("blake2s: argument must be a string".into()))?;
         let mut hasher = Blake2s256::new();
-        hasher.update(data_bytes);
-        let result = hasher.finalize();
-        let hash_hex = hex::encode(result);
-
-        Ok(Value::String(NixString::from(hash_hex.as_bytes())))
+        hasher.update(data.as_bytes());
+        Ok(Value::String(NixString::from(
+            hex::encode(hasher.finalize()).as_bytes(),
+        )))
     }
 
-    /// Computes a SHA3-256 (Keccak) hash of a string
-    /// Usage: builtins.keccak "data to hash"
-    /// Returns the hash as a lowercase hex string
+    /// Computes a SHA3-256 (Keccak) hash of a string.
     #[builtin("keccak")]
     async fn builtin_keccak(co: GenCo, var: Value) -> Result<Value, ErrorKind> {
         use cosmian_crypto_core::reexport::tiny_keccak::{Hasher, Sha3};
-
-        let data_nix_str = var
+        let _ = co;
+        let data = var
             .to_str()
-            .map_err(|_| ErrorKind::Abort("keccak: argument must be a string".to_string()))?;
-        let data_bytes = data_nix_str.as_bytes();
-
+            .map_err(|_| ErrorKind::Abort("keccak: argument must be a string".into()))?;
         let mut hasher = Sha3::v256();
-        hasher.update(data_bytes);
+        hasher.update(data.as_bytes());
         let mut result = [0u8; 32];
         hasher.finalize(&mut result);
-        let hash_hex = hex::encode(result);
-
-        Ok(Value::String(NixString::from(hash_hex.as_bytes())))
+        Ok(Value::String(NixString::from(
+            hex::encode(result).as_bytes(),
+        )))
     }
 
-    /// Generates a random alphanumeric string of given length
+    /// Generates a random alphanumeric string of given length.
     #[builtin("randomString")]
     async fn builtin_random_string(co: GenCo, var: Value) -> Result<Value, ErrorKind> {
-        let length = var.as_int()?;
-        if length < 0 || length > 2i64.pow(16) {
-            return Err(ErrorKind::Abort(
-                "Length for randomString must be between 0 and 2^16".to_string(),
-            ));
-        }
-
-        let random_string: String = rng()
+        let _ = co;
+        let len = validate_length(var.as_int()?, "randomString")?;
+        let s: String = rng()
             .sample_iter(&Alphanumeric)
-            .take(usize::try_from(length).unwrap())
+            .take(len)
             .map(char::from)
             .collect();
-        Ok(Value::String(NixString::from(random_string.as_bytes())))
+        Ok(Value::String(NixString::from(s.as_bytes())))
     }
 
-    /// Generates a random hexadecimal string of given length (number of hex characters)
+    /// Generates a random hexadecimal string of given length.
     #[builtin("randomHex")]
     async fn builtin_random_hex(co: GenCo, var: Value) -> Result<Value, ErrorKind> {
-        let length = var.as_int()?;
-        if length < 0 || length > 2i64.pow(16) {
-            return Err(ErrorKind::Abort(
-                "Length for randomHex must be between 0 and 2^16".to_string(),
-            ));
-        }
-
-        // Each byte gives 2 hex characters, so we need length/2 bytes (rounded up)
-        let byte_count = (usize::try_from(length).unwrap() + 1) / 2;
+        let _ = co;
+        let len = validate_length(var.as_int()?, "randomHex")?;
+        let byte_count = (len + 1) / 2;
         let mut bytes = vec![0u8; byte_count];
         rng().fill(&mut bytes[..]);
-
-        // Convert to hex and truncate to exact length
-        let hex_string: String = bytes
+        let hex: String = bytes
             .iter()
             .flat_map(|b| [b >> 4, b & 0x0f])
-            .take(usize::try_from(length).unwrap())
+            .take(len)
             .map(|n| {
                 if n < 10 {
                     (b'0' + n) as char
@@ -150,63 +125,43 @@ pub mod impure_builtins {
                 }
             })
             .collect();
-        Ok(Value::String(NixString::from(hex_string.as_bytes())))
+        Ok(Value::String(NixString::from(hex.as_bytes())))
     }
 
-    /// Generates a random base64-encoded string from given number of bytes
+    /// Generates a random base64-encoded string from given number of bytes.
     #[builtin("randomBase64")]
     async fn builtin_random_base64(co: GenCo, var: Value) -> Result<Value, ErrorKind> {
-        let byte_count = var.as_int()?;
-        if byte_count < 0 || byte_count > 2i64.pow(16) {
-            return Err(ErrorKind::Abort(
-                "Byte count for randomBase64 must be between 0 and 2^16".to_string(),
-            ));
-        }
-
-        let mut bytes = vec![0u8; usize::try_from(byte_count).unwrap()];
+        let _ = co;
+        let len = validate_length(var.as_int()?, "randomBase64")?;
+        let mut bytes = vec![0u8; len];
         rng().fill(&mut bytes[..]);
-
-        let base64_string = general_purpose::STANDARD.encode(&bytes);
-        Ok(Value::String(NixString::from(base64_string.as_bytes())))
+        let b64 = general_purpose::STANDARD.encode(&bytes);
+        Ok(Value::String(NixString::from(b64.as_bytes())))
     }
 
-    /// Generates a random password-safe string (alphanumeric + safe special chars)
-    /// Uses characters that are safe in most contexts (no quotes, backslashes, etc.)
+    /// Generates a random password-safe string (alphanumeric + `-_+=.`).
     #[builtin("passwordSafe")]
     async fn builtin_password_safe(co: GenCo, var: Value) -> Result<Value, ErrorKind> {
-        let length = var.as_int()?;
-        if length < 0 || length > 2i64.pow(16) {
-            return Err(ErrorKind::Abort(
-                "Length for passwordSafe must be between 0 and 2^16".to_string(),
-            ));
-        }
-
-        // Safe character set: alphanumeric + some special chars that don't need escaping
         const CHARSET: &[u8] =
             b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_+=.";
+        let _ = co;
+        let len = validate_length(var.as_int()?, "passwordSafe")?;
         let mut rng = rng();
-
-        let password: String = (0..length)
-            .map(|_| {
-                let idx = rng.random_range(0..CHARSET.len());
-                CHARSET[idx] as char
-            })
+        let password: String = (0..len)
+            .map(|_| CHARSET[rng.random_range(0..CHARSET.len())] as char)
             .collect();
         Ok(Value::String(NixString::from(password.as_bytes())))
     }
 
-    /// Generates a random UUIDv4 string
+    /// Generates a random UUIDv4 string.
     #[builtin("uuid")]
-    async fn builtin_uuid(co: GenCo, _var: Value) -> Result<Value, ErrorKind> {
+    async fn builtin_uuid(co: GenCo, var: Value) -> Result<Value, ErrorKind> {
+        let _ = (co, var);
         let mut bytes = [0u8; 16];
         rng().fill(&mut bytes);
-
-        // Set version to 4 (random UUID)
+        // Set version to 4 and variant to RFC 4122
         bytes[6] = (bytes[6] & 0x0f) | 0x40;
-        // Set variant to RFC 4122
         bytes[8] = (bytes[8] & 0x3f) | 0x80;
-
-        // Format as UUID string
         let uuid = format!(
             "{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
             bytes[0],
@@ -229,60 +184,49 @@ pub mod impure_builtins {
         Ok(Value::String(NixString::from(uuid.as_bytes())))
     }
 
-    /// Generates an SSH Ed25519 keypair
+    /// Generates an SSH Ed25519 keypair.
     #[builtin("sshKey")]
-    async fn builtin_ssh_key(co: GenCo, _var: Value) -> Result<Value, ErrorKind> {
+    async fn builtin_ssh_key(co: GenCo, var: Value) -> Result<Value, ErrorKind> {
         use crate::nix::keypair::generate_ed25519_keypair;
-
+        let _ = (co, var);
         let (private_key, public_key) = generate_ed25519_keypair()
             .map_err(|e| ErrorKind::Abort(format!("Failed to generate SSH keypair: {}", e)))?;
-
         Ok(create_keypair_attrset(private_key, public_key))
     }
 
-    /// Generates an age x25519 keypair
+    /// Generates an age x25519 keypair.
     #[builtin("ageKey")]
-    async fn builtin_age_key(co: GenCo, _var: Value) -> Result<Value, ErrorKind> {
+    async fn builtin_age_key(co: GenCo, var: Value) -> Result<Value, ErrorKind> {
         use crate::nix::keypair::generate_age_x25519_keypair;
-
+        let _ = (co, var);
         let (private_key, public_key) = generate_age_x25519_keypair()
             .map_err(|e| ErrorKind::Abort(format!("Failed to generate age keypair: {}", e)))?;
-
         Ok(create_keypair_attrset(private_key, public_key))
     }
 
-    /// Generates an RSA SSH keypair with configurable key size
-    /// Options:
-    /// - `keySize` (optional): Key size in bits. Valid values: 2048, 3072, 4096. Default: 4096
-    /// Returns an attrset with `secret` (PKCS#8 PEM private key) and `public` (SSH public key)
+    /// Generates an RSA SSH keypair with configurable key size (2048, 3072, 4096).
     #[builtin("rsaKey")]
     async fn builtin_rsa_key(co: GenCo, var: Value) -> Result<Value, ErrorKind> {
         use crate::nix::keypair::generate_rsa_keypair;
-
-        // Get key size from options, default to 4096
+        let _ = co;
         let key_size = match &var {
             Value::Attrs(attrs) => {
-                if let Some(size_val) = attrs.select(NixString::from("keySize".as_bytes()).as_ref())
-                {
-                    size_val.as_int()? as u32
+                if let Some(v) = attrs.select(NixString::from("keySize".as_bytes()).as_ref()) {
+                    v.as_int()? as u32
                 } else {
                     4096
                 }
             }
             _ => 4096,
         };
-
-        // Validate key size
-        if key_size != 2048 && key_size != 3072 && key_size != 4096 {
+        if !matches!(key_size, 2048 | 3072 | 4096) {
             return Err(ErrorKind::Abort(format!(
-                "Invalid RSA key size: {}. Valid sizes are 2048, 3072, 4096",
+                "Invalid RSA key size: {}. Valid sizes: 2048, 3072, 4096",
                 key_size
             )));
         }
-
         let (private_key, public_key) = generate_rsa_keypair(key_size)
             .map_err(|e| ErrorKind::Abort(format!("Failed to generate RSA keypair: {}", e)))?;
-
         Ok(create_keypair_attrset(private_key, public_key))
     }
 }
