@@ -534,4 +534,255 @@ mod tests {
             "Old -o flag at root level should be rejected"
         );
     }
+
+    // Comprehensive tests for global identity flag position
+
+    #[test]
+    fn test_identity_before_edit_subcommand() {
+        let args =
+            Args::try_parse_from(["agenix", "-i", "/path/to/key", "edit", "secret.age"]).unwrap();
+        assert_eq!(args.identity, vec!["/path/to/key".to_string()]);
+        assert!(matches!(args.command, Some(Command::Edit { .. })));
+    }
+
+    #[test]
+    fn test_identity_after_edit_subcommand() {
+        let args =
+            Args::try_parse_from(["agenix", "edit", "-i", "/path/to/key", "secret.age"]).unwrap();
+        assert_eq!(args.identity, vec!["/path/to/key".to_string()]);
+        assert!(matches!(args.command, Some(Command::Edit { .. })));
+    }
+
+    #[test]
+    fn test_identity_before_rekey_subcommand() {
+        let args = Args::try_parse_from(["agenix", "-i", "/path/to/key", "rekey"]).unwrap();
+        assert_eq!(args.identity, vec!["/path/to/key".to_string()]);
+        assert!(matches!(args.command, Some(Command::Rekey {})));
+    }
+
+    #[test]
+    fn test_identity_after_rekey_subcommand() {
+        let args = Args::try_parse_from(["agenix", "rekey", "-i", "/path/to/key"]).unwrap();
+        assert_eq!(args.identity, vec!["/path/to/key".to_string()]);
+        assert!(matches!(args.command, Some(Command::Rekey {})));
+    }
+
+    #[test]
+    fn test_identity_before_decrypt_subcommand() {
+        let args = Args::try_parse_from(["agenix", "-i", "/path/to/key", "decrypt", "secret.age"])
+            .unwrap();
+        assert_eq!(args.identity, vec!["/path/to/key".to_string()]);
+        assert!(matches!(args.command, Some(Command::Decrypt { .. })));
+    }
+
+    #[test]
+    fn test_identity_after_decrypt_subcommand() {
+        let args = Args::try_parse_from(["agenix", "decrypt", "-i", "/path/to/key", "secret.age"])
+            .unwrap();
+        assert_eq!(args.identity, vec!["/path/to/key".to_string()]);
+        assert!(matches!(args.command, Some(Command::Decrypt { .. })));
+    }
+
+    #[test]
+    fn test_multiple_identities_before_subcommand() {
+        let args = Args::try_parse_from([
+            "agenix",
+            "-i",
+            "/key1",
+            "-i",
+            "/key2",
+            "-i",
+            "/key3",
+            "decrypt",
+            "secret.age",
+        ])
+        .unwrap();
+        assert_eq!(
+            args.identity,
+            vec![
+                "/key1".to_string(),
+                "/key2".to_string(),
+                "/key3".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn test_multiple_identities_after_subcommand() {
+        let args = Args::try_parse_from([
+            "agenix",
+            "decrypt",
+            "-i",
+            "/key1",
+            "-i",
+            "/key2",
+            "-i",
+            "/key3",
+            "secret.age",
+        ])
+        .unwrap();
+        assert_eq!(
+            args.identity,
+            vec![
+                "/key1".to_string(),
+                "/key2".to_string(),
+                "/key3".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn test_no_system_identities_before_subcommand() {
+        let args =
+            Args::try_parse_from(["agenix", "--no-system-identities", "decrypt", "secret.age"])
+                .unwrap();
+        assert!(args.no_system_identities);
+        assert!(matches!(args.command, Some(Command::Decrypt { .. })));
+    }
+
+    #[test]
+    fn test_no_system_identities_after_subcommand() {
+        let args =
+            Args::try_parse_from(["agenix", "decrypt", "--no-system-identities", "secret.age"])
+                .unwrap();
+        assert!(args.no_system_identities);
+        assert!(matches!(args.command, Some(Command::Decrypt { .. })));
+    }
+
+    #[test]
+    fn test_no_system_identities_with_edit() {
+        let args = Args::try_parse_from(["agenix", "edit", "--no-system-identities", "secret.age"])
+            .unwrap();
+        assert!(args.no_system_identities);
+        assert!(matches!(args.command, Some(Command::Edit { .. })));
+    }
+
+    #[test]
+    fn test_no_system_identities_with_rekey() {
+        let args = Args::try_parse_from(["agenix", "rekey", "--no-system-identities"]).unwrap();
+        assert!(args.no_system_identities);
+        assert!(matches!(args.command, Some(Command::Rekey {})));
+    }
+
+    #[test]
+    fn test_identity_and_no_system_identities_before_subcommand() {
+        let args = Args::try_parse_from([
+            "agenix",
+            "-i",
+            "/key1",
+            "-i",
+            "/key2",
+            "--no-system-identities",
+            "decrypt",
+            "secret.age",
+        ])
+        .unwrap();
+        assert_eq!(
+            args.identity,
+            vec!["/key1".to_string(), "/key2".to_string()]
+        );
+        assert!(args.no_system_identities);
+    }
+
+    #[test]
+    fn test_identity_and_no_system_identities_after_subcommand() {
+        let args = Args::try_parse_from([
+            "agenix",
+            "decrypt",
+            "-i",
+            "/key1",
+            "-i",
+            "/key2",
+            "--no-system-identities",
+            "secret.age",
+        ])
+        .unwrap();
+        assert_eq!(
+            args.identity,
+            vec!["/key1".to_string(), "/key2".to_string()]
+        );
+        assert!(args.no_system_identities);
+    }
+
+    #[test]
+    fn test_long_identity_flag_before_subcommand() {
+        let args = Args::try_parse_from([
+            "agenix",
+            "--identity",
+            "/path/to/key",
+            "decrypt",
+            "secret.age",
+        ])
+        .unwrap();
+        assert_eq!(args.identity, vec!["/path/to/key".to_string()]);
+    }
+
+    #[test]
+    fn test_long_identity_flag_after_subcommand() {
+        let args = Args::try_parse_from([
+            "agenix",
+            "decrypt",
+            "--identity",
+            "/path/to/key",
+            "secret.age",
+        ])
+        .unwrap();
+        assert_eq!(args.identity, vec!["/path/to/key".to_string()]);
+    }
+
+    #[test]
+    fn test_identity_order_is_preserved_before_subcommand() {
+        // Verify that identities are collected in the order specified before subcommand
+        let args = Args::try_parse_from([
+            "agenix",
+            "-i",
+            "/first",
+            "-i",
+            "/second",
+            "-i",
+            "/third",
+            "-i",
+            "/fourth",
+            "decrypt",
+            "secret.age",
+        ])
+        .unwrap();
+        assert_eq!(
+            args.identity,
+            vec![
+                "/first".to_string(),
+                "/second".to_string(),
+                "/third".to_string(),
+                "/fourth".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn test_identity_order_is_preserved_after_subcommand() {
+        // Verify that identities are collected in the order specified after subcommand
+        let args = Args::try_parse_from([
+            "agenix",
+            "decrypt",
+            "-i",
+            "/first",
+            "-i",
+            "/second",
+            "-i",
+            "/third",
+            "-i",
+            "/fourth",
+            "secret.age",
+        ])
+        .unwrap();
+        assert_eq!(
+            args.identity,
+            vec![
+                "/first".to_string(),
+                "/second".to_string(),
+                "/third".to_string(),
+                "/fourth".to_string()
+            ]
+        );
+    }
 }

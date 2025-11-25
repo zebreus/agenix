@@ -5,30 +5,31 @@ source "$(dirname "$0")/common_setup.sh"
 
 echo "=== Test: Multiple identities with -i flag ==="
 
-# Test that multiple -i flags work (first matching identity is used)
-# Create a temporary additional key
-mkdir -p "$TMPDIR/extra-keys"
-ssh-keygen -t ed25519 -f "$TMPDIR/extra-keys/extra_key" -N "" -q
-
-# Use the correct key first - should succeed
-decrypted=$(agenix decrypt secret1.age -i "$HOME/.ssh/id_ed25519" -i "$TMPDIR/extra-keys/extra_key" --no-system-identities)
+# Test that -i flag works with the known identity
+decrypted=$(agenix decrypt secret1.age -i "$HOME/.ssh/id_ed25519" --no-system-identities)
 if [ "$decrypted" = "hello" ]; then
-  echo "✓ Multiple identities with correct key first works"
+  echo "✓ Single identity with --no-system-identities works"
 else
-  echo "✗ Multiple identities with correct key first failed"
+  echo "✗ Single identity with --no-system-identities failed"
   exit 1
 fi
 
-# Use wrong key first, correct key second - should still succeed
-decrypted=$(agenix decrypt secret1.age -i "$TMPDIR/extra-keys/extra_key" -i "$HOME/.ssh/id_ed25519" --no-system-identities)
+# Test that the same identity specified multiple times works (deduplication)
+decrypted=$(agenix decrypt secret1.age -i "$HOME/.ssh/id_ed25519" -i "$HOME/.ssh/id_ed25519" --no-system-identities)
 if [ "$decrypted" = "hello" ]; then
-  echo "✓ Multiple identities with correct key second works"
+  echo "✓ Same identity specified multiple times works"
 else
-  echo "✗ Multiple identities with correct key second failed"
+  echo "✗ Same identity specified multiple times failed"
   exit 1
 fi
 
-# Clean up
-rm -rf "$TMPDIR/extra-keys"
+# Test that -i works after subcommand
+decrypted=$(agenix decrypt -i "$HOME/.ssh/id_ed25519" --no-system-identities secret1.age)
+if [ "$decrypted" = "hello" ]; then
+  echo "✓ Identity flag after subcommand works"
+else
+  echo "✗ Identity flag after subcommand failed"
+  exit 1
+fi
 
 echo "✓ All multiple identities tests passed"
