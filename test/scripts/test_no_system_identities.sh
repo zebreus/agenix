@@ -6,7 +6,7 @@ source "$(dirname "$0")/common_setup.sh"
 echo "=== Test: --no-system-identities flag ==="
 
 # Reset secret1.age to known content first (other tests may have modified it)
-echo "hello" | agenix edit secret1.age
+reset_secret1
 
 # With --no-system-identities and no explicit identity, decryption should fail
 if agenix decrypt secret1.age --no-system-identities 2>/dev/null; then

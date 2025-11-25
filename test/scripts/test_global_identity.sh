@@ -6,7 +6,7 @@ source "$(dirname "$0")/common_setup.sh"
 echo "=== Test: Global identity option with different commands ==="
 
 # Reset secret1.age to known content first (other tests may have modified it)
-echo "hello" | agenix edit secret1.age
+reset_secret1
 
 # Test with decrypt command
 decrypted=$(agenix -i "$HOME/.ssh/id_ed25519" --no-system-identities decrypt secret1.age)
@@ -28,6 +28,6 @@ else
 fi
 
 # Reset secret1.age back to original state
-echo "hello" | agenix edit secret1.age
+reset_secret1
 
 echo "✓ All global identity tests passed"
