@@ -27,3 +27,5 @@ ed25519-dalek = { version = "2.2.0", features = [
     "pem",
     "digest",
 ] }
+cosmian_crypto_core = "10.3.0"
+rsa = "0.9"

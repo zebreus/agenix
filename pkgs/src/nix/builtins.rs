@@ -7,6 +7,7 @@
 //! - `passwordSafe` - Generate random password-safe strings
 //! - `uuid` - Generate random UUIDv4 strings
 //! - `sshKey` - Generate SSH Ed25519 keypairs
+//! - `rsaKey` - Generate SSH RSA keypairs (with configurable key size)
 //! - `ageKey` - Generate age x25519 keypairs
 
 use snix_eval::builtin_macros;
@@ -183,6 +184,55 @@ pub mod impure_builtins {
         // Generate the age x25519 keypair
         let (private_key, public_key) = generate_age_x25519_keypair()
             .map_err(|e| ErrorKind::Abort(format!("Failed to generate age keypair: {}", e)))?;
+
+        // Create a Nix attribute set with `secret` and `public`
+        let mut attrs: BTreeMap<NixString, Value> = BTreeMap::new();
+        attrs.insert(
+            NixString::from("secret".as_bytes()),
+            Value::String(NixString::from(private_key.as_bytes())),
+        );
+        attrs.insert(
+            NixString::from("public".as_bytes()),
+            Value::String(NixString::from(public_key.as_bytes())),
+        );
+
+        Ok(Value::Attrs(Box::new(NixAttrs::from(attrs))))
+    }
+
+    /// Generates an RSA SSH keypair with configurable key size
+    /// Options:
+    /// - `keySize` (optional): Key size in bits. Valid values: 2048, 3072, 4096. Default: 4096
+    /// Returns an attrset with `secret` (PKCS#8 PEM private key) and `public` (SSH public key)
+    #[builtin("rsaKey")]
+    async fn builtin_rsa_key(co: GenCo, var: Value) -> Result<Value, ErrorKind> {
+        use crate::nix::keypair::generate_rsa_keypair;
+        use snix_eval::NixAttrs;
+        use std::collections::BTreeMap;
+
+        // Get key size from options, default to 4096
+        let key_size = match &var {
+            Value::Attrs(attrs) => {
+                if let Some(size_val) = attrs.select(NixString::from("keySize".as_bytes()).as_ref())
+                {
+                    size_val.as_int()? as u32
+                } else {
+                    4096
+                }
+            }
+            _ => 4096,
+        };
+
+        // Validate key size
+        if key_size != 2048 && key_size != 3072 && key_size != 4096 {
+            return Err(ErrorKind::Abort(format!(
+                "Invalid RSA key size: {}. Valid sizes are 2048, 3072, 4096",
+                key_size
+            )));
+        }
+
+        // Generate the RSA keypair
+        let (private_key, public_key) = generate_rsa_keypair(key_size)
+            .map_err(|e| ErrorKind::Abort(format!("Failed to generate RSA keypair: {}", e)))?;
 
         // Create a Nix attribute set with `secret` and `public`
         let mut attrs: BTreeMap<NixString, Value> = BTreeMap::new();
@@ -633,5 +683,115 @@ mod tests {
         assert_ne!(uuid1, uuid2);
 
         Ok(())
+    }
+
+    // Tests for rsaKey builtin
+    #[test]
+    fn test_rsa_key_builtin_default() -> Result<()> {
+        // Test the rsaKey builtin with default key size (4096)
+        let nix_expr = "(builtins.rsaKey {}).secret";
+        let current_dir = current_dir()?;
+        let output = eval_nix_expression(nix_expr, &current_dir)?;
+
+        let private_key = value_to_string(output)?;
+
+        // Verify it's a PEM private key
+        assert!(private_key.starts_with("-----BEGIN PRIVATE KEY-----"));
+        assert!(private_key.ends_with("-----END PRIVATE KEY-----\n"));
+        assert!(private_key.len() > 1000); // RSA 4096 private key is substantial
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_rsa_key_builtin_public_key() -> Result<()> {
+        // Test accessing the public key from the RSA key builtin
+        let nix_expr = "(builtins.rsaKey {}).public";
+        let current_dir = current_dir()?;
+        let output = eval_nix_expression(nix_expr, &current_dir)?;
+
+        let public_key = value_to_string(output)?;
+
+        // Verify it's an SSH public key
+        assert!(public_key.starts_with("ssh-rsa "));
+        assert!(!public_key.contains('\n'));
+        assert!(public_key.len() > 500); // RSA public key is substantial
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_rsa_key_builtin_with_2048_bits() -> Result<()> {
+        // Test rsaKey with 2048 bit key size
+        let nix_expr = "(builtins.rsaKey { keySize = 2048; }).public";
+        let current_dir = current_dir()?;
+        let output = eval_nix_expression(nix_expr, &current_dir)?;
+
+        let public_key = value_to_string(output)?;
+
+        // Verify it's an SSH public key
+        assert!(public_key.starts_with("ssh-rsa "));
+        assert!(public_key.len() > 350); // 2048-bit key has shorter public key
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_rsa_key_builtin_with_3072_bits() -> Result<()> {
+        // Test rsaKey with 3072 bit key size
+        let nix_expr = "(builtins.rsaKey { keySize = 3072; }).public";
+        let current_dir = current_dir()?;
+        let output = eval_nix_expression(nix_expr, &current_dir)?;
+
+        let public_key = value_to_string(output)?;
+
+        // Verify it's an SSH public key
+        assert!(public_key.starts_with("ssh-rsa "));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_rsa_key_builtin_with_4096_bits() -> Result<()> {
+        // Test rsaKey with explicit 4096 bit key size
+        let nix_expr = "(builtins.rsaKey { keySize = 4096; }).public";
+        let current_dir = current_dir()?;
+        let output = eval_nix_expression(nix_expr, &current_dir)?;
+
+        let public_key = value_to_string(output)?;
+
+        // Verify it's an SSH public key
+        assert!(public_key.starts_with("ssh-rsa "));
+        assert!(public_key.len() > 700); // 4096-bit key has longer public key
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_rsa_key_builtin_different_each_time() -> Result<()> {
+        // Test that multiple calls generate different keys
+        let nix_expr1 = "(builtins.rsaKey { keySize = 2048; }).public";
+        let nix_expr2 = "(builtins.rsaKey { keySize = 2048; }).public";
+        let current_dir = current_dir()?;
+
+        let output1 = eval_nix_expression(nix_expr1, &current_dir)?;
+        let output2 = eval_nix_expression(nix_expr2, &current_dir)?;
+
+        let key1 = value_to_string(output1)?;
+        let key2 = value_to_string(output2)?;
+
+        assert_ne!(key1, key2);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_rsa_key_builtin_invalid_key_size() {
+        // Test with invalid key size - should fail
+        let nix_expr = "builtins.rsaKey { keySize = 1024; }";
+        let current_dir = current_dir().unwrap();
+
+        let result = eval_nix_expression(nix_expr, &current_dir);
+        assert!(result.is_err());
     }
 }
