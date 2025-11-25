@@ -206,6 +206,9 @@ This creates:
 - `builtins.passwordSafe <length>` - Generate a random password-safe string (alphanumeric + safe special chars: `-_+=.`)
 - `builtins.uuid` or `builtins.uuid {}` - Generate a random UUIDv4 string
 - `builtins.sshKey` or `builtins.sshKey {}` - Generate an SSH Ed25519 keypair (returns `{secret, public}`)
+- `builtins.rsaKey` or `builtins.rsaKey {}` - Generate an SSH RSA keypair (returns `{secret, public}`)
+  - Options: `keySize` (2048, 3072, or 4096, default: 4096)
+  - Example: `builtins.rsaKey { keySize = 2048; }`
 - `builtins.ageKey` or `builtins.ageKey {}` - Generate an age x25519 keypair (returns `{secret, public}`)
 
 ### Automatic Generator Selection
