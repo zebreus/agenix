@@ -193,9 +193,7 @@ fn filter_files(files: &[String], secrets: &[String]) -> Vec<String> {
             let basename = secret_basename(file);
             secrets.iter().any(|s| {
                 let s_normalized = normalize_secret_name(s);
-                s_normalized == normalized
-                    || s_normalized == secret_basename(&basename)
-                    || s == *file
+                s_normalized == normalized || s_normalized == basename || s == *file
             })
         })
         .cloned()
@@ -547,13 +545,16 @@ fn handle_circular_dependency_error(deferred: &[String], rules_path: &str) -> Re
     ))
 }
 
-/// Collect all dependencies of a secret recursively
+/// Collect all dependencies of a secret recursively.
+/// Silently ignores errors when getting dependencies (treats as having no dependencies).
 fn collect_dependencies(
     file: &str,
     rules_path: &str,
     all_files: &[String],
     collected: &mut std::collections::HashSet<String>,
 ) {
+    // If getting dependencies fails, treat as having no dependencies
+    // This matches the behavior in process_single_secret
     let deps = get_secret_dependencies(rules_path, file).unwrap_or_default();
     for dep in deps {
         let dep_file = resolve_dependency_path(&dep, all_files);
@@ -578,7 +579,8 @@ fn collect_dependencies(
 /// Options:
 /// - `force`: Overwrite existing secret files
 /// - `dry_run`: Show what would be generated without making changes
-/// - `with_dependencies`: Also generate dependencies of specified secrets
+/// - `with_dependencies`: Also generate dependencies of specified secrets (only applies when
+///   specific secrets are specified; has no effect when generating all secrets)
 /// - `secrets`: If empty, generates all secrets; otherwise only specified secrets
 ///
 /// This function now supports dependencies - generators can reference
@@ -612,13 +614,16 @@ pub fn generate_secrets(
     };
 
     // If with_dependencies is set, expand the list to include dependencies
+    // This only applies when specific secrets are specified
     if with_dependencies && !secrets.is_empty() {
         let mut deps_to_add: HashSet<String> = HashSet::new();
         for file in &files_to_process {
             collect_dependencies(file, rules_path, &all_files, &mut deps_to_add);
         }
+        // Use HashSet for efficient duplicate checking
+        let existing_files: HashSet<_> = files_to_process.iter().cloned().collect();
         for dep in deps_to_add {
-            if !files_to_process.contains(&dep) {
+            if !existing_files.contains(&dep) {
                 files_to_process.push(dep);
             }
         }
