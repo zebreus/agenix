@@ -203,7 +203,11 @@ fn filter_files(files: &[String], secrets: &[String]) -> Vec<String> {
 /// Rekey files in the rules (no-op editor used to avoid launching an editor)
 /// If secrets is empty, rekeys all secrets. Otherwise, only rekeys the specified secrets.
 ///
-/// If `partial` is false (default), the function will fail if any secret cannot be rekeyed.
+/// If `partial` is false (default), the function will:
+/// 1. First verify all secrets can be decrypted (pre-flight check)
+/// 2. Only then proceed to rekey all secrets
+/// 3. Fail with helpful error message listing all undecryptable secrets
+///
 /// If `partial` is true, the function will continue rekeying other secrets even if some fail,
 /// and report all failures at the end.
 pub fn rekey_files(
@@ -221,6 +225,41 @@ pub fn rekey_files(
             "No matching secrets found in rules file for: {}",
             secrets.join(", ")
         ));
+    }
+
+    // Filter to only existing files (non-existing files don't need rekeying)
+    let existing_files: Vec<_> = files
+        .iter()
+        .filter(|f| Path::new(f).exists())
+        .cloned()
+        .collect();
+
+    if !partial {
+        // Pre-flight check: verify all files can be decrypted before making any changes
+        eprintln!(
+            "Checking decryption for {} secrets...",
+            existing_files.len()
+        );
+        let mut undecryptable: Vec<(String, String)> = Vec::new();
+
+        for file in &existing_files {
+            if let Err(e) = crate::crypto::can_decrypt(file, identities, no_system_identities) {
+                undecryptable.push((file.clone(), format!("{e:#}")));
+            }
+        }
+
+        if !undecryptable.is_empty() {
+            let file_list: Vec<String> = undecryptable
+                .iter()
+                .map(|(f, e)| format!("  - {}: {}", f, e))
+                .collect();
+            return Err(anyhow!(
+                "Cannot rekey: the following {} secret(s) cannot be decrypted with the available identities:\n{}\n\nNo secrets were modified.\n\nHint: Use --partial to rekey only the secrets that can be decrypted.",
+                undecryptable.len(),
+                file_list.join("\n")
+            ));
+        }
+        eprintln!("All secrets can be decrypted. Proceeding with rekey...");
     }
 
     if partial {
@@ -253,7 +292,7 @@ pub fn rekey_files(
             }
         }
     } else {
-        // In strict mode (default), fail on first error with helpful message
+        // In strict mode (default), proceed with rekeying (pre-flight check already passed)
         for file in &files {
             eprintln!("Rekeying {file}...");
             if let Err(e) = edit_file(rules_path, file, ":", identities, no_system_identities) {
@@ -3769,5 +3808,424 @@ mod tests {
         );
 
         Ok(())
+    }
+
+    // Tests for rekey pre-flight check behavior
+
+    #[test]
+    fn test_rekey_preflight_check_fails_before_any_modification() {
+        // Test that when strict mode (default) rekey fails due to undecryptable file,
+        // NO files are modified - even files that could be decrypted
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+
+        let temp_dir = tempdir().unwrap();
+
+        let rules_content = format!(
+            r#"
+{{
+  "{}/secret1.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+  }};
+  "{}/secret2.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+  }};
+}}
+"#,
+            temp_dir.path().to_str().unwrap(),
+            temp_dir.path().to_str().unwrap()
+        );
+
+        let mut temp_rules = NamedTempFile::new().unwrap();
+        writeln!(temp_rules, "{}", rules_content).unwrap();
+        temp_rules.flush().unwrap();
+
+        // Create one invalid file and one valid empty file (non-existing = nothing to rekey)
+        let secret1_path = temp_dir.path().join("secret1.age");
+        let secret2_path = temp_dir.path().join("secret2.age");
+        let invalid_content = "not-a-valid-age-file";
+        fs::write(&secret1_path, invalid_content).unwrap();
+        fs::write(&secret2_path, invalid_content).unwrap();
+
+        // Record original content
+        let original_content1 = fs::read_to_string(&secret1_path).unwrap();
+        let original_content2 = fs::read_to_string(&secret2_path).unwrap();
+
+        // Rekey without --partial should fail
+        let args = vec![
+            "agenix".to_string(),
+            "rekey".to_string(),
+            "--rules".to_string(),
+            temp_rules.path().to_str().unwrap().to_string(),
+        ];
+
+        let result = crate::run(args);
+        assert!(
+            result.is_err(),
+            "Rekey should fail due to undecryptable files"
+        );
+
+        // Verify NO files were modified
+        let content1_after = fs::read_to_string(&secret1_path).unwrap();
+        let content2_after = fs::read_to_string(&secret2_path).unwrap();
+        assert_eq!(
+            original_content1, content1_after,
+            "secret1.age should not be modified"
+        );
+        assert_eq!(
+            original_content2, content2_after,
+            "secret2.age should not be modified"
+        );
+    }
+
+    #[test]
+    fn test_rekey_preflight_lists_all_undecryptable() {
+        // Test that the error message lists ALL undecryptable files, not just the first one
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+
+        let temp_dir = tempdir().unwrap();
+
+        let rules_content = format!(
+            r#"
+{{
+  "{}/alpha.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+  }};
+  "{}/beta.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+  }};
+  "{}/gamma.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+  }};
+}}
+"#,
+            temp_dir.path().to_str().unwrap(),
+            temp_dir.path().to_str().unwrap(),
+            temp_dir.path().to_str().unwrap()
+        );
+
+        let mut temp_rules = NamedTempFile::new().unwrap();
+        writeln!(temp_rules, "{}", rules_content).unwrap();
+        temp_rules.flush().unwrap();
+
+        // Create ALL files as invalid
+        fs::write(temp_dir.path().join("alpha.age"), "invalid1").unwrap();
+        fs::write(temp_dir.path().join("beta.age"), "invalid2").unwrap();
+        fs::write(temp_dir.path().join("gamma.age"), "invalid3").unwrap();
+
+        let args = vec![
+            "agenix".to_string(),
+            "rekey".to_string(),
+            "--rules".to_string(),
+            temp_rules.path().to_str().unwrap().to_string(),
+        ];
+
+        let result = crate::run(args);
+        assert!(result.is_err(), "Rekey should fail");
+        let err_msg = format!("{:?}", result.unwrap_err());
+
+        // Error should mention all three files
+        assert!(
+            err_msg.contains("alpha.age"),
+            "Error should mention alpha.age: {}",
+            err_msg
+        );
+        assert!(
+            err_msg.contains("beta.age"),
+            "Error should mention beta.age: {}",
+            err_msg
+        );
+        assert!(
+            err_msg.contains("gamma.age"),
+            "Error should mention gamma.age: {}",
+            err_msg
+        );
+
+        // Should mention the count
+        assert!(
+            err_msg.contains("3"),
+            "Error should mention count of undecryptable files: {}",
+            err_msg
+        );
+
+        // Should mention --partial hint
+        assert!(
+            err_msg.contains("--partial"),
+            "Error should suggest --partial: {}",
+            err_msg
+        );
+
+        // Should mention that no secrets were modified
+        assert!(
+            err_msg.contains("No secrets were modified"),
+            "Error should mention no secrets were modified: {}",
+            err_msg
+        );
+    }
+
+    #[test]
+    fn test_rekey_preflight_skips_nonexistent_files() {
+        // Test that non-existent files are skipped in the pre-flight check
+        // (they don't need rekeying)
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+
+        let temp_dir = tempdir().unwrap();
+
+        let rules_content = format!(
+            r#"
+{{
+  "{}/exists.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+  }};
+  "{}/nonexistent.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+  }};
+}}
+"#,
+            temp_dir.path().to_str().unwrap(),
+            temp_dir.path().to_str().unwrap()
+        );
+
+        let mut temp_rules = NamedTempFile::new().unwrap();
+        writeln!(temp_rules, "{}", rules_content).unwrap();
+        temp_rules.flush().unwrap();
+
+        // Only create the first file (as invalid)
+        fs::write(temp_dir.path().join("exists.age"), "invalid").unwrap();
+        // nonexistent.age is not created
+
+        let args = vec![
+            "agenix".to_string(),
+            "rekey".to_string(),
+            "--rules".to_string(),
+            temp_rules.path().to_str().unwrap().to_string(),
+        ];
+
+        let result = crate::run(args);
+        assert!(
+            result.is_err(),
+            "Rekey should fail due to undecryptable exists.age"
+        );
+        let err_msg = format!("{:?}", result.unwrap_err());
+
+        // Should mention exists.age but NOT nonexistent.age
+        assert!(
+            err_msg.contains("exists.age"),
+            "Error should mention exists.age: {}",
+            err_msg
+        );
+        // The error count should be 1 (only exists.age)
+        assert!(
+            err_msg.contains("1 secret"),
+            "Error should say 1 secret: {}",
+            err_msg
+        );
+    }
+
+    #[test]
+    fn test_rekey_partial_skips_preflight_check() {
+        // Test that --partial mode doesn't do preflight check
+        // It should attempt to rekey each file individually
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+
+        let temp_dir = tempdir().unwrap();
+
+        let rules_content = format!(
+            r#"
+{{
+  "{}/secret1.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+  }};
+  "{}/secret2.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+  }};
+}}
+"#,
+            temp_dir.path().to_str().unwrap(),
+            temp_dir.path().to_str().unwrap()
+        );
+
+        let mut temp_rules = NamedTempFile::new().unwrap();
+        writeln!(temp_rules, "{}", rules_content).unwrap();
+        temp_rules.flush().unwrap();
+
+        // Both files are invalid
+        fs::write(temp_dir.path().join("secret1.age"), "invalid1").unwrap();
+        fs::write(temp_dir.path().join("secret2.age"), "invalid2").unwrap();
+
+        let args = vec![
+            "agenix".to_string(),
+            "rekey".to_string(),
+            "--partial".to_string(),
+            "--rules".to_string(),
+            temp_rules.path().to_str().unwrap().to_string(),
+        ];
+
+        // With --partial, the command should succeed (errors become warnings)
+        let result = crate::run(args);
+        assert!(
+            result.is_ok(),
+            "Rekey with --partial should succeed: {:?}",
+            result.err()
+        );
+    }
+
+    #[test]
+    fn test_rekey_complex_mixed_decryptable_undecryptable() {
+        // Complex scenario: some files can be decrypted, some cannot
+        // In strict mode, all should be checked first and none rekeyed
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+
+        let temp_dir = tempdir().unwrap();
+
+        // Create 4 secrets: 2 exist (both invalid), 2 don't exist
+        let rules_content = format!(
+            r#"
+{{
+  "{}/existing_invalid1.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+  }};
+  "{}/existing_invalid2.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+  }};
+  "{}/nonexistent1.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+  }};
+  "{}/nonexistent2.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+  }};
+}}
+"#,
+            temp_dir.path().to_str().unwrap(),
+            temp_dir.path().to_str().unwrap(),
+            temp_dir.path().to_str().unwrap(),
+            temp_dir.path().to_str().unwrap()
+        );
+
+        let mut temp_rules = NamedTempFile::new().unwrap();
+        writeln!(temp_rules, "{}", rules_content).unwrap();
+        temp_rules.flush().unwrap();
+
+        // Create only the two "existing" files (as invalid)
+        let path1 = temp_dir.path().join("existing_invalid1.age");
+        let path2 = temp_dir.path().join("existing_invalid2.age");
+        fs::write(&path1, "invalid-content-1").unwrap();
+        fs::write(&path2, "invalid-content-2").unwrap();
+
+        // Save original content
+        let orig1 = fs::read_to_string(&path1).unwrap();
+        let orig2 = fs::read_to_string(&path2).unwrap();
+
+        let args = vec![
+            "agenix".to_string(),
+            "rekey".to_string(),
+            "--rules".to_string(),
+            temp_rules.path().to_str().unwrap().to_string(),
+        ];
+
+        let result = crate::run(args);
+        assert!(result.is_err(), "Rekey should fail in strict mode");
+        let err_msg = format!("{:?}", result.unwrap_err());
+
+        // Should mention both existing invalid files
+        assert!(
+            err_msg.contains("existing_invalid1.age"),
+            "Error should mention existing_invalid1.age"
+        );
+        assert!(
+            err_msg.contains("existing_invalid2.age"),
+            "Error should mention existing_invalid2.age"
+        );
+
+        // Should NOT mention nonexistent files
+        assert!(
+            !err_msg.contains("nonexistent1.age"),
+            "Error should NOT mention nonexistent1.age"
+        );
+        assert!(
+            !err_msg.contains("nonexistent2.age"),
+            "Error should NOT mention nonexistent2.age"
+        );
+
+        // Should say 2 secrets can't be decrypted
+        assert!(err_msg.contains("2"), "Error should mention count 2");
+
+        // Verify files were NOT modified
+        assert_eq!(fs::read_to_string(&path1).unwrap(), orig1);
+        assert_eq!(fs::read_to_string(&path2).unwrap(), orig2);
+    }
+
+    #[test]
+    fn test_rekey_specific_secrets_preflight() {
+        // Test that when specifying specific secrets, only those are checked
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+
+        let temp_dir = tempdir().unwrap();
+
+        let rules_content = format!(
+            r#"
+{{
+  "{}/secret1.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+  }};
+  "{}/secret2.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+  }};
+  "{}/secret3.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+  }};
+}}
+"#,
+            temp_dir.path().to_str().unwrap(),
+            temp_dir.path().to_str().unwrap(),
+            temp_dir.path().to_str().unwrap()
+        );
+
+        let mut temp_rules = NamedTempFile::new().unwrap();
+        writeln!(temp_rules, "{}", rules_content).unwrap();
+        temp_rules.flush().unwrap();
+
+        // Create all three as invalid
+        fs::write(temp_dir.path().join("secret1.age"), "invalid1").unwrap();
+        fs::write(temp_dir.path().join("secret2.age"), "invalid2").unwrap();
+        fs::write(temp_dir.path().join("secret3.age"), "invalid3").unwrap();
+
+        // Only try to rekey secret1 and secret2
+        let args = vec![
+            "agenix".to_string(),
+            "rekey".to_string(),
+            "--rules".to_string(),
+            temp_rules.path().to_str().unwrap().to_string(),
+            "secret1".to_string(),
+            "secret2".to_string(),
+        ];
+
+        let result = crate::run(args);
+        assert!(result.is_err(), "Rekey should fail");
+        let err_msg = format!("{:?}", result.unwrap_err());
+
+        // Should mention secret1 and secret2
+        assert!(
+            err_msg.contains("secret1.age"),
+            "Should mention secret1.age"
+        );
+        assert!(
+            err_msg.contains("secret2.age"),
+            "Should mention secret2.age"
+        );
+
+        // Should NOT mention secret3 (not specified)
+        assert!(
+            !err_msg.contains("secret3.age"),
+            "Should NOT mention secret3.age"
+        );
+
+        // Should say 2 secrets
+        assert!(err_msg.contains("2"), "Should mention count 2");
     }
 }

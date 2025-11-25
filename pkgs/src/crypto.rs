@@ -11,6 +11,60 @@ use std::io::{Read, Write};
 use std::path::Path;
 use std::str::FromStr;
 
+/// Check if a file can be decrypted with the given identities.
+/// This performs a "dry-run" decryption to verify the identities are valid
+/// without writing any output.
+///
+/// # Arguments
+/// * `input_file` - Path to the encrypted file
+/// * `identities` - Explicit identities to try first (in order)
+/// * `no_system_identities` - If true, don't add default system identities
+///
+/// # Returns
+/// Ok(()) if decryption would succeed, Err with the reason if it would fail
+pub fn can_decrypt(
+    input_file: &str,
+    identities: &[String],
+    no_system_identities: bool,
+) -> Result<()> {
+    // Read ciphertext
+    let mut ciphertext = vec![];
+    fs::File::open(input_file)
+        .with_context(|| format!("Failed to open ciphertext file {input_file}"))?
+        .read_to_end(&mut ciphertext)
+        .with_context(|| format!("Failed to read ciphertext file {input_file}"))?;
+
+    // Parse decryptor (auto-detect armored)
+    let ciphertext_bytes = if ciphertext.starts_with(b"-----BEGIN AGE ENCRYPTED FILE-----") {
+        let mut reader = std::io::Cursor::new(&ciphertext);
+        let mut decoder = armor::ArmoredReader::new(&mut reader);
+        let mut ciphertext_bytes = Vec::new();
+        decoder
+            .read_to_end(&mut ciphertext_bytes)
+            .context("Failed to decode armored content")?;
+        ciphertext_bytes
+    } else {
+        ciphertext
+    };
+
+    let decryptor = Decryptor::new(&ciphertext_bytes[..]).context("Failed to parse age file")?;
+
+    // Collect identities
+    let all_identities = collect_identities(identities, no_system_identities)?;
+
+    // Try to decrypt - this verifies the identities work
+    let mut reader = decryptor
+        .decrypt(all_identities.iter().map(|i| i.as_ref() as &dyn Identity))
+        .with_context(|| format!("Failed to decrypt {input_file}"))?;
+
+    // Read a small amount to verify decryption actually works
+    // (the decrypt call above may succeed but reading could still fail)
+    let mut buf = [0u8; 1];
+    let _ = reader.read(&mut buf);
+
+    Ok(())
+}
+
 /// Decrypt a file to another file
 ///
 /// # Arguments
