@@ -659,67 +659,72 @@ pub fn generate_secrets(
         filtered
     };
 
-    // Collect dependencies if needed
-    let mut deps_to_add: HashSet<String> = HashSet::new();
+    // If with_dependencies is set, expand the list to include dependencies
+    // This only applies when specific secrets are specified
     if !secrets.is_empty() {
+        // Collect dependencies
+        let mut deps_to_add: HashSet<String> = HashSet::new();
         for file in &files_to_process {
             collect_dependencies(file, rules_path, &all_files, &mut deps_to_add);
         }
-    }
 
-    // If with_dependencies is set, expand the list to include dependencies
-    // This only applies when specific secrets are specified
-    if with_dependencies && !secrets.is_empty() {
-        // Use HashSet for efficient duplicate checking
-        let existing_files: HashSet<_> = files_to_process.iter().cloned().collect();
-        for dep in &deps_to_add {
-            if !existing_files.contains(dep) {
-                files_to_process.push(dep.clone());
-            }
-        }
-    } else if !secrets.is_empty() && !deps_to_add.is_empty() {
-        // Check if any required dependencies are missing from the processing list
-        let existing_files: HashSet<_> = files_to_process.iter().cloned().collect();
-        let missing_deps: Vec<_> = deps_to_add
-            .iter()
-            .filter(|dep| {
-                // Check if this dependency exists (either in processing list or has .pub file)
-                if existing_files.contains(*dep) {
-                    return false;
+        if with_dependencies {
+            // Add dependencies to the processing list
+            let existing_files: HashSet<_> = files_to_process.iter().cloned().collect();
+            for dep in &deps_to_add {
+                if !existing_files.contains(dep) {
+                    files_to_process.push(dep.clone());
                 }
-                // Check if .pub file exists for this dependency
-                // The dep is typically a full path like "/path/to/secret.age"
-                // Check both in full path and relative to rules_dir
-                let dep_path = Path::new(dep);
-                let base_name = dep_path.file_stem().and_then(|s| s.to_str()).unwrap_or(dep);
+            }
+        } else if !deps_to_add.is_empty() {
+            // Check if any required dependencies are missing from the processing list
+            let existing_files: HashSet<_> = files_to_process.iter().cloned().collect();
+            let missing_deps: Vec<_> = deps_to_add
+                .iter()
+                .filter(|dep| {
+                    // Check if this dependency exists (either in processing list or has .pub file)
+                    if existing_files.contains(*dep) {
+                        return false;
+                    }
+                    // Check if .pub file exists for this dependency
+                    // The dep is typically a full path like "/path/to/secret.age"
+                    // Check both in full path and relative to rules_dir
+                    let dep_path = Path::new(dep);
+                    let base_name = dep_path
+                        .file_stem()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or_else(|| {
+                            dep_path.file_name().and_then(|s| s.to_str()).unwrap_or("")
+                        });
 
-                // Check for .pub file at dep's location (for absolute paths)
-                let pub_paths = vec![
-                    PathBuf::from(format!("{}.pub", dep)),
-                    dep_path
-                        .parent()
-                        .map(|p| p.join(format!("{}.pub", base_name)))
-                        .unwrap_or_default(),
-                    dep_path
-                        .parent()
-                        .map(|p| p.join(format!("{}.age.pub", base_name)))
-                        .unwrap_or_default(),
-                    // Also check in rules_dir (for relative paths)
-                    rules_dir.join(format!("{}.pub", base_name)),
-                    rules_dir.join(format!("{}.age.pub", base_name)),
-                ];
-                !pub_paths.iter().any(|p| p.exists())
-            })
-            .cloned()
-            .collect();
+                    // Build list of possible .pub file locations
+                    let mut pub_paths = vec![
+                        PathBuf::from(format!("{}.pub", dep)),
+                        // Also check in rules_dir (for relative paths)
+                        rules_dir.join(format!("{}.pub", base_name)),
+                        rules_dir.join(format!("{}.age.pub", base_name)),
+                    ];
+                    // Add parent-based paths only if parent exists
+                    if let Some(parent) = dep_path.parent() {
+                        if !parent.as_os_str().is_empty() {
+                            pub_paths.push(parent.join(format!("{}.pub", base_name)));
+                            pub_paths.push(parent.join(format!("{}.age.pub", base_name)));
+                        }
+                    }
 
-        if !missing_deps.is_empty() {
-            let deps_formatted: Vec<String> =
-                missing_deps.iter().map(|d| format!("  - {}", d)).collect();
-            return Err(anyhow!(
-                "Cannot generate secrets: required dependencies are not being generated:\n{}\n\nHint: Remove --no-dependencies to automatically generate dependencies, or generate the missing dependencies first.",
-                deps_formatted.join("\n")
-            ));
+                    !pub_paths.iter().any(|p| p.exists())
+                })
+                .cloned()
+                .collect();
+
+            if !missing_deps.is_empty() {
+                let deps_formatted: Vec<String> =
+                    missing_deps.iter().map(|d| format!("  - {}", d)).collect();
+                return Err(anyhow!(
+                    "Cannot generate secrets: required dependencies are not being generated:\n{}\n\nHint: Remove --no-dependencies to automatically generate dependencies, or generate the missing dependencies first.",
+                    deps_formatted.join("\n")
+                ));
+            }
         }
     }
 
