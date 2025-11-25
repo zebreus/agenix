@@ -372,6 +372,26 @@ mod tests {
     }
 
     #[test]
+    fn test_generate_rsa_keypair_3072() -> Result<()> {
+        let (private_key, public_key) = generate_rsa_keypair(3072)?;
+
+        // Verify private key format
+        assert!(private_key.starts_with("-----BEGIN PRIVATE KEY-----"));
+        assert!(private_key.ends_with("-----END PRIVATE KEY-----\n"));
+
+        // Verify public key format
+        assert!(public_key.starts_with("ssh-rsa "));
+
+        // 3072-bit keys should be between 2048 and 4096 in size
+        assert!(private_key.len() > 1500);
+        assert!(private_key.len() < 3500);
+        assert!(public_key.len() > 500);
+        assert!(public_key.len() < 750);
+
+        Ok(())
+    }
+
+    #[test]
     fn test_generate_rsa_keypair_invalid_size() {
         let result = generate_rsa_keypair(1024);
         assert!(result.is_err());

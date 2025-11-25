@@ -353,42 +353,8 @@ mod tests {
         let output1 = eval_nix_expression(nix_expr1, &current_dir)?;
         let output2 = eval_nix_expression(nix_expr2, &current_dir)?;
 
-        // Extract the values as attribute sets
-        let attrs1 = match output1 {
-            Value::Attrs(attrs) => attrs,
-            _ => panic!("Expected attribute set"),
-        };
-        let attrs2 = match output2 {
-            Value::Attrs(attrs) => attrs,
-            _ => panic!("Expected attribute set"),
-        };
-
-        let (private1, public1) =
-            attrs1
-                .into_iter_sorted()
-                .fold((String::new(), String::new()), |mut acc, (k, v)| {
-                    let key = k.as_str().unwrap().to_owned();
-                    let value = value_to_string(v.clone()).unwrap();
-                    if key == "secret" {
-                        acc.0 = value;
-                    } else if key == "public" {
-                        acc.1 = value;
-                    }
-                    acc
-                });
-        let (private2, public2) =
-            attrs2
-                .into_iter_sorted()
-                .fold((String::new(), String::new()), |mut acc, (k, v)| {
-                    let key = k.as_str().unwrap().to_owned();
-                    let value = value_to_string(v.clone()).unwrap();
-                    if key == "secret" {
-                        acc.0 = value;
-                    } else if key == "public" {
-                        acc.1 = value;
-                    }
-                    acc
-                });
+        let (private1, public1) = extract_keypair(output1)?;
+        let (private2, public2) = extract_keypair(output2)?;
 
         // Keys should be different each time
         assert_ne!(public1, public2);
@@ -751,5 +717,105 @@ mod tests {
 
         let result = eval_nix_expression(nix_expr, &current_dir);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_rsa_key_builtin_consistency() -> Result<()> {
+        // Test that both secret and public keys are generated consistently
+        let nix_expr = "builtins.rsaKey { keySize = 2048; }";
+        let current_dir = current_dir()?;
+
+        let output = eval_nix_expression(nix_expr, &current_dir)?;
+        let (secret, public) = extract_keypair(output)?;
+
+        // Verify both keys are present and valid
+        assert!(secret.starts_with("-----BEGIN PRIVATE KEY-----"));
+        assert!(secret.ends_with("-----END PRIVATE KEY-----\n"));
+        assert!(public.starts_with("ssh-rsa "));
+        assert!(!public.contains('\n'));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_rsa_key_builtin_key_size_affects_length() -> Result<()> {
+        // Test that larger key sizes produce longer keys
+        let nix_expr_2048 = "builtins.rsaKey { keySize = 2048; }";
+        let nix_expr_4096 = "builtins.rsaKey { keySize = 4096; }";
+        let current_dir = current_dir()?;
+
+        let output_2048 = eval_nix_expression(nix_expr_2048, &current_dir)?;
+        let output_4096 = eval_nix_expression(nix_expr_4096, &current_dir)?;
+
+        let (secret_2048, public_2048) = extract_keypair(output_2048)?;
+        let (secret_4096, public_4096) = extract_keypair(output_4096)?;
+
+        // 4096-bit keys should be significantly larger than 2048-bit keys
+        assert!(secret_4096.len() > secret_2048.len());
+        assert!(public_4096.len() > public_2048.len());
+
+        // Verify approximate size expectations
+        assert!(secret_2048.len() > 1000);
+        assert!(secret_4096.len() > 3000);
+        assert!(public_2048.len() > 350);
+        assert!(public_4096.len() > 700);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_rsa_key_builtin_invalid_key_size_512() {
+        // Test with 512 bit key size - should fail
+        let nix_expr = "builtins.rsaKey { keySize = 512; }";
+        let current_dir = current_dir().unwrap();
+
+        let result = eval_nix_expression(nix_expr, &current_dir);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_rsa_key_builtin_invalid_key_size_8192() {
+        // Test with 8192 bit key size - should fail (not supported)
+        let nix_expr = "builtins.rsaKey { keySize = 8192; }";
+        let current_dir = current_dir().unwrap();
+
+        let result = eval_nix_expression(nix_expr, &current_dir);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_rsa_key_builtin_public_key_format() -> Result<()> {
+        // Test that RSA public key is in valid SSH format
+        let nix_expr = "(builtins.rsaKey { keySize = 2048; }).public";
+        let current_dir = current_dir()?;
+        let output = eval_nix_expression(nix_expr, &current_dir)?;
+
+        let public_key = value_to_string(output)?;
+
+        // Verify SSH public key format
+        assert!(public_key.starts_with("ssh-rsa "));
+        let base64_part = &public_key[8..]; // Skip "ssh-rsa "
+
+        // The base64 part should be valid base64
+        assert!(
+            base64_part
+                .chars()
+                .all(|c| c.is_alphanumeric() || c == '+' || c == '/' || c == '=')
+        );
+
+        // Decode and verify SSH wire format
+        use base64::{Engine as _, engine::general_purpose};
+        let decoded = general_purpose::STANDARD.decode(base64_part)?;
+
+        // Read algorithm length (first 4 bytes)
+        let algo_len =
+            u32::from_be_bytes([decoded[0], decoded[1], decoded[2], decoded[3]]) as usize;
+        assert_eq!(algo_len, 7); // "ssh-rsa" is 7 characters
+
+        // Read algorithm name
+        let algorithm = &decoded[4..4 + algo_len];
+        assert_eq!(algorithm, b"ssh-rsa");
+
+        Ok(())
     }
 }
