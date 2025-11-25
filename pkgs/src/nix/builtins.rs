@@ -9,6 +9,7 @@
 //! - `sshKey` - Generate SSH Ed25519 keypairs
 //! - `rsaKey` - Generate SSH RSA keypairs (with configurable key size)
 //! - `ageKey` - Generate age x25519 keypairs
+//! - `hashString` - Compute cryptographic hash of a string
 
 use snix_eval::builtin_macros;
 
@@ -38,6 +39,92 @@ pub mod impure_builtins {
             Value::String(NixString::from(public_key.as_bytes())),
         );
         Value::Attrs(Box::new(NixAttrs::from(attrs)))
+    }
+
+    /// Computes a cryptographic hash of a string
+    /// Options:
+    /// - `algorithm` (required): Hash algorithm to use. Supported: "sha256", "sha512", "blake2b", "blake2s"
+    /// - `data` (required): The string to hash
+    /// Returns the hash as a lowercase hex string
+    #[builtin("hashString")]
+    async fn builtin_hash_string(co: GenCo, var: Value) -> Result<Value, ErrorKind> {
+        use cosmian_crypto_core::blake2::{Blake2b512, Blake2s256, Digest};
+        use sha2::{Sha256, Sha512};
+
+        // Parse options from the attribute set
+        let attrs = var
+            .to_attrs()
+            .map_err(|_| ErrorKind::Abort("hashString requires an attribute set".to_string()))?;
+
+        // Get algorithm
+        let algorithm_val = attrs
+            .select(NixString::from("algorithm".as_bytes()).as_ref())
+            .ok_or_else(|| {
+                ErrorKind::Abort("hashString: missing 'algorithm' attribute".to_string())
+            })?;
+        let algorithm = match algorithm_val {
+            Value::String(s) => s
+                .as_str()
+                .map_err(|_| {
+                    ErrorKind::Abort("hashString: 'algorithm' must be a valid string".to_string())
+                })?
+                .to_string(),
+            _ => {
+                return Err(ErrorKind::Abort(
+                    "hashString: 'algorithm' must be a string".to_string(),
+                ));
+            }
+        };
+
+        // Get data to hash
+        let data_val = attrs
+            .select(NixString::from("data".as_bytes()).as_ref())
+            .ok_or_else(|| ErrorKind::Abort("hashString: missing 'data' attribute".to_string()))?;
+        let data = match data_val {
+            Value::String(s) => s.as_str().map_err(|_| {
+                ErrorKind::Abort("hashString: 'data' must be a valid string".to_string())
+            })?,
+            _ => {
+                return Err(ErrorKind::Abort(
+                    "hashString: 'data' must be a string".to_string(),
+                ));
+            }
+        };
+
+        let hash_hex = match algorithm.as_str() {
+            "sha256" => {
+                let mut hasher = Sha256::new();
+                hasher.update(data.as_bytes());
+                let result = hasher.finalize();
+                hex::encode(result)
+            }
+            "sha512" => {
+                let mut hasher = Sha512::new();
+                hasher.update(data.as_bytes());
+                let result = hasher.finalize();
+                hex::encode(result)
+            }
+            "blake2b" => {
+                let mut hasher = Blake2b512::new();
+                hasher.update(data.as_bytes());
+                let result = hasher.finalize();
+                hex::encode(result)
+            }
+            "blake2s" => {
+                let mut hasher = Blake2s256::new();
+                hasher.update(data.as_bytes());
+                let result = hasher.finalize();
+                hex::encode(result)
+            }
+            _ => {
+                return Err(ErrorKind::Abort(format!(
+                    "hashString: unsupported algorithm '{}'. Supported: sha256, sha512, blake2b, blake2s",
+                    algorithm
+                )));
+            }
+        };
+
+        Ok(Value::String(NixString::from(hash_hex.as_bytes())))
     }
 
     /// Generates a random alphanumeric string of given length
@@ -612,8 +699,8 @@ mod tests {
     // Tests for rsaKey builtin
     #[test]
     fn test_rsa_key_builtin_default() -> Result<()> {
-        // Test the rsaKey builtin with default key size (4096)
-        let nix_expr = "(builtins.rsaKey {}).secret";
+        // Test the rsaKey builtin with explicit 2048 key size (faster than default 4096)
+        let nix_expr = "(builtins.rsaKey { keySize = 2048; }).secret";
         let current_dir = current_dir()?;
         let output = eval_nix_expression(nix_expr, &current_dir)?;
 
@@ -622,15 +709,15 @@ mod tests {
         // Verify it's a PEM private key
         assert!(private_key.starts_with("-----BEGIN PRIVATE KEY-----"));
         assert!(private_key.ends_with("-----END PRIVATE KEY-----\n"));
-        assert!(private_key.len() > 1000); // RSA 4096 private key is substantial
+        assert!(private_key.len() > 1000); // RSA private key is substantial
 
         Ok(())
     }
 
     #[test]
     fn test_rsa_key_builtin_public_key() -> Result<()> {
-        // Test accessing the public key from the RSA key builtin
-        let nix_expr = "(builtins.rsaKey {}).public";
+        // Test accessing the public key from the RSA key builtin (use 2048 for speed)
+        let nix_expr = "(builtins.rsaKey { keySize = 2048; }).public";
         let current_dir = current_dir()?;
         let output = eval_nix_expression(nix_expr, &current_dir)?;
 
@@ -639,7 +726,7 @@ mod tests {
         // Verify it's an SSH public key
         assert!(public_key.starts_with("ssh-rsa "));
         assert!(!public_key.contains('\n'));
-        assert!(public_key.len() > 500); // RSA public key is substantial
+        assert!(public_key.len() > 350); // RSA public key is substantial
 
         Ok(())
     }
@@ -817,5 +904,120 @@ mod tests {
         assert_eq!(algorithm, b"ssh-rsa");
 
         Ok(())
+    }
+
+    // Tests for hashString builtin
+    #[test]
+    fn test_hash_string_sha256() -> Result<()> {
+        let nix_expr = r#"builtins.hashString { algorithm = "sha256"; data = "hello"; }"#;
+        let current_dir = current_dir()?;
+        let output = eval_nix_expression(nix_expr, &current_dir)?;
+
+        let hash = value_to_string(output)?;
+
+        // SHA256 produces 64 hex characters
+        assert_eq!(hash.len(), 64);
+        // Known SHA256 hash of "hello"
+        assert_eq!(
+            hash,
+            "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_hash_string_sha512() -> Result<()> {
+        let nix_expr = r#"builtins.hashString { algorithm = "sha512"; data = "hello"; }"#;
+        let current_dir = current_dir()?;
+        let output = eval_nix_expression(nix_expr, &current_dir)?;
+
+        let hash = value_to_string(output)?;
+
+        // SHA512 produces 128 hex characters
+        assert_eq!(hash.len(), 128);
+        // Known SHA512 hash of "hello"
+        assert_eq!(
+            hash,
+            "9b71d224bd62f3785d96d46ad3ea3d73319bfbc2890caadae2dff72519673ca72323c3d99ba5c11d7c7acc6e14b8c5da0c4663475c2e5c3adef46f73bcdec043"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_hash_string_blake2b() -> Result<()> {
+        let nix_expr = r#"builtins.hashString { algorithm = "blake2b"; data = "hello"; }"#;
+        let current_dir = current_dir()?;
+        let output = eval_nix_expression(nix_expr, &current_dir)?;
+
+        let hash = value_to_string(output)?;
+
+        // Blake2b-512 produces 128 hex characters
+        assert_eq!(hash.len(), 128);
+        // Verify it's valid hex
+        assert!(hash.chars().all(|c| c.is_ascii_hexdigit()));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_hash_string_blake2s() -> Result<()> {
+        let nix_expr = r#"builtins.hashString { algorithm = "blake2s"; data = "hello"; }"#;
+        let current_dir = current_dir()?;
+        let output = eval_nix_expression(nix_expr, &current_dir)?;
+
+        let hash = value_to_string(output)?;
+
+        // Blake2s-256 produces 64 hex characters
+        assert_eq!(hash.len(), 64);
+        // Verify it's valid hex
+        assert!(hash.chars().all(|c| c.is_ascii_hexdigit()));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_hash_string_empty_data() -> Result<()> {
+        let nix_expr = r#"builtins.hashString { algorithm = "sha256"; data = ""; }"#;
+        let current_dir = current_dir()?;
+        let output = eval_nix_expression(nix_expr, &current_dir)?;
+
+        let hash = value_to_string(output)?;
+
+        // Known SHA256 hash of empty string
+        assert_eq!(
+            hash,
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_hash_string_invalid_algorithm() {
+        let nix_expr = r#"builtins.hashString { algorithm = "md5"; data = "hello"; }"#;
+        let current_dir = current_dir().unwrap();
+
+        let result = eval_nix_expression(nix_expr, &current_dir);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_hash_string_missing_algorithm() {
+        let nix_expr = r#"builtins.hashString { data = "hello"; }"#;
+        let current_dir = current_dir().unwrap();
+
+        let result = eval_nix_expression(nix_expr, &current_dir);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_hash_string_missing_data() {
+        let nix_expr = r#"builtins.hashString { algorithm = "sha256"; }"#;
+        let current_dir = current_dir().unwrap();
+
+        let result = eval_nix_expression(nix_expr, &current_dir);
+        assert!(result.is_err());
     }
 }

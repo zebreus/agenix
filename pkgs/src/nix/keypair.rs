@@ -6,18 +6,17 @@
 use anyhow::Result;
 
 pub fn generate_ed25519_keypair() -> Result<(String, String)> {
-    use ed25519_dalek::SigningKey;
-    use ed25519_dalek::VerifyingKey;
-    use ed25519_dalek::ed25519::signature::rand_core::OsRng;
-    use ed25519_dalek::pkcs8;
-    use ed25519_dalek::pkcs8::EncodePrivateKey;
+    use base64::{Engine as _, engine::general_purpose};
+    use cosmian_crypto_core::reexport::rand_core::SeedableRng;
+    use cosmian_crypto_core::{CsRng, Ed25519Keypair, FixedSizeCBytes};
+    use pkcs8::{EncodePrivateKey, LineEnding};
 
-    let mut csprng = OsRng;
-    let signing_key: SigningKey = SigningKey::generate(&mut csprng);
-    let verifying_key: VerifyingKey = signing_key.verifying_key();
+    // Generate the Ed25519 keypair using cosmian_crypto_core
+    let mut rng = CsRng::from_entropy();
+    let keypair = Ed25519Keypair::new(&mut rng)?;
 
-    // Generate private key in PEM format
-    let private_key_pem = signing_key.to_pkcs8_pem(pkcs8::spki::der::pem::LineEnding::LF)?;
+    // Generate private key in PKCS#8 PEM format
+    let private_key_pem = keypair.to_pkcs8_pem(LineEnding::LF)?;
 
     // Generate public key in SSH format (ssh-ed25519 AAAAC3Nza...)
     // SSH ed25519 public key format includes algorithm identifier + key data
@@ -28,12 +27,11 @@ pub fn generate_ed25519_keypair() -> Result<(String, String)> {
     ssh_key_data.extend_from_slice(&(algorithm.len() as u32).to_be_bytes());
     ssh_key_data.extend_from_slice(algorithm);
 
-    let public_key_bytes = verifying_key.as_bytes();
+    let public_key_bytes = keypair.public_key.as_bytes();
     ssh_key_data.extend_from_slice(&(public_key_bytes.len() as u32).to_be_bytes());
     ssh_key_data.extend_from_slice(public_key_bytes);
 
-    // Base64 encoding using the base64 crate
-    use base64::{Engine as _, engine::general_purpose};
+    // Base64 encoding
     let base64_encoded = general_purpose::STANDARD.encode(&ssh_key_data);
     let public_key_ssh = format!("ssh-ed25519 {}", base64_encoded);
 
@@ -182,12 +180,13 @@ mod tests {
     fn test_generate_ssh_keypair_validity() -> Result<()> {
         let (private_key, public_key) = generate_ed25519_keypair()?;
 
-        // Test that we can parse the generated keys back using the same library
-        use ed25519_dalek::pkcs8::DecodePrivateKey;
-        use ed25519_dalek::{SigningKey, VerifyingKey};
+        // Test that we can parse the generated keys back using cosmian_crypto_core
+        use cosmian_crypto_core::{Ed25519Keypair, FixedSizeCBytes};
+        use pkcs8::DecodePrivateKey;
+        use signature::{Signer, Verifier};
 
-        // Parse private key (still PEM format)
-        let parsed_private_key = SigningKey::from_pkcs8_pem(&private_key)?;
+        // Parse private key from PEM format
+        let parsed_keypair = Ed25519Keypair::from_pkcs8_pem(&private_key)?;
 
         // Parse SSH public key manually
         assert!(public_key.starts_with("ssh-ed25519 "));
@@ -226,24 +225,20 @@ mod tests {
         pos += 4;
 
         let key_bytes = &decoded_data[pos..pos + key_len];
-        let parsed_public_key = VerifyingKey::from_bytes(key_bytes.try_into()?)?;
 
-        // Verify that the public key derived from private key matches the parsed SSH public key
-        let derived_public_key = parsed_private_key.verifying_key();
-        assert_eq!(derived_public_key.as_bytes(), parsed_public_key.as_bytes());
+        // Verify that the public key from keypair matches the parsed SSH public key
+        assert_eq!(parsed_keypair.public_key.as_bytes(), key_bytes);
 
         // Test signing and verification to ensure the keypair works
-        use ed25519_dalek::{Signer, Verifier};
-
         let message = b"test message for signing";
-        let signature = parsed_private_key.sign(message);
+        let signature = parsed_keypair.try_sign(message)?;
 
         // Verify the signature with the public key
-        assert!(parsed_public_key.verify(message, &signature).is_ok());
+        assert!(parsed_keypair.verify(message, &signature).is_ok());
 
         // Verify that a different message fails verification
         let wrong_message = b"wrong message";
-        assert!(parsed_public_key.verify(wrong_message, &signature).is_err());
+        assert!(parsed_keypair.verify(wrong_message, &signature).is_err());
 
         Ok(())
     }
