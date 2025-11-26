@@ -82,6 +82,10 @@ impl SecretName {
     }
 
     /// Strip .age suffix from a string if present.
+    ///
+    /// This is a convenience method for stripping .age suffix without creating
+    /// a full SecretName instance.
+    #[inline]
     pub fn strip_age_suffix(name: &str) -> &str {
         name.strip_suffix(".age").unwrap_or(name)
     }
