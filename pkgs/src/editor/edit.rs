@@ -25,12 +25,14 @@ use crate::nix::{get_public_keys, should_armor};
 /// * `editor_cmd` - Editor command to use (or ":" for no-op, used by rekey)
 /// * `identities` - List of identity files for decryption
 /// * `no_system_identities` - If true, don't use default system identities
+/// * `force` - If true, open empty editor if decryption fails instead of erroring
 pub fn edit_file(
     rules_path: &str,
     file: &str,
     editor_cmd: &str,
     identities: &[String],
     no_system_identities: bool,
+    force: bool,
 ) -> Result<()> {
     let public_keys = get_public_keys(rules_path, file)?;
     let armor = should_armor(rules_path, file)?;
@@ -39,13 +41,30 @@ pub fn edit_file(
         return Err(anyhow!("No public keys found for file: {file}"));
     }
 
+    // Get the filename component with proper error handling
+    let filename = Path::new(file)
+        .file_name()
+        .ok_or_else(|| anyhow!("Invalid file path: {file}"))?;
+
     // Create temporary directory for cleartext
     let temp_dir = TempDir::new().context("Failed to create temporary directory")?;
-    let cleartext_file = temp_dir.path().join(Path::new(file).file_name().unwrap());
+    let cleartext_file = temp_dir.path().join(filename);
 
     // Decrypt if file exists
     if Path::new(file).exists() {
-        crypto::decrypt_to_file(file, &cleartext_file, identities, no_system_identities)?;
+        let decrypt_result =
+            crypto::decrypt_to_file(file, &cleartext_file, identities, no_system_identities);
+
+        if let Err(e) = decrypt_result {
+            if force {
+                // With --force, continue with empty file if decryption fails
+                eprintln!("Warning: Could not decrypt {file}, starting with empty content: {e:#}");
+            } else {
+                return Err(e).with_context(|| {
+                    format!("Failed to decrypt {file}. Use --force to start with empty content")
+                });
+            }
+        }
     }
 
     // Create backup
@@ -110,13 +129,19 @@ pub fn encrypt_file(rules_path: &str, file: &str, force: bool) -> Result<()> {
     // Check if file exists and force flag
     if Path::new(file).exists() && !force {
         return Err(anyhow!(
-            "Secret file already exists: {file}\nUse --force to overwrite or 'agenix edit {file}' to edit the existing secret"
+            "Secret file already exists: {}\nUse --force to overwrite or 'agenix edit' to edit the existing secret",
+            file
         ));
     }
 
+    // Get the filename component with proper error handling
+    let filename = Path::new(file)
+        .file_name()
+        .ok_or_else(|| anyhow!("Invalid file path: {file}"))?;
+
     // Create temporary directory for cleartext
     let temp_dir = TempDir::new().context("Failed to create temporary directory")?;
-    let cleartext_file = temp_dir.path().join(Path::new(file).file_name().unwrap());
+    let cleartext_file = temp_dir.path().join(filename);
 
     // Read from stdin
     let mut stdin_content = String::new();
@@ -183,7 +208,7 @@ mod tests {
     #[test]
     fn test_edit_file_no_keys() {
         let rules = "./test_secrets.nix";
-        let result = edit_file(rules, "nonexistent.age", "vi", &[], false);
+        let result = edit_file(rules, "nonexistent.age", "vi", &[], false, false);
         assert!(result.is_err());
     }
 
@@ -204,6 +229,7 @@ mod tests {
             secret_path.to_str().unwrap(),
             ":",
             &[],
+            false,
             false,
         );
         assert!(res.is_err());

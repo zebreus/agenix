@@ -194,7 +194,15 @@ pub fn rekey_files(
 
     for file in &preflight.decryptable {
         eprintln!("Rekeying {file}...");
-        if let Err(e) = edit_file(rules_path, file, ":", identities, no_system_identities) {
+        // Never use force for rekey - we already verified decryptability in preflight
+        if let Err(e) = edit_file(
+            rules_path,
+            file,
+            ":",
+            identities,
+            no_system_identities,
+            false,
+        ) {
             if partial {
                 failed_files.push((file.clone(), format!("{e:#}")));
             } else {

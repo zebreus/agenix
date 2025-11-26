@@ -52,6 +52,10 @@ pub enum Command {
         /// Editor command to use (defaults to $EDITOR or vi)
         #[arg(short = 'e', long, env = "EDITOR", value_name = "COMMAND", default_value_t = String::from("vi"))]
         editor: String,
+
+        /// Open empty editor if decryption fails (useful for recreating secrets)
+        #[arg(short, long)]
+        force: bool,
     },
 
     /// Encrypt content from stdin to a secret file
@@ -147,8 +151,9 @@ mod tests {
         assert!(matches!(args.command, Some(Command::Edit { .. })));
         assert!(!args.verbose);
         assert!(args.identity.is_empty());
-        if let Some(Command::Edit { file, .. }) = args.command {
+        if let Some(Command::Edit { file, force, .. }) = args.command {
             assert_eq!(file, "test.age".to_string());
+            assert!(!force);
         }
     }
 
@@ -156,6 +161,28 @@ mod tests {
     fn test_edit_short_alias() {
         let args = Args::try_parse_from(["agenix", "e", "test.age"]).unwrap();
         assert!(matches!(args.command, Some(Command::Edit { .. })));
+    }
+
+    #[test]
+    fn test_edit_with_force() {
+        let args = Args::try_parse_from(["agenix", "edit", "--force", "test.age"]).unwrap();
+        if let Some(Command::Edit { file, force, .. }) = args.command {
+            assert_eq!(file, "test.age".to_string());
+            assert!(force);
+        } else {
+            panic!("Expected Edit command");
+        }
+    }
+
+    #[test]
+    fn test_edit_with_force_short() {
+        let args = Args::try_parse_from(["agenix", "edit", "-f", "test.age"]).unwrap();
+        if let Some(Command::Edit { file, force, .. }) = args.command {
+            assert_eq!(file, "test.age".to_string());
+            assert!(force);
+        } else {
+            panic!("Expected Edit command");
+        }
     }
 
     #[test]

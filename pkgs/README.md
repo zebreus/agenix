@@ -85,12 +85,14 @@ Edit a secret file using your configured editor. Creates a new file if it doesn'
 Options:
 - `-i, --identity <KEY>` - Identity (private key) to use when decrypting
 - `-e, --editor <COMMAND>` - Editor command to use (defaults to $EDITOR or vi)
+- `-f, --force` - Open empty editor if decryption fails (useful for recreating secrets)
 
 Examples:
 ```bash
 agenix edit secret.age
 agenix edit secret.age -i ~/.ssh/id_ed25519
 agenix edit secret.age -e nano
+agenix edit secret.age --force  # Opens empty editor if can't decrypt
 ```
 
 ### `agenix encrypt <FILE>` (alias: `c`)
