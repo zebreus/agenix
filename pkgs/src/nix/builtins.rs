@@ -618,7 +618,7 @@ mod tests {
     }
 
     // Tests for rsaKey builtin
-    // These tests are slow and ignored by default. Run with: cargo test rsa -- --ignored
+    // Slow tests (>2s) are ignored by default. Run with: cargo test rsa -- --ignored
     #[test]
     #[ignore]
     fn test_rsa_key_builtin_default() -> Result<()> {
@@ -725,7 +725,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn test_rsa_key_builtin_invalid_key_size() {
         // Test with invalid key size - should fail
         let nix_expr = "builtins.rsaKey { keySize = 1024; }";
@@ -782,7 +781,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn test_rsa_key_builtin_invalid_key_size_512() {
         // Test with 512 bit key size - should fail
         let nix_expr = "builtins.rsaKey { keySize = 512; }";
@@ -793,7 +791,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn test_rsa_key_builtin_invalid_key_size_8192() {
         // Test with 8192 bit key size - should fail (not supported)
         let nix_expr = "builtins.rsaKey { keySize = 8192; }";
