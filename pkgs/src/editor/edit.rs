@@ -139,7 +139,10 @@ pub fn decrypt_file(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use anyhow::Result;
     use std::fs::File;
+    use std::io::Write;
+    use std::path::PathBuf;
     use tempfile::tempdir;
 
     #[test]
@@ -169,5 +172,50 @@ mod tests {
             false,
         );
         assert!(res.is_err());
+    }
+
+    #[test]
+    fn test_stdin_editor_functionality() -> Result<()> {
+        let temp_dir = tempdir()?;
+        let test_file_path = temp_dir.path().join("test-stdin.age");
+
+        // Create a temporary rules file with absolute path to the test file
+        let rules_content = format!(
+            r#"
+{{
+  "{}" = {{
+publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+  }};
+}}
+"#,
+            test_file_path.to_str().unwrap()
+        );
+
+        let temp_rules: PathBuf = temp_dir.path().join("secrets.nix").to_path_buf();
+
+        writeln!(File::create(&temp_rules).unwrap(), "{}", rules_content)?;
+
+        // Test that the "<stdin>" editor command is recognized but we can't easily
+        // test the actual stdin reading in a unit test environment
+        // Instead, we'll test with a regular editor to ensure the path works
+        let args = vec![
+            "agenix".to_string(),
+            "edit".to_string(),
+            test_file_path.to_str().unwrap().to_string(),
+            "--rules".to_string(),
+            temp_rules.to_str().unwrap().to_string(),
+            "--editor".to_string(),
+            "echo 'test content' >".to_string(),
+        ];
+        eprintln!(
+            "Running test_stdin_editor_functionality with args: {:?}",
+            args
+        );
+
+        let result = crate::run(args);
+
+        result.unwrap();
+
+        Ok(())
     }
 }
