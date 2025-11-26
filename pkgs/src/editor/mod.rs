@@ -20,7 +20,7 @@ pub mod rekey;
 pub mod secret_name;
 
 // Re-export main public functions for backwards compatibility
-pub use edit::{decrypt_file, edit_file};
+pub use edit::{decrypt_file, edit_file, encrypt_file};
 pub use generate::generate_secrets;
 pub use rekey::rekey_files;
 

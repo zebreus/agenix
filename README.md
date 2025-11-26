@@ -98,9 +98,10 @@ $ sudo nix-channel --update
 ## CLI Commands
 
 ```ShellSession
-$ agenix edit secret.age      # Create/edit a secret
-$ agenix decrypt secret.age   # Decrypt to stdout
-$ agenix rekey                # Re-encrypt with updated keys
+$ agenix edit secret.age                    # Create/edit a secret
+$ echo "val" | agenix encrypt secret.age    # Encrypt from stdin
+$ agenix decrypt secret.age                 # Decrypt to stdout
+$ agenix rekey                              # Re-encrypt with updated keys
 ```
 
 ## Documentation
