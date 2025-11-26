@@ -8,12 +8,12 @@ echo "=== Test: Encrypt command basic functionality ==="
 # Test 1: Create a new secret with encrypt
 NEW_SECRET="$TMPDIR/new-secret.age"
 
-# Create a temporary rules file that includes our new secret
+# Create a temporary rules file that includes our new secret using the test user's key
 TEMP_RULES="$TMPDIR/temp-secrets.nix"
 cat > "$TEMP_RULES" << EOF
 {
   "$NEW_SECRET" = {
-    publicKeys = [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPDpVA+jisOuuNDfRqgU3ka3UCDYP0XQz6SO0UwPdEvX" ];
+    publicKeys = [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH" ];
   };
 }
 EOF
