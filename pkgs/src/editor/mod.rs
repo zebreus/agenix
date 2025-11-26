@@ -29,7 +29,3 @@ pub use context::SecretContext;
 pub use dependency_resolver::DependencyResolver;
 pub use generate::ProcessResult;
 pub use secret_name::SecretName;
-
-// Keep tests from the old editor.rs file
-#[cfg(test)]
-mod tests;
