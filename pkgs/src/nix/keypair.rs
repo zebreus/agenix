@@ -308,7 +308,7 @@ mod tests {
     }
 
     // Tests for RSA keypair generation
-    // These tests are slow and ignored by default. Run with: cargo test rsa -- --ignored
+    // Slow tests (>2s) are ignored by default. Run with: cargo test rsa -- --ignored
     #[test]
     #[ignore]
     fn test_generate_rsa_keypair_2048() -> Result<()> {
@@ -384,7 +384,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn test_generate_rsa_keypair_invalid_size() {
         let result = generate_rsa_keypair(1024);
         assert!(result.is_err());
