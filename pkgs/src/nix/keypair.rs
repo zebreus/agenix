@@ -310,7 +310,6 @@ mod tests {
     // Tests for RSA keypair generation
     // Slow tests (>2s) are ignored by default. Run with: cargo test rsa -- --ignored
     #[test]
-    #[ignore]
     fn test_generate_rsa_keypair_2048() -> Result<()> {
         let (private_key, public_key) = generate_rsa_keypair(2048)?;
 
