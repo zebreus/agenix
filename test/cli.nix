@@ -43,6 +43,8 @@ let
     "test_no_system_identities.sh"
     "test_global_identity.sh"
     "test_encrypt_basic.sh"
+    "test_encrypt_edgecases.sh"
+    "test_edit_edgecases.sh"
   ];
 
   # Get all test_*.sh files in the scripts directory
