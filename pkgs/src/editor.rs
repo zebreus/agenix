@@ -4743,4 +4743,114 @@ mod tests {
             err_msg
         );
     }
+
+    #[test]
+    fn test_generate_no_dependencies_flag_implicit_vs_explicit_all() -> Result<()> {
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+
+        // Test that --no-dependencies flag behaves the same for implicit vs explicit all
+        // When all secrets are specified, --no-dependencies should be a no-op
+        // because all secrets (including dependencies) are already in the list
+        let temp_dir1 = tempdir()?;
+        let temp_dir2 = tempdir()?;
+
+        let rules_content1 = format!(
+            r#"
+{{
+  "{}/base.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {{ }}: {{ secret = "base-secret"; public = "base-public"; }};
+  }};
+  "{}/derived.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    dependencies = [ "base" ];
+    generator = {{ publics }}: "derived-" + publics."base";
+  }};
+}}
+"#,
+            temp_dir1.path().to_str().unwrap(),
+            temp_dir1.path().to_str().unwrap()
+        );
+
+        let rules_content2 = format!(
+            r#"
+{{
+  "{}/base.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {{ }}: {{ secret = "base-secret"; public = "base-public"; }};
+  }};
+  "{}/derived.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    dependencies = [ "base" ];
+    generator = {{ publics }}: "derived-" + publics."base";
+  }};
+}}
+"#,
+            temp_dir2.path().to_str().unwrap(),
+            temp_dir2.path().to_str().unwrap()
+        );
+
+        let mut temp_rules1 = NamedTempFile::new()?;
+        writeln!(temp_rules1, "{}", rules_content1)?;
+        temp_rules1.flush()?;
+
+        let mut temp_rules2 = NamedTempFile::new()?;
+        writeln!(temp_rules2, "{}", rules_content2)?;
+        temp_rules2.flush()?;
+
+        // Test 1: Generate with --no-dependencies without specifying secrets (implicit all)
+        let args_implicit = vec![
+            "agenix".to_string(),
+            "generate".to_string(),
+            "--no-dependencies".to_string(),
+            "--rules".to_string(),
+            temp_rules1.path().to_str().unwrap().to_string(),
+        ];
+
+        let result_implicit = crate::run(args_implicit);
+        assert!(
+            result_implicit.is_ok(),
+            "Generate --no-dependencies (implicit all) should succeed: {:?}",
+            result_implicit.err()
+        );
+
+        // Test 2: Generate with --no-dependencies with all secrets explicitly specified
+        let args_explicit = vec![
+            "agenix".to_string(),
+            "generate".to_string(),
+            "--no-dependencies".to_string(),
+            "--rules".to_string(),
+            temp_rules2.path().to_str().unwrap().to_string(),
+            "base".to_string(),
+            "derived".to_string(),
+        ];
+
+        let result_explicit = crate::run(args_explicit);
+        assert!(
+            result_explicit.is_ok(),
+            "Generate --no-dependencies (explicit all) should succeed: {:?}",
+            result_explicit.err()
+        );
+
+        // Both should create the same files
+        assert!(
+            temp_dir1.path().join("base.age").exists(),
+            "Implicit all should create base.age"
+        );
+        assert!(
+            temp_dir1.path().join("derived.age").exists(),
+            "Implicit all should create derived.age"
+        );
+        assert!(
+            temp_dir2.path().join("base.age").exists(),
+            "Explicit all should create base.age"
+        );
+        assert!(
+            temp_dir2.path().join("derived.age").exists(),
+            "Explicit all should create derived.age"
+        );
+
+        Ok(())
+    }
 }
