@@ -12,7 +12,7 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
 fi
 
 # First, reset secret1.age to a known state
-echo "rekey-test-content" | agenix edit secret1.age
+echo "rekey-test-content" | agenix encrypt --force secret1.age
 
 # Verify it was set correctly
 before_decrypt=$(agenix decrypt secret1.age)

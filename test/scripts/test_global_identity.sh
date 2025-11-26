@@ -17,13 +17,13 @@ else
   exit 1
 fi
 
-# Test with edit command via stdin
-echo "global-identity-test" | agenix -i "$HOME/.ssh/id_ed25519" --no-system-identities edit secret1.age
+# Test with encrypt command via stdin
+echo "global-identity-test" | agenix -i "$HOME/.ssh/id_ed25519" --no-system-identities encrypt --force secret1.age
 decrypted=$(agenix -i "$HOME/.ssh/id_ed25519" --no-system-identities decrypt secret1.age)
 if [ "$decrypted" = "global-identity-test" ]; then
-  echo "✓ Global identity with edit works"
+  echo "✓ Global identity with encrypt works"
 else
-  echo "✗ Global identity with edit failed"
+  echo "✗ Global identity with encrypt failed"
   exit 1
 fi
 

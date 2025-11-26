@@ -5,7 +5,7 @@ source "$(dirname "$0")/common_setup.sh"
 
 echo "=== Test 9: Edit with explicit identity when bogus key present ==="
 # Set secret1.age to known content
-echo "test-content-12345" | agenix edit secret1.age
+echo "test-content-12345" | agenix encrypt --force secret1.age
 
 echo "bogus" > "$HOME/.ssh/id_rsa"
 # This should fail without explicit identity
