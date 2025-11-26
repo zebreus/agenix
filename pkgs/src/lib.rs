@@ -44,12 +44,17 @@ where
             args.no_system_identities,
         )
         .with_context(|| format!("Failed to decrypt {file}")),
-        Some(cli::Command::Edit { file, editor }) => editor::edit_file(
+        Some(cli::Command::Edit {
+            file,
+            editor,
+            force,
+        }) => editor::edit_file(
             &args.rules,
             &file,
             &editor,
             &args.identity,
             args.no_system_identities,
+            force,
         )
         .with_context(|| format!("Failed to edit {file}")),
         Some(cli::Command::Encrypt { file, force }) => {
