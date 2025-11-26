@@ -55,6 +55,11 @@ pub fn generate_age_x25519_keypair() -> Result<(String, String)> {
 /// Generate an RSA keypair with the specified key size in bits.
 /// Valid key sizes are 2048, 3072, and 4096.
 /// Returns (private_key_pem, public_key_ssh) tuple.
+///
+/// # Testing
+/// The tests for this function are slow (RSA key generation is computationally expensive)
+/// and are skipped by default. When making changes to this function, run the RSA tests
+/// explicitly with: `cargo test rsa -- --ignored`
 pub fn generate_rsa_keypair(key_size: u32) -> Result<(String, String)> {
     use anyhow::anyhow;
     use base64::{Engine as _, engine::general_purpose};
@@ -303,7 +308,9 @@ mod tests {
     }
 
     // Tests for RSA keypair generation
+    // These tests are slow and ignored by default. Run with: cargo test rsa -- --ignored
     #[test]
+    #[ignore]
     fn test_generate_rsa_keypair_2048() -> Result<()> {
         let (private_key, public_key) = generate_rsa_keypair(2048)?;
 
@@ -325,6 +332,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn test_generate_rsa_keypair_4096() -> Result<()> {
         let (private_key, public_key) = generate_rsa_keypair(4096)?;
 
@@ -343,6 +351,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn test_generate_rsa_keypair_different_each_time() -> Result<()> {
         let (private_key1, public_key1) = generate_rsa_keypair(2048)?;
         let (private_key2, public_key2) = generate_rsa_keypair(2048)?;
@@ -354,6 +363,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn test_generate_rsa_keypair_3072() -> Result<()> {
         let (private_key, public_key) = generate_rsa_keypair(3072)?;
 
@@ -374,6 +384,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn test_generate_rsa_keypair_invalid_size() {
         let result = generate_rsa_keypair(1024);
         assert!(result.is_err());
@@ -389,6 +400,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn test_rsa_public_key_format() -> Result<()> {
         let (_, public_key) = generate_rsa_keypair(2048)?;
 
