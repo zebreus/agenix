@@ -289,7 +289,9 @@ pub fn generate_secrets(
     // Process secrets, handling dependencies
     let mut to_process: Vec<String> = files_to_process.clone();
     let mut iteration = 0;
-    let max_iterations = all_files.len() + 10;
+    // Safety buffer for dependency resolution to handle edge cases
+    const DEPENDENCY_RESOLUTION_BUFFER: usize = 10;
+    let max_iterations = all_files.len() + DEPENDENCY_RESOLUTION_BUFFER;
 
     while !to_process.is_empty() && iteration < max_iterations {
         iteration += 1;

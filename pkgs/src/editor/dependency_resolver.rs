@@ -259,19 +259,23 @@ impl<'a> DependencyResolver<'a> {
 
 /// Escape a string for safe inclusion in a Nix string literal.
 pub fn escape_nix_string(s: &str) -> String {
-    s.chars()
-        .flat_map(|c| match c {
-            '\\' => vec!['\\', '\\'],
-            '"' => vec!['\\', '"'],
-            '\n' => vec!['\\', 'n'],
-            '\r' => vec!['\\', 'r'],
-            '\t' => vec!['\\', 't'],
-            '\0' => vec!['\\', '0'],
-            '$' => vec!['\\', '$'],
-            c if c.is_control() => format!("\\u{{{:04x}}}", c as u32).chars().collect(),
-            c => vec![c],
-        })
-        .collect()
+    let mut result = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '\\' => result.push_str("\\\\"),
+            '"' => result.push_str("\\\""),
+            '\n' => result.push_str("\\n"),
+            '\r' => result.push_str("\\r"),
+            '\t' => result.push_str("\\t"),
+            '\0' => result.push_str("\\0"),
+            '$' => result.push_str("\\$"),
+            c if c.is_control() => {
+                result.push_str(&format!("\\u{{{:04x}}}", c as u32));
+            }
+            c => result.push(c),
+        }
+    }
+    result
 }
 
 /// Build Nix attrset string from key-value pairs.
