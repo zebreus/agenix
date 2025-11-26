@@ -57,8 +57,8 @@ pub fn generate_age_x25519_keypair() -> Result<(String, String)> {
 /// Returns (private_key_pem, public_key_ssh) tuple.
 ///
 /// # Testing
-/// The tests for this function are slow (RSA key generation is computationally expensive)
-/// and are skipped by default. When making changes to this function, run the RSA tests
+/// Tests that generate RSA keys are slow (RSA key generation is computationally expensive)
+/// and are skipped by default. When making changes to this function, run the slow RSA tests
 /// explicitly with: `cargo test rsa -- --ignored`
 pub fn generate_rsa_keypair(key_size: u32) -> Result<(String, String)> {
     use anyhow::anyhow;
