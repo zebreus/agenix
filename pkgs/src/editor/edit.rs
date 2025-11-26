@@ -4,6 +4,7 @@
 //! encrypting files from stdin, and decrypting files to stdout or another location.
 
 use anyhow::{Context, Result, anyhow};
+use std::ffi::OsStr;
 use std::fs;
 use std::io::{self, Read};
 use std::path::Path;
@@ -13,19 +14,48 @@ use tempfile::TempDir;
 use crate::crypto::{self, encrypt_from_file, files_equal};
 use crate::nix::{get_public_keys, should_armor};
 
+/// Context for encryption operations, containing validated settings from the rules file.
+struct EncryptionContext {
+    public_keys: Vec<String>,
+    armor: bool,
+}
+
+impl EncryptionContext {
+    /// Load encryption settings from rules file for a given secret.
+    fn new(rules_path: &str, file: &str) -> Result<Self> {
+        let public_keys = get_public_keys(rules_path, file)?;
+        if public_keys.is_empty() {
+            return Err(anyhow!("No public keys found for file: {file}"));
+        }
+        let armor = should_armor(rules_path, file)?;
+        Ok(Self { public_keys, armor })
+    }
+
+    /// Encrypt a cleartext file to the output path.
+    fn encrypt(&self, cleartext_path: &str, output_path: &str) -> Result<()> {
+        encrypt_from_file(cleartext_path, output_path, &self.public_keys, self.armor)
+    }
+}
+
+/// Get the filename component from a path with proper error handling.
+fn get_filename(file: &str) -> Result<&OsStr> {
+    Path::new(file)
+        .file_name()
+        .ok_or_else(|| anyhow!("Invalid file path: {file}"))
+}
+
+/// Create a temporary directory with a cleartext file inside.
+fn create_temp_cleartext(filename: &OsStr) -> Result<(TempDir, std::path::PathBuf)> {
+    let temp_dir = TempDir::new().context("Failed to create temporary directory")?;
+    let cleartext_file = temp_dir.path().join(filename);
+    Ok((temp_dir, cleartext_file))
+}
+
 /// Edit a secret file with an editor.
 ///
 /// If the file exists, it will be decrypted to a temporary location, opened in the
 /// specified editor, and re-encrypted when the editor exits. If the file doesn't exist,
 /// a new encrypted file will be created.
-///
-/// # Arguments
-/// * `rules_path` - Path to the Nix rules file
-/// * `file` - Path to the secret file to edit
-/// * `editor_cmd` - Editor command to use (or ":" for no-op, used by rekey)
-/// * `identities` - List of identity files for decryption
-/// * `no_system_identities` - If true, don't use default system identities
-/// * `force` - If true, open empty editor if decryption fails instead of erroring
 pub fn edit_file(
     rules_path: &str,
     file: &str,
@@ -34,30 +64,16 @@ pub fn edit_file(
     no_system_identities: bool,
     force: bool,
 ) -> Result<()> {
-    let public_keys = get_public_keys(rules_path, file)?;
-    let armor = should_armor(rules_path, file)?;
+    let ctx = EncryptionContext::new(rules_path, file)?;
+    let filename = get_filename(file)?;
+    let (_temp_dir, cleartext_file) = create_temp_cleartext(filename)?;
 
-    if public_keys.is_empty() {
-        return Err(anyhow!("No public keys found for file: {file}"));
-    }
-
-    // Get the filename component with proper error handling
-    let filename = Path::new(file)
-        .file_name()
-        .ok_or_else(|| anyhow!("Invalid file path: {file}"))?;
-
-    // Create temporary directory for cleartext
-    let temp_dir = TempDir::new().context("Failed to create temporary directory")?;
-    let cleartext_file = temp_dir.path().join(filename);
-
-    // Decrypt if file exists
+    // Decrypt existing file if present
     if Path::new(file).exists() {
-        let decrypt_result =
-            crypto::decrypt_to_file(file, &cleartext_file, identities, no_system_identities);
-
-        if let Err(e) = decrypt_result {
+        if let Err(e) =
+            crypto::decrypt_to_file(file, &cleartext_file, identities, no_system_identities)
+        {
             if force {
-                // With --force, continue with empty file if decryption fails
                 eprintln!("Warning: Could not decrypt {file}, starting with empty content: {e:#}");
             } else {
                 return Err(e).with_context(|| {
@@ -67,15 +83,14 @@ pub fn edit_file(
         }
     }
 
-    // Create backup
+    // Create backup for change detection
     let backup_file = format!("{}.backup", cleartext_file.to_string_lossy());
     if cleartext_file.exists() {
         fs::copy(&cleartext_file, &backup_file)?;
     }
 
-    // If editor_cmd is ":" we skip invoking an editor (used for rekey)
+    // Run editor (skip if ":" - used for rekey)
     if editor_cmd != ":" {
-        // Always use the specified editor command
         let status = Command::new("sh")
             .args([
                 "-c",
@@ -89,12 +104,13 @@ pub fn edit_file(
         }
     }
 
+    // Handle case where editor didn't create the file
     if !cleartext_file.exists() {
         eprintln!("Warning: {file} wasn't created");
         return Ok(());
     }
 
-    // Check if file changed (only when an editor was actually invoked)
+    // Skip re-encryption if content unchanged (only when editor was invoked)
     if editor_cmd != ":"
         && Path::new(&backup_file).exists()
         && files_equal(&backup_file, &cleartext_file.to_string_lossy())?
@@ -103,30 +119,15 @@ pub fn edit_file(
         return Ok(());
     }
 
-    // Encrypt the file
-    encrypt_from_file(&cleartext_file.to_string_lossy(), file, &public_keys, armor)?;
-
-    Ok(())
+    ctx.encrypt(&cleartext_file.to_string_lossy(), file)
 }
 
 /// Encrypt content from stdin to a secret file.
 ///
 /// Reads from stdin and encrypts the content to the specified file. Does not require
 /// an editor or decryption capabilities.
-///
-/// # Arguments
-/// * `rules_path` - Path to the Nix rules file
-/// * `file` - Path to the secret file to create
-/// * `force` - If true, overwrite existing files; if false, fail if file exists
 pub fn encrypt_file(rules_path: &str, file: &str, force: bool) -> Result<()> {
-    let public_keys = get_public_keys(rules_path, file)?;
-    let armor = should_armor(rules_path, file)?;
-
-    if public_keys.is_empty() {
-        return Err(anyhow!("No public keys found for file: {file}"));
-    }
-
-    // Check if file exists and force flag
+    // Check if file exists before doing any work
     if Path::new(file).exists() && !force {
         return Err(anyhow!(
             "Secret file already exists: {}\nUse --force to overwrite or 'agenix edit' to edit the existing secret",
@@ -134,16 +135,11 @@ pub fn encrypt_file(rules_path: &str, file: &str, force: bool) -> Result<()> {
         ));
     }
 
-    // Get the filename component with proper error handling
-    let filename = Path::new(file)
-        .file_name()
-        .ok_or_else(|| anyhow!("Invalid file path: {file}"))?;
+    let ctx = EncryptionContext::new(rules_path, file)?;
+    let filename = get_filename(file)?;
+    let (_temp_dir, cleartext_file) = create_temp_cleartext(filename)?;
 
-    // Create temporary directory for cleartext
-    let temp_dir = TempDir::new().context("Failed to create temporary directory")?;
-    let cleartext_file = temp_dir.path().join(filename);
-
-    // Read from stdin
+    // Read and validate stdin content
     let mut stdin_content = String::new();
     io::stdin()
         .read_to_string(&mut stdin_content)
@@ -154,21 +150,10 @@ pub fn encrypt_file(rules_path: &str, file: &str, force: bool) -> Result<()> {
     }
 
     fs::write(&cleartext_file, stdin_content).context("Failed to write stdin content to file")?;
-
-    // Encrypt the file
-    encrypt_from_file(&cleartext_file.to_string_lossy(), file, &public_keys, armor)?;
-
-    Ok(())
+    ctx.encrypt(&cleartext_file.to_string_lossy(), file)
 }
 
 /// Decrypt a file to stdout or another location.
-///
-/// # Arguments
-/// * `rules_path` - Path to the Nix rules file
-/// * `file` - Path to the secret file to decrypt
-/// * `output` - Optional output file path (stdout if None)
-/// * `identities` - List of identity files for decryption
-/// * `no_system_identities` - If true, don't use default system identities
 pub fn decrypt_file(
     rules_path: &str,
     file: &str,
@@ -181,19 +166,13 @@ pub fn decrypt_file(
         return Err(anyhow!("No public keys found for file: {file}"));
     }
 
-    match output {
-        Some(out_file) => {
-            crypto::decrypt_to_file(file, Path::new(out_file), identities, no_system_identities)?
-        }
-        None => crypto::decrypt_to_file(
-            file,
-            Path::new("/dev/stdout"),
-            identities,
-            no_system_identities,
-        )?,
-    }
-
-    Ok(())
+    let output_path = output.unwrap_or("/dev/stdout");
+    crypto::decrypt_to_file(
+        file,
+        Path::new(output_path),
+        identities,
+        no_system_identities,
+    )
 }
 
 #[cfg(test)]
