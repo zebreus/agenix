@@ -277,4 +277,20 @@ publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" 
 
         Ok(())
     }
+
+    #[test]
+    fn test_edit_file_invalid_path() {
+        // Test with a path that has no filename component
+        let rules = "./test_secrets.nix";
+        let result = edit_file(rules, "/", "vi", &[], false, false);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_encrypt_file_invalid_path() {
+        // Test with a path that has no filename component
+        let rules = "./test_secrets.nix";
+        let result = encrypt_file(rules, "/", false);
+        assert!(result.is_err());
+    }
 }
