@@ -1,11 +1,11 @@
 //! File editing and decryption operations.
 //!
-//! This module provides functions for editing encrypted files with an editor
-//! and decrypting files to stdout or another location.
+//! This module provides functions for editing encrypted files with an editor,
+//! encrypting files from stdin, and decrypting files to stdout or another location.
 
 use anyhow::{Context, Result, anyhow};
 use std::fs;
-use std::io::{self, IsTerminal, Read, stdin};
+use std::io::{self, Read};
 use std::path::Path;
 use std::process::Command;
 use tempfile::TempDir;
@@ -13,7 +13,7 @@ use tempfile::TempDir;
 use crate::crypto::{self, encrypt_from_file, files_equal};
 use crate::nix::{get_public_keys, should_armor};
 
-/// Edit a file with encryption/decryption.
+/// Edit a secret file with an editor.
 ///
 /// If the file exists, it will be decrypted to a temporary location, opened in the
 /// specified editor, and re-encrypted when the editor exits. If the file doesn't exist,
@@ -56,28 +56,17 @@ pub fn edit_file(
 
     // If editor_cmd is ":" we skip invoking an editor (used for rekey)
     if editor_cmd != ":" {
-        if !stdin().is_terminal() {
-            // Read directly from stdin instead of using shell command
-            let mut stdin_content = String::new();
-            io::stdin()
-                .read_to_string(&mut stdin_content)
-                .context("Failed to read from stdin")?;
+        // Always use the specified editor command
+        let status = Command::new("sh")
+            .args([
+                "-c",
+                &format!("{} '{}'", editor_cmd, cleartext_file.to_string_lossy()),
+            ])
+            .status()
+            .context("Failed to run editor")?;
 
-            fs::write(&cleartext_file, stdin_content)
-                .context("Failed to write stdin content to file")?;
-        } else {
-            // Use the specified editor command
-            let status = Command::new("sh")
-                .args([
-                    "-c",
-                    &format!("{} '{}'", editor_cmd, cleartext_file.to_string_lossy()),
-                ])
-                .status()
-                .context("Failed to run editor")?;
-
-            if !status.success() {
-                return Err(anyhow!("Editor exited with non-zero status"));
-            }
+        if !status.success() {
+            return Err(anyhow!("Editor exited with non-zero status"));
         }
     }
 
@@ -94,6 +83,52 @@ pub fn edit_file(
         eprintln!("Warning: {file} wasn't changed, skipping re-encryption");
         return Ok(());
     }
+
+    // Encrypt the file
+    encrypt_from_file(&cleartext_file.to_string_lossy(), file, &public_keys, armor)?;
+
+    Ok(())
+}
+
+/// Encrypt content from stdin to a secret file.
+///
+/// Reads from stdin and encrypts the content to the specified file. Does not require
+/// an editor or decryption capabilities.
+///
+/// # Arguments
+/// * `rules_path` - Path to the Nix rules file
+/// * `file` - Path to the secret file to create
+/// * `force` - If true, overwrite existing files; if false, fail if file exists
+pub fn encrypt_file(rules_path: &str, file: &str, force: bool) -> Result<()> {
+    let public_keys = get_public_keys(rules_path, file)?;
+    let armor = should_armor(rules_path, file)?;
+
+    if public_keys.is_empty() {
+        return Err(anyhow!("No public keys found for file: {file}"));
+    }
+
+    // Check if file exists and force flag
+    if Path::new(file).exists() && !force {
+        return Err(anyhow!(
+            "Secret file already exists: {file}\nUse --force to overwrite or 'agenix edit {file}' to edit the existing secret"
+        ));
+    }
+
+    // Create temporary directory for cleartext
+    let temp_dir = TempDir::new().context("Failed to create temporary directory")?;
+    let cleartext_file = temp_dir.path().join(Path::new(file).file_name().unwrap());
+
+    // Read from stdin
+    let mut stdin_content = String::new();
+    io::stdin()
+        .read_to_string(&mut stdin_content)
+        .context("Failed to read from stdin")?;
+
+    if stdin_content.is_empty() {
+        return Err(anyhow!("No input provided on stdin"));
+    }
+
+    fs::write(&cleartext_file, stdin_content).context("Failed to write stdin content to file")?;
 
     // Encrypt the file
     encrypt_from_file(&cleartext_file.to_string_lossy(), file, &public_keys, armor)?;
@@ -175,9 +210,19 @@ mod tests {
     }
 
     #[test]
-    fn test_stdin_editor_functionality() -> Result<()> {
+    fn test_encrypt_file_no_keys() {
+        let rules = "./test_secrets.nix";
+        let result = encrypt_file(rules, "nonexistent.age", false);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_encrypt_file_already_exists_without_force() -> Result<()> {
         let temp_dir = tempdir()?;
-        let test_file_path = temp_dir.path().join("test-stdin.age");
+        let test_file_path = temp_dir.path().join("existing.age");
+
+        // Create the file so it exists
+        File::create(&test_file_path)?;
 
         // Create a temporary rules file with absolute path to the test file
         let rules_content = format!(
@@ -192,29 +237,17 @@ publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" 
         );
 
         let temp_rules: PathBuf = temp_dir.path().join("secrets.nix").to_path_buf();
-
         writeln!(File::create(&temp_rules).unwrap(), "{}", rules_content)?;
 
-        // Test that the "<stdin>" editor command is recognized but we can't easily
-        // test the actual stdin reading in a unit test environment
-        // Instead, we'll test with a regular editor to ensure the path works
-        let args = vec![
-            "agenix".to_string(),
-            "edit".to_string(),
-            test_file_path.to_str().unwrap().to_string(),
-            "--rules".to_string(),
-            temp_rules.to_str().unwrap().to_string(),
-            "--editor".to_string(),
-            "echo 'test content' >".to_string(),
-        ];
-        eprintln!(
-            "Running test_stdin_editor_functionality with args: {:?}",
-            args
+        // Encrypt should fail because file exists and force is false
+        let result = encrypt_file(
+            temp_rules.to_str().unwrap(),
+            test_file_path.to_str().unwrap(),
+            false,
         );
-
-        let result = crate::run(args);
-
-        result.unwrap();
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("already exists"));
 
         Ok(())
     }

@@ -40,6 +40,12 @@ agenix edit secret.age
 # Edit with custom rules file (global option before command)
 agenix -r /path/to/secrets.nix edit secret.age
 
+# Encrypt from stdin (creates new secret)
+echo "my-secret-value" | agenix encrypt secret.age
+
+# Encrypt with force to overwrite existing
+echo "new-value" | agenix encrypt --force secret.age
+
 # Decrypt to stdout
 agenix decrypt secret.age
 
@@ -74,7 +80,7 @@ agenix uses subcommands for different operations:
 
 ### `agenix edit <FILE>` (alias: `e`)
 
-Edit a secret file using your configured editor.
+Edit a secret file using your configured editor. Creates a new file if it doesn't exist.
 
 Options:
 - `-i, --identity <KEY>` - Identity (private key) to use when decrypting
@@ -85,6 +91,19 @@ Examples:
 agenix edit secret.age
 agenix edit secret.age -i ~/.ssh/id_ed25519
 agenix edit secret.age -e nano
+```
+
+### `agenix encrypt <FILE>` (alias: `c`)
+
+Encrypt content from stdin to a secret file. Does not require an editor.
+
+Options:
+- `-f, --force` - Overwrite existing secret file
+
+Examples:
+```bash
+echo "my-password" | agenix encrypt secret.age
+cat plaintext.txt | agenix encrypt --force secret.age
 ```
 
 ### `agenix decrypt <FILE>` (alias: `d`)

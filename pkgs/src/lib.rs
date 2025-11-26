@@ -52,6 +52,10 @@ where
             args.no_system_identities,
         )
         .with_context(|| format!("Failed to edit {file}")),
+        Some(cli::Command::Encrypt { file, force }) => {
+            editor::encrypt_file(&args.rules, &file, force)
+                .with_context(|| format!("Failed to encrypt {file}"))
+        }
         None => Ok(()),
     }
 }

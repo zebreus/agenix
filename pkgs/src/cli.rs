@@ -42,7 +42,7 @@ pub struct Args {
 
 #[derive(Subcommand, Debug)]
 pub enum Command {
-    /// Edit a secret file using $EDITOR
+    /// Edit a secret file using $EDITOR (creates new file if it doesn't exist)
     #[command(visible_alias = "e")]
     Edit {
         /// The secret file to edit
@@ -52,6 +52,18 @@ pub enum Command {
         /// Editor command to use (defaults to $EDITOR or vi)
         #[arg(short = 'e', long, env = "EDITOR", value_name = "COMMAND", default_value_t = String::from("vi"))]
         editor: String,
+    },
+
+    /// Encrypt content from stdin to a secret file
+    #[command(visible_alias = "c")]
+    Encrypt {
+        /// The secret file to create
+        #[arg(value_name = "FILE", allow_hyphen_values = true)]
+        file: String,
+
+        /// Overwrite existing secret file
+        #[arg(short, long)]
+        force: bool,
     },
 
     /// Decrypt a secret file to stdout or a file
@@ -174,6 +186,46 @@ mod tests {
     fn test_decrypt_short_alias() {
         let args = Args::try_parse_from(["agenix", "d", "secret.age"]).unwrap();
         assert!(matches!(args.command, Some(Command::Decrypt { .. })));
+    }
+
+    #[test]
+    fn test_encrypt_subcommand() {
+        let args = Args::try_parse_from(["agenix", "encrypt", "test.age"]).unwrap();
+        assert!(matches!(args.command, Some(Command::Encrypt { .. })));
+        if let Some(Command::Encrypt { file, force }) = args.command {
+            assert_eq!(file, "test.age".to_string());
+            assert!(!force);
+        } else {
+            panic!("Expected Encrypt command");
+        }
+    }
+
+    #[test]
+    fn test_encrypt_short_alias() {
+        let args = Args::try_parse_from(["agenix", "c", "test.age"]).unwrap();
+        assert!(matches!(args.command, Some(Command::Encrypt { .. })));
+    }
+
+    #[test]
+    fn test_encrypt_with_force() {
+        let args = Args::try_parse_from(["agenix", "encrypt", "--force", "test.age"]).unwrap();
+        if let Some(Command::Encrypt { file, force }) = args.command {
+            assert_eq!(file, "test.age".to_string());
+            assert!(force);
+        } else {
+            panic!("Expected Encrypt command");
+        }
+    }
+
+    #[test]
+    fn test_encrypt_with_force_short() {
+        let args = Args::try_parse_from(["agenix", "encrypt", "-f", "test.age"]).unwrap();
+        if let Some(Command::Encrypt { file, force }) = args.command {
+            assert_eq!(file, "test.age".to_string());
+            assert!(force);
+        } else {
+            panic!("Expected Encrypt command");
+        }
     }
 
     #[test]
