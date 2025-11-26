@@ -4250,4 +4250,497 @@ mod tests {
         // Should say 2 secrets
         assert!(err_msg.contains("2"), "Should mention count 2");
     }
+
+    // Tests verifying that "rekey all" and "rekey <all secrets explicitly>" are equivalent
+
+    #[test]
+    fn test_rekey_all_vs_explicit_all_undecryptable_handling() {
+        // Test that undecryptable files are handled the same way whether we specify
+        // all secrets explicitly or let rekey default to all secrets
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+
+        let temp_dir = tempdir().unwrap();
+
+        let rules_content = format!(
+            r#"
+{{
+  "{}/secret1.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+  }};
+  "{}/secret2.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+  }};
+}}
+"#,
+            temp_dir.path().to_str().unwrap(),
+            temp_dir.path().to_str().unwrap()
+        );
+
+        let mut temp_rules = NamedTempFile::new().unwrap();
+        writeln!(temp_rules, "{}", rules_content).unwrap();
+        temp_rules.flush().unwrap();
+
+        // Create both as invalid (undecryptable)
+        fs::write(temp_dir.path().join("secret1.age"), "invalid1").unwrap();
+        fs::write(temp_dir.path().join("secret2.age"), "invalid2").unwrap();
+
+        // Test 1: Rekey without specifying secrets (all secrets)
+        let args_implicit_all = vec![
+            "agenix".to_string(),
+            "rekey".to_string(),
+            "--rules".to_string(),
+            temp_rules.path().to_str().unwrap().to_string(),
+        ];
+
+        let result_implicit = crate::run(args_implicit_all);
+        assert!(result_implicit.is_err(), "Rekey all (implicit) should fail");
+        let err_implicit = format!("{:?}", result_implicit.unwrap_err());
+
+        // Test 2: Rekey with all secrets explicitly specified
+        let args_explicit_all = vec![
+            "agenix".to_string(),
+            "rekey".to_string(),
+            "--rules".to_string(),
+            temp_rules.path().to_str().unwrap().to_string(),
+            "secret1".to_string(),
+            "secret2".to_string(),
+        ];
+
+        let result_explicit = crate::run(args_explicit_all);
+        assert!(result_explicit.is_err(), "Rekey all (explicit) should fail");
+        let err_explicit = format!("{:?}", result_explicit.unwrap_err());
+
+        // Both should mention the same files
+        assert!(
+            err_implicit.contains("secret1.age"),
+            "Implicit all should mention secret1.age"
+        );
+        assert!(
+            err_implicit.contains("secret2.age"),
+            "Implicit all should mention secret2.age"
+        );
+        assert!(
+            err_explicit.contains("secret1.age"),
+            "Explicit all should mention secret1.age"
+        );
+        assert!(
+            err_explicit.contains("secret2.age"),
+            "Explicit all should mention secret2.age"
+        );
+
+        // Both should mention 2 undecryptable secrets
+        assert!(
+            err_implicit.contains("2"),
+            "Implicit all should mention count 2"
+        );
+        assert!(
+            err_explicit.contains("2"),
+            "Explicit all should mention count 2"
+        );
+
+        // Both should suggest --partial
+        assert!(
+            err_implicit.contains("--partial"),
+            "Implicit all should suggest --partial"
+        );
+        assert!(
+            err_explicit.contains("--partial"),
+            "Explicit all should suggest --partial"
+        );
+    }
+
+    #[test]
+    fn test_rekey_all_vs_explicit_all_partial_mode() {
+        // Test that --partial mode works the same whether secrets are implicit or explicit
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+
+        let temp_dir = tempdir().unwrap();
+
+        let rules_content = format!(
+            r#"
+{{
+  "{}/secret1.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+  }};
+  "{}/secret2.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+  }};
+}}
+"#,
+            temp_dir.path().to_str().unwrap(),
+            temp_dir.path().to_str().unwrap()
+        );
+
+        let mut temp_rules = NamedTempFile::new().unwrap();
+        writeln!(temp_rules, "{}", rules_content).unwrap();
+        temp_rules.flush().unwrap();
+
+        // Create both as invalid
+        fs::write(temp_dir.path().join("secret1.age"), "invalid1").unwrap();
+        fs::write(temp_dir.path().join("secret2.age"), "invalid2").unwrap();
+
+        // Test 1: Rekey --partial without specifying secrets
+        let args_implicit = vec![
+            "agenix".to_string(),
+            "rekey".to_string(),
+            "--partial".to_string(),
+            "--rules".to_string(),
+            temp_rules.path().to_str().unwrap().to_string(),
+        ];
+
+        let result_implicit = crate::run(args_implicit);
+        // Both undecryptable, so should fail with "nothing to rekey"
+        assert!(
+            result_implicit.is_err(),
+            "Rekey --partial (implicit all) should fail when all undecryptable"
+        );
+        let err_implicit = format!("{:?}", result_implicit.unwrap_err());
+
+        // Recreate files (they might have been modified)
+        fs::write(temp_dir.path().join("secret1.age"), "invalid1").unwrap();
+        fs::write(temp_dir.path().join("secret2.age"), "invalid2").unwrap();
+
+        // Test 2: Rekey --partial with all secrets explicitly specified
+        let args_explicit = vec![
+            "agenix".to_string(),
+            "rekey".to_string(),
+            "--partial".to_string(),
+            "--rules".to_string(),
+            temp_rules.path().to_str().unwrap().to_string(),
+            "secret1".to_string(),
+            "secret2".to_string(),
+        ];
+
+        let result_explicit = crate::run(args_explicit);
+        assert!(
+            result_explicit.is_err(),
+            "Rekey --partial (explicit all) should fail when all undecryptable"
+        );
+        let err_explicit = format!("{:?}", result_explicit.unwrap_err());
+
+        // Both should have the same error about no secrets being decryptable
+        assert!(
+            err_implicit.contains("No secrets could be decrypted"),
+            "Implicit all should mention no secrets could be decrypted"
+        );
+        assert!(
+            err_explicit.contains("No secrets could be decrypted"),
+            "Explicit all should mention no secrets could be decrypted"
+        );
+    }
+
+    // Tests verifying that "generate all" and "generate <all secrets explicitly>" are equivalent
+
+    #[test]
+    fn test_generate_all_vs_explicit_all_basic() -> Result<()> {
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+
+        // Test that generating all secrets implicitly produces the same result
+        // as generating all secrets explicitly
+        let temp_dir1 = tempdir()?;
+        let temp_dir2 = tempdir()?;
+
+        let rules_content1 = format!(
+            r#"
+{{
+  "{}/secret1.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {{ }}: "content1";
+  }};
+  "{}/secret2.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {{ }}: "content2";
+  }};
+}}
+"#,
+            temp_dir1.path().to_str().unwrap(),
+            temp_dir1.path().to_str().unwrap()
+        );
+
+        let rules_content2 = format!(
+            r#"
+{{
+  "{}/secret1.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {{ }}: "content1";
+  }};
+  "{}/secret2.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {{ }}: "content2";
+  }};
+}}
+"#,
+            temp_dir2.path().to_str().unwrap(),
+            temp_dir2.path().to_str().unwrap()
+        );
+
+        let mut temp_rules1 = NamedTempFile::new()?;
+        writeln!(temp_rules1, "{}", rules_content1)?;
+        temp_rules1.flush()?;
+
+        let mut temp_rules2 = NamedTempFile::new()?;
+        writeln!(temp_rules2, "{}", rules_content2)?;
+        temp_rules2.flush()?;
+
+        // Test 1: Generate without specifying secrets (implicit all)
+        let args_implicit = vec![
+            "agenix".to_string(),
+            "generate".to_string(),
+            "--rules".to_string(),
+            temp_rules1.path().to_str().unwrap().to_string(),
+        ];
+
+        let result_implicit = crate::run(args_implicit);
+        assert!(
+            result_implicit.is_ok(),
+            "Generate all (implicit) should succeed: {:?}",
+            result_implicit.err()
+        );
+
+        // Test 2: Generate with all secrets explicitly specified
+        let args_explicit = vec![
+            "agenix".to_string(),
+            "generate".to_string(),
+            "--rules".to_string(),
+            temp_rules2.path().to_str().unwrap().to_string(),
+            "secret1".to_string(),
+            "secret2".to_string(),
+        ];
+
+        let result_explicit = crate::run(args_explicit);
+        assert!(
+            result_explicit.is_ok(),
+            "Generate all (explicit) should succeed: {:?}",
+            result_explicit.err()
+        );
+
+        // Both should create the same files
+        assert!(
+            temp_dir1.path().join("secret1.age").exists(),
+            "Implicit all should create secret1.age"
+        );
+        assert!(
+            temp_dir1.path().join("secret2.age").exists(),
+            "Implicit all should create secret2.age"
+        );
+        assert!(
+            temp_dir2.path().join("secret1.age").exists(),
+            "Explicit all should create secret1.age"
+        );
+        assert!(
+            temp_dir2.path().join("secret2.age").exists(),
+            "Explicit all should create secret2.age"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_generate_all_vs_explicit_all_with_dependencies() -> Result<()> {
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+
+        // Test that dependency handling is the same for implicit vs explicit all
+        let temp_dir1 = tempdir()?;
+        let temp_dir2 = tempdir()?;
+
+        let rules_content1 = format!(
+            r#"
+{{
+  "{}/base.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {{ }}: {{ secret = "base-secret"; public = "base-public"; }};
+  }};
+  "{}/derived.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    dependencies = [ "base" ];
+    generator = {{ publics }}: "derived-" + publics."base";
+  }};
+}}
+"#,
+            temp_dir1.path().to_str().unwrap(),
+            temp_dir1.path().to_str().unwrap()
+        );
+
+        let rules_content2 = format!(
+            r#"
+{{
+  "{}/base.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {{ }}: {{ secret = "base-secret"; public = "base-public"; }};
+  }};
+  "{}/derived.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    dependencies = [ "base" ];
+    generator = {{ publics }}: "derived-" + publics."base";
+  }};
+}}
+"#,
+            temp_dir2.path().to_str().unwrap(),
+            temp_dir2.path().to_str().unwrap()
+        );
+
+        let mut temp_rules1 = NamedTempFile::new()?;
+        writeln!(temp_rules1, "{}", rules_content1)?;
+        temp_rules1.flush()?;
+
+        let mut temp_rules2 = NamedTempFile::new()?;
+        writeln!(temp_rules2, "{}", rules_content2)?;
+        temp_rules2.flush()?;
+
+        // Test 1: Generate without specifying secrets (implicit all)
+        let args_implicit = vec![
+            "agenix".to_string(),
+            "generate".to_string(),
+            "--rules".to_string(),
+            temp_rules1.path().to_str().unwrap().to_string(),
+        ];
+
+        let result_implicit = crate::run(args_implicit);
+        assert!(
+            result_implicit.is_ok(),
+            "Generate all (implicit) with deps should succeed: {:?}",
+            result_implicit.err()
+        );
+
+        // Test 2: Generate with all secrets explicitly specified
+        let args_explicit = vec![
+            "agenix".to_string(),
+            "generate".to_string(),
+            "--rules".to_string(),
+            temp_rules2.path().to_str().unwrap().to_string(),
+            "base".to_string(),
+            "derived".to_string(),
+        ];
+
+        let result_explicit = crate::run(args_explicit);
+        assert!(
+            result_explicit.is_ok(),
+            "Generate all (explicit) with deps should succeed: {:?}",
+            result_explicit.err()
+        );
+
+        // Both should create the same files, including .pub files
+        assert!(
+            temp_dir1.path().join("base.age").exists(),
+            "Implicit all should create base.age"
+        );
+        assert!(
+            temp_dir1.path().join("base.age.pub").exists(),
+            "Implicit all should create base.age.pub"
+        );
+        assert!(
+            temp_dir1.path().join("derived.age").exists(),
+            "Implicit all should create derived.age"
+        );
+
+        assert!(
+            temp_dir2.path().join("base.age").exists(),
+            "Explicit all should create base.age"
+        );
+        assert!(
+            temp_dir2.path().join("base.age.pub").exists(),
+            "Explicit all should create base.age.pub"
+        );
+        assert!(
+            temp_dir2.path().join("derived.age").exists(),
+            "Explicit all should create derived.age"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_generate_all_only_nonexistent_secret() {
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+
+        // Test that specifying only nonexistent secrets results in an error
+        let temp_dir = tempdir().unwrap();
+
+        let rules_content = format!(
+            r#"
+{{
+  "{}/secret1.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {{ }}: "content1";
+  }};
+}}
+"#,
+            temp_dir.path().to_str().unwrap()
+        );
+
+        let mut temp_rules = NamedTempFile::new().unwrap();
+        writeln!(temp_rules, "{}", rules_content).unwrap();
+        temp_rules.flush().unwrap();
+
+        // Test: Generate with only nonexistent secrets
+        let args_only_nonexistent = vec![
+            "agenix".to_string(),
+            "generate".to_string(),
+            "--rules".to_string(),
+            temp_rules.path().to_str().unwrap().to_string(),
+            "nonexistent".to_string(),
+        ];
+
+        let result = crate::run(args_only_nonexistent);
+        assert!(
+            result.is_err(),
+            "Generate with only nonexistent secret should fail"
+        );
+        let err_msg = format!("{:?}", result.unwrap_err());
+        assert!(
+            err_msg.contains("No matching secrets"),
+            "Error should mention no matching secrets: {}",
+            err_msg
+        );
+    }
+
+    #[test]
+    fn test_rekey_nonexistent_secret_explicit_error() {
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+
+        // Test that specifying a nonexistent secret gives a clear error
+        let temp_dir = tempdir().unwrap();
+
+        let rules_content = format!(
+            r#"
+{{
+  "{}/secret1.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+  }};
+}}
+"#,
+            temp_dir.path().to_str().unwrap()
+        );
+
+        let mut temp_rules = NamedTempFile::new().unwrap();
+        writeln!(temp_rules, "{}", rules_content).unwrap();
+        temp_rules.flush().unwrap();
+
+        // Create the secret file
+        fs::write(temp_dir.path().join("secret1.age"), "encrypted-content").unwrap();
+
+        // Test: Rekey with a nonexistent secret explicitly specified
+        let args = vec![
+            "agenix".to_string(),
+            "rekey".to_string(),
+            "--rules".to_string(),
+            temp_rules.path().to_str().unwrap().to_string(),
+            "nonexistent".to_string(),
+        ];
+
+        let result = crate::run(args);
+        assert!(result.is_err(), "Rekey with nonexistent secret should fail");
+        let err_msg = format!("{:?}", result.unwrap_err());
+        assert!(
+            err_msg.contains("No matching secrets"),
+            "Error should mention no matching secrets: {}",
+            err_msg
+        );
+    }
 }
