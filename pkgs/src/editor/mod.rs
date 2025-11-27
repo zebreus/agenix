@@ -20,7 +20,6 @@ pub mod rekey;
 pub mod secret_name;
 
 use anyhow::{Result, anyhow};
-
 use secret_name::SecretName;
 
 /// Validate that requested secrets exist in the rules file.
