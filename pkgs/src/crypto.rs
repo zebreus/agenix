@@ -33,33 +33,40 @@ fn read_ciphertext(input_file: &str) -> Result<Vec<u8>> {
     }
 }
 
+/// Set up decryption for a file and return a reader for the plaintext.
+fn setup_decryption<'a>(
+    input_file: &str,
+    ciphertext_bytes: &'a [u8],
+    identities: &[String],
+    no_system_identities: bool,
+) -> Result<Box<dyn Read + 'a>> {
+    let decryptor = Decryptor::new(ciphertext_bytes).context("Failed to parse age file")?;
+    let all_identities = collect_identities(identities, no_system_identities)?;
+
+    let reader = decryptor
+        .decrypt(all_identities.iter().map(|i| i.as_ref() as &dyn Identity))
+        .with_context(|| format!("Failed to decrypt {input_file}"))?;
+
+    Ok(Box::new(reader))
+}
+
 /// Check if a file can be decrypted with the given identities.
 /// This performs a "dry-run" decryption to verify the identities are valid
 /// without writing any output.
-///
-/// # Arguments
-/// * `input_file` - Path to the encrypted file
-/// * `identities` - Explicit identities to try first (in order)
-/// * `no_system_identities` - If true, don't add default system identities
-///
-/// # Returns
-/// Ok(()) if decryption would succeed, Err with the reason if it would fail
 pub fn can_decrypt(
     input_file: &str,
     identities: &[String],
     no_system_identities: bool,
 ) -> Result<()> {
     let ciphertext_bytes = read_ciphertext(input_file)?;
-    let decryptor = Decryptor::new(&ciphertext_bytes[..]).context("Failed to parse age file")?;
-    let all_identities = collect_identities(identities, no_system_identities)?;
-
-    // Try to decrypt - this verifies the identities work
-    let mut reader = decryptor
-        .decrypt(all_identities.iter().map(|i| i.as_ref() as &dyn Identity))
-        .with_context(|| format!("Failed to decrypt {input_file}"))?;
+    let mut reader = setup_decryption(
+        input_file,
+        &ciphertext_bytes,
+        identities,
+        no_system_identities,
+    )?;
 
     // Read a small amount to verify decryption actually works
-    // (the decrypt call above may succeed but reading could still fail)
     let mut buf = [0u8; 1];
     reader
         .read(&mut buf)
@@ -69,12 +76,6 @@ pub fn can_decrypt(
 }
 
 /// Decrypt a file to another file
-///
-/// # Arguments
-/// * `input_file` - Path to the encrypted file
-/// * `output_file` - Path to write the decrypted content
-/// * `identities` - Explicit identities to try first (in order)
-/// * `no_system_identities` - If true, don't add default system identities
 pub fn decrypt_to_file<P: AsRef<Path>>(
     input_file: &str,
     output_file: P,
@@ -82,12 +83,12 @@ pub fn decrypt_to_file<P: AsRef<Path>>(
     no_system_identities: bool,
 ) -> Result<()> {
     let ciphertext_bytes = read_ciphertext(input_file)?;
-    let decryptor = Decryptor::new(&ciphertext_bytes[..]).context("Failed to parse age file")?;
-    let all_identities = collect_identities(identities, no_system_identities)?;
-
-    let mut reader = decryptor
-        .decrypt(all_identities.iter().map(|i| i.as_ref() as &dyn Identity))
-        .with_context(|| format!("Failed to decrypt {input_file}"))?;
+    let mut reader = setup_decryption(
+        input_file,
+        &ciphertext_bytes,
+        identities,
+        no_system_identities,
+    )?;
 
     let mut plaintext = vec![];
     reader
