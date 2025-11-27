@@ -882,4 +882,368 @@ mod tests {
             panic!("Expected Rekey command");
         }
     }
+
+    // ===========================================
+    // LIST COMMAND CLI TESTS (10+ tests)
+    // ===========================================
+
+    #[test]
+    fn test_list_subcommand() {
+        let args = Args::try_parse_from(["agenix", "list"]).unwrap();
+        assert!(matches!(args.command, Some(Command::List { .. })));
+        if let Some(Command::List { detailed }) = args.command {
+            assert!(!detailed);
+        }
+    }
+
+    #[test]
+    fn test_list_short_alias() {
+        let args = Args::try_parse_from(["agenix", "l"]).unwrap();
+        assert!(matches!(args.command, Some(Command::List { .. })));
+    }
+
+    #[test]
+    fn test_list_detailed_flag() {
+        let args = Args::try_parse_from(["agenix", "list", "--detailed"]).unwrap();
+        if let Some(Command::List { detailed }) = args.command {
+            assert!(detailed);
+        } else {
+            panic!("Expected List command");
+        }
+    }
+
+    #[test]
+    fn test_list_detailed_short_flag() {
+        let args = Args::try_parse_from(["agenix", "list", "-d"]).unwrap();
+        if let Some(Command::List { detailed }) = args.command {
+            assert!(detailed);
+        } else {
+            panic!("Expected List command");
+        }
+    }
+
+    #[test]
+    fn test_list_with_rules_flag() {
+        let args = Args::try_parse_from(["agenix", "-r", "/custom/rules.nix", "list"]).unwrap();
+        assert_eq!(args.rules, "/custom/rules.nix");
+        assert!(matches!(args.command, Some(Command::List { .. })));
+    }
+
+    #[test]
+    fn test_list_with_identity_flag() {
+        let args =
+            Args::try_parse_from(["agenix", "-i", "/path/to/key", "list", "--detailed"]).unwrap();
+        assert_eq!(args.identity, vec!["/path/to/key".to_string()]);
+        if let Some(Command::List { detailed }) = args.command {
+            assert!(detailed);
+        } else {
+            panic!("Expected List command");
+        }
+    }
+
+    #[test]
+    fn test_list_with_no_system_identities() {
+        let args = Args::try_parse_from(["agenix", "--no-system-identities", "list"]).unwrap();
+        assert!(args.no_system_identities);
+        assert!(matches!(args.command, Some(Command::List { .. })));
+    }
+
+    #[test]
+    fn test_list_with_verbose_flag() {
+        let args = Args::try_parse_from(["agenix", "-v", "list"]).unwrap();
+        assert!(args.verbose);
+        assert!(matches!(args.command, Some(Command::List { .. })));
+    }
+
+    #[test]
+    fn test_list_verbose_after_subcommand() {
+        let args = Args::try_parse_from(["agenix", "list", "-v"]).unwrap();
+        assert!(args.verbose);
+        assert!(matches!(args.command, Some(Command::List { .. })));
+    }
+
+    #[test]
+    fn test_list_detailed_and_verbose() {
+        let args = Args::try_parse_from(["agenix", "list", "-d", "-v"]).unwrap();
+        assert!(args.verbose);
+        if let Some(Command::List { detailed }) = args.command {
+            assert!(detailed);
+        } else {
+            panic!("Expected List command");
+        }
+    }
+
+    #[test]
+    fn test_list_all_flags_combined() {
+        let args = Args::try_parse_from([
+            "agenix",
+            "-v",
+            "-r",
+            "/rules.nix",
+            "-i",
+            "/key",
+            "--no-system-identities",
+            "list",
+            "--detailed",
+        ])
+        .unwrap();
+        assert!(args.verbose);
+        assert_eq!(args.rules, "/rules.nix");
+        assert_eq!(args.identity, vec!["/key".to_string()]);
+        assert!(args.no_system_identities);
+        if let Some(Command::List { detailed }) = args.command {
+            assert!(detailed);
+        } else {
+            panic!("Expected List command");
+        }
+    }
+
+    // ===========================================
+    // CHECK COMMAND CLI TESTS (10+ tests)
+    // ===========================================
+
+    #[test]
+    fn test_check_subcommand() {
+        let args = Args::try_parse_from(["agenix", "check"]).unwrap();
+        assert!(matches!(args.command, Some(Command::Check { .. })));
+        if let Some(Command::Check { secrets }) = args.command {
+            assert!(secrets.is_empty());
+        }
+    }
+
+    #[test]
+    fn test_check_short_alias() {
+        let args = Args::try_parse_from(["agenix", "v"]).unwrap();
+        assert!(matches!(args.command, Some(Command::Check { .. })));
+    }
+
+    #[test]
+    fn test_check_single_secret() {
+        let args = Args::try_parse_from(["agenix", "check", "secret1.age"]).unwrap();
+        if let Some(Command::Check { secrets }) = args.command {
+            assert_eq!(secrets, vec!["secret1.age".to_string()]);
+        } else {
+            panic!("Expected Check command");
+        }
+    }
+
+    #[test]
+    fn test_check_multiple_secrets() {
+        let args = Args::try_parse_from([
+            "agenix",
+            "check",
+            "secret1.age",
+            "secret2.age",
+            "secret3.age",
+        ])
+        .unwrap();
+        if let Some(Command::Check { secrets }) = args.command {
+            assert_eq!(
+                secrets,
+                vec![
+                    "secret1.age".to_string(),
+                    "secret2.age".to_string(),
+                    "secret3.age".to_string()
+                ]
+            );
+        } else {
+            panic!("Expected Check command");
+        }
+    }
+
+    #[test]
+    fn test_check_with_rules_flag() {
+        let args = Args::try_parse_from(["agenix", "-r", "/custom/rules.nix", "check"]).unwrap();
+        assert_eq!(args.rules, "/custom/rules.nix");
+        assert!(matches!(args.command, Some(Command::Check { .. })));
+    }
+
+    #[test]
+    fn test_check_with_identity_flag() {
+        let args =
+            Args::try_parse_from(["agenix", "-i", "/path/to/key", "check", "secret.age"]).unwrap();
+        assert_eq!(args.identity, vec!["/path/to/key".to_string()]);
+        if let Some(Command::Check { secrets }) = args.command {
+            assert_eq!(secrets, vec!["secret.age".to_string()]);
+        } else {
+            panic!("Expected Check command");
+        }
+    }
+
+    #[test]
+    fn test_check_with_multiple_identities() {
+        let args = Args::try_parse_from([
+            "agenix",
+            "-i",
+            "/key1",
+            "-i",
+            "/key2",
+            "check",
+            "secret.age",
+        ])
+        .unwrap();
+        assert_eq!(
+            args.identity,
+            vec!["/key1".to_string(), "/key2".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_check_with_no_system_identities() {
+        let args = Args::try_parse_from(["agenix", "--no-system-identities", "check"]).unwrap();
+        assert!(args.no_system_identities);
+        assert!(matches!(args.command, Some(Command::Check { .. })));
+    }
+
+    #[test]
+    fn test_check_with_verbose_flag() {
+        let args = Args::try_parse_from(["agenix", "-v", "check"]).unwrap();
+        assert!(args.verbose);
+        assert!(matches!(args.command, Some(Command::Check { .. })));
+    }
+
+    #[test]
+    fn test_check_verbose_after_subcommand() {
+        let args = Args::try_parse_from(["agenix", "check", "-v", "secret.age"]).unwrap();
+        assert!(args.verbose);
+        if let Some(Command::Check { secrets }) = args.command {
+            assert_eq!(secrets, vec!["secret.age".to_string()]);
+        } else {
+            panic!("Expected Check command");
+        }
+    }
+
+    #[test]
+    fn test_check_all_flags_combined() {
+        let args = Args::try_parse_from([
+            "agenix",
+            "-v",
+            "-r",
+            "/rules.nix",
+            "-i",
+            "/key",
+            "--no-system-identities",
+            "check",
+            "secret1.age",
+            "secret2.age",
+        ])
+        .unwrap();
+        assert!(args.verbose);
+        assert_eq!(args.rules, "/rules.nix");
+        assert_eq!(args.identity, vec!["/key".to_string()]);
+        assert!(args.no_system_identities);
+        if let Some(Command::Check { secrets }) = args.command {
+            assert_eq!(
+                secrets,
+                vec!["secret1.age".to_string(), "secret2.age".to_string()]
+            );
+        } else {
+            panic!("Expected Check command");
+        }
+    }
+
+    // ===========================================
+    // COMPLETIONS COMMAND CLI TESTS (10+ tests)
+    // ===========================================
+
+    #[test]
+    fn test_completions_bash() {
+        let args = Args::try_parse_from(["agenix", "completions", "bash"]).unwrap();
+        if let Some(Command::Completions { shell }) = args.command {
+            assert_eq!(shell, Shell::Bash);
+        } else {
+            panic!("Expected Completions command");
+        }
+    }
+
+    #[test]
+    fn test_completions_zsh() {
+        let args = Args::try_parse_from(["agenix", "completions", "zsh"]).unwrap();
+        if let Some(Command::Completions { shell }) = args.command {
+            assert_eq!(shell, Shell::Zsh);
+        } else {
+            panic!("Expected Completions command");
+        }
+    }
+
+    #[test]
+    fn test_completions_fish() {
+        let args = Args::try_parse_from(["agenix", "completions", "fish"]).unwrap();
+        if let Some(Command::Completions { shell }) = args.command {
+            assert_eq!(shell, Shell::Fish);
+        } else {
+            panic!("Expected Completions command");
+        }
+    }
+
+    #[test]
+    fn test_completions_elvish() {
+        let args = Args::try_parse_from(["agenix", "completions", "elvish"]).unwrap();
+        if let Some(Command::Completions { shell }) = args.command {
+            assert_eq!(shell, Shell::Elvish);
+        } else {
+            panic!("Expected Completions command");
+        }
+    }
+
+    #[test]
+    fn test_completions_powershell() {
+        let args = Args::try_parse_from(["agenix", "completions", "powershell"]).unwrap();
+        if let Some(Command::Completions { shell }) = args.command {
+            assert_eq!(shell, Shell::PowerShell);
+        } else {
+            panic!("Expected Completions command");
+        }
+    }
+
+    #[test]
+    fn test_completions_invalid_shell() {
+        let result = Args::try_parse_from(["agenix", "completions", "invalidshell"]);
+        assert!(result.is_err(), "Should reject invalid shell name");
+    }
+
+    #[test]
+    fn test_completions_missing_shell() {
+        let result = Args::try_parse_from(["agenix", "completions"]);
+        assert!(result.is_err(), "Should require shell argument");
+    }
+
+    #[test]
+    fn test_completions_case_sensitive() {
+        // Shell names should be lowercase
+        let result = Args::try_parse_from(["agenix", "completions", "BASH"]);
+        assert!(result.is_err(), "Shell names should be case-sensitive");
+    }
+
+    #[test]
+    fn test_completions_with_rules_flag() {
+        // Global flags should work but are ignored for completions
+        let args =
+            Args::try_parse_from(["agenix", "-r", "/custom/rules.nix", "completions", "bash"])
+                .unwrap();
+        assert_eq!(args.rules, "/custom/rules.nix");
+        if let Some(Command::Completions { shell }) = args.command {
+            assert_eq!(shell, Shell::Bash);
+        } else {
+            panic!("Expected Completions command");
+        }
+    }
+
+    #[test]
+    fn test_completions_with_verbose() {
+        let args = Args::try_parse_from(["agenix", "-v", "completions", "zsh"]).unwrap();
+        assert!(args.verbose);
+        if let Some(Command::Completions { shell }) = args.command {
+            assert_eq!(shell, Shell::Zsh);
+        } else {
+            panic!("Expected Completions command");
+        }
+    }
+
+    #[test]
+    fn test_completions_extra_args_rejected() {
+        // Completions should not accept extra arguments after the shell
+        let result = Args::try_parse_from(["agenix", "completions", "bash", "extra-arg"]);
+        assert!(result.is_err(), "Should reject extra arguments");
+    }
 }

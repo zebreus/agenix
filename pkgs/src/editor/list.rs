@@ -283,6 +283,10 @@ mod tests {
     use std::io::Write;
     use tempfile::{NamedTempFile, tempdir};
 
+    // ===========================================
+    // LIST COMMAND TESTS (10+ tests)
+    // ===========================================
+
     #[test]
     fn test_list_empty_rules() {
         let rules_content = "{ }";
@@ -340,6 +344,216 @@ mod tests {
         let result = list_secrets(temp_rules.path().to_str().unwrap(), true, &[], false);
         assert!(result.is_ok());
     }
+
+    #[test]
+    fn test_list_nonexistent_rules_file() {
+        let result = list_secrets("/nonexistent/path/secrets.nix", false, &[], false);
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("nonexistent") || err_msg.contains("No such file"),
+            "Error should mention the file doesn't exist: {}",
+            err_msg
+        );
+    }
+
+    #[test]
+    fn test_list_invalid_nix_syntax() {
+        let mut temp_file = NamedTempFile::new().unwrap();
+        writeln!(temp_file, "{{ invalid nix syntax !!!").unwrap();
+        temp_file.flush().unwrap();
+
+        let result = list_secrets(temp_file.path().to_str().unwrap(), false, &[], false);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_list_with_generator() {
+        let temp_dir = tempdir().unwrap();
+        let rules_content = format!(
+            r#"
+{{
+  "{}/generated.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {{ }}: "test-secret";
+  }};
+}}
+"#,
+            temp_dir.path().to_str().unwrap()
+        );
+        let mut temp_rules = NamedTempFile::new().unwrap();
+        writeln!(temp_rules, "{}", rules_content).unwrap();
+        temp_rules.flush().unwrap();
+
+        let result = list_secrets(temp_rules.path().to_str().unwrap(), true, &[], false);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_list_with_multiple_recipients() {
+        let temp_dir = tempdir().unwrap();
+        let rules_content = format!(
+            r#"
+{{
+  "{}/multi-recipient.age" = {{
+    publicKeys = [ 
+      "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p"
+      "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH"
+    ];
+  }};
+}}
+"#,
+            temp_dir.path().to_str().unwrap()
+        );
+        let mut temp_rules = NamedTempFile::new().unwrap();
+        writeln!(temp_rules, "{}", rules_content).unwrap();
+        temp_rules.flush().unwrap();
+
+        let result = list_secrets(temp_rules.path().to_str().unwrap(), true, &[], false);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_list_with_armor_true() {
+        let temp_dir = tempdir().unwrap();
+        let rules_content = format!(
+            r#"
+{{
+  "{}/armored.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    armor = true;
+  }};
+}}
+"#,
+            temp_dir.path().to_str().unwrap()
+        );
+        let mut temp_rules = NamedTempFile::new().unwrap();
+        writeln!(temp_rules, "{}", rules_content).unwrap();
+        temp_rules.flush().unwrap();
+
+        let result = list_secrets(temp_rules.path().to_str().unwrap(), true, &[], false);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_list_with_armor_false() {
+        let temp_dir = tempdir().unwrap();
+        let rules_content = format!(
+            r#"
+{{
+  "{}/not-armored.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    armor = false;
+  }};
+}}
+"#,
+            temp_dir.path().to_str().unwrap()
+        );
+        let mut temp_rules = NamedTempFile::new().unwrap();
+        writeln!(temp_rules, "{}", rules_content).unwrap();
+        temp_rules.flush().unwrap();
+
+        let result = list_secrets(temp_rules.path().to_str().unwrap(), true, &[], false);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_list_with_pub_file_present() {
+        let temp_dir = tempdir().unwrap();
+        let rules_content = format!(
+            r#"
+{{
+  "{}/with-pub.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+  }};
+}}
+"#,
+            temp_dir.path().to_str().unwrap()
+        );
+        let mut temp_rules = NamedTempFile::new().unwrap();
+        writeln!(temp_rules, "{}", rules_content).unwrap();
+        temp_rules.flush().unwrap();
+
+        // Create the .pub file
+        let pub_path = temp_dir.path().join("with-pub.age.pub");
+        fs::write(&pub_path, "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPublic").unwrap();
+
+        let result = list_secrets(temp_rules.path().to_str().unwrap(), true, &[], false);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_list_many_secrets() {
+        let temp_dir = tempdir().unwrap();
+        let mut rules_content = String::from("{\n");
+        for i in 0..20 {
+            rules_content.push_str(&format!(
+                "  \"{}/secret{}.age\" = {{ publicKeys = [ \"age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p\" ]; }};\n",
+                temp_dir.path().to_str().unwrap(),
+                i
+            ));
+        }
+        rules_content.push_str("}\n");
+
+        let mut temp_rules = NamedTempFile::new().unwrap();
+        writeln!(temp_rules, "{}", rules_content).unwrap();
+        temp_rules.flush().unwrap();
+
+        let result = list_secrets(temp_rules.path().to_str().unwrap(), false, &[], false);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_list_with_missing_file() {
+        let temp_dir = tempdir().unwrap();
+        let rules_content = format!(
+            r#"
+{{
+  "{}/missing.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+  }};
+}}
+"#,
+            temp_dir.path().to_str().unwrap()
+        );
+        let mut temp_rules = NamedTempFile::new().unwrap();
+        writeln!(temp_rules, "{}", rules_content).unwrap();
+        temp_rules.flush().unwrap();
+
+        // Don't create the file - it's missing
+        let result = list_secrets(temp_rules.path().to_str().unwrap(), false, &[], false);
+        assert!(result.is_ok()); // List succeeds but shows missing status
+    }
+
+    #[test]
+    fn test_list_with_corrupted_secret() {
+        let temp_dir = tempdir().unwrap();
+        let rules_content = format!(
+            r#"
+{{
+  "{}/corrupted.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+  }};
+}}
+"#,
+            temp_dir.path().to_str().unwrap()
+        );
+        let mut temp_rules = NamedTempFile::new().unwrap();
+        writeln!(temp_rules, "{}", rules_content).unwrap();
+        temp_rules.flush().unwrap();
+
+        // Create a corrupted (invalid) secret file
+        let secret_path = temp_dir.path().join("corrupted.age");
+        fs::write(&secret_path, "not-valid-age-format").unwrap();
+
+        // List should succeed but show cannot decrypt status
+        let result = list_secrets(temp_rules.path().to_str().unwrap(), false, &[], false);
+        assert!(result.is_ok());
+    }
+
+    // ===========================================
+    // CHECK COMMAND TESTS (10+ tests)
+    // ===========================================
 
     #[test]
     fn test_check_nonexistent_secrets() {
@@ -422,6 +636,234 @@ mod tests {
     }
 
     #[test]
+    fn test_check_nonexistent_rules_file() {
+        let result = check_secrets("/nonexistent/path/secrets.nix", &[], &[], false);
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("nonexistent") || err_msg.contains("No such file"),
+            "Error should mention the file doesn't exist: {}",
+            err_msg
+        );
+    }
+
+    #[test]
+    fn test_check_empty_rules() {
+        let rules_content = "{ }";
+        let mut temp_file = NamedTempFile::new().unwrap();
+        writeln!(temp_file, "{}", rules_content).unwrap();
+        temp_file.flush().unwrap();
+
+        let result = check_secrets(temp_file.path().to_str().unwrap(), &[], &[], false);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_check_invalid_nix_syntax() {
+        let mut temp_file = NamedTempFile::new().unwrap();
+        writeln!(temp_file, "{{ invalid nix syntax !!!").unwrap();
+        temp_file.flush().unwrap();
+
+        let result = check_secrets(temp_file.path().to_str().unwrap(), &[], &[], false);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_check_multiple_invalid_secrets() {
+        let temp_dir = tempdir().unwrap();
+        let rules_content = format!(
+            r#"
+{{
+  "{}/invalid1.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+  }};
+  "{}/invalid2.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+  }};
+}}
+"#,
+            temp_dir.path().to_str().unwrap(),
+            temp_dir.path().to_str().unwrap()
+        );
+        let mut temp_rules = NamedTempFile::new().unwrap();
+        writeln!(temp_rules, "{}", rules_content).unwrap();
+        temp_rules.flush().unwrap();
+
+        // Create two invalid secret files
+        let secret1_path = temp_dir.path().join("invalid1.age");
+        let secret2_path = temp_dir.path().join("invalid2.age");
+        fs::write(&secret1_path, "invalid-content-1").unwrap();
+        fs::write(&secret2_path, "invalid-content-2").unwrap();
+
+        let result = check_secrets(temp_rules.path().to_str().unwrap(), &[], &[], false);
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("2 of 2"),
+            "Error should report both failures: {}",
+            err_msg
+        );
+    }
+
+    #[test]
+    fn test_check_nonexistent_secret_filter() {
+        let temp_dir = tempdir().unwrap();
+        let rules_content = format!(
+            r#"
+{{
+  "{}/existing.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+  }};
+}}
+"#,
+            temp_dir.path().to_str().unwrap()
+        );
+        let mut temp_rules = NamedTempFile::new().unwrap();
+        writeln!(temp_rules, "{}", rules_content).unwrap();
+        temp_rules.flush().unwrap();
+
+        // Try to check a secret that doesn't exist in rules
+        let result = check_secrets(
+            temp_rules.path().to_str().unwrap(),
+            &["nonexistent".to_string()],
+            &[],
+            false,
+        );
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("No matching secrets"),
+            "Error should mention no matching secrets: {}",
+            err_msg
+        );
+    }
+
+    #[test]
+    fn test_check_with_age_suffix_in_filter() {
+        let temp_dir = tempdir().unwrap();
+        let rules_content = format!(
+            r#"
+{{
+  "{}/secret.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+  }};
+}}
+"#,
+            temp_dir.path().to_str().unwrap()
+        );
+        let mut temp_rules = NamedTempFile::new().unwrap();
+        writeln!(temp_rules, "{}", rules_content).unwrap();
+        temp_rules.flush().unwrap();
+
+        // Check using .age suffix
+        let result = check_secrets(
+            temp_rules.path().to_str().unwrap(),
+            &["secret.age".to_string()],
+            &[],
+            false,
+        );
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_check_without_age_suffix_in_filter() {
+        let temp_dir = tempdir().unwrap();
+        let rules_content = format!(
+            r#"
+{{
+  "{}/secret.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+  }};
+}}
+"#,
+            temp_dir.path().to_str().unwrap()
+        );
+        let mut temp_rules = NamedTempFile::new().unwrap();
+        writeln!(temp_rules, "{}", rules_content).unwrap();
+        temp_rules.flush().unwrap();
+
+        // Check without .age suffix
+        let result = check_secrets(
+            temp_rules.path().to_str().unwrap(),
+            &["secret".to_string()],
+            &[],
+            false,
+        );
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_check_multiple_specific_secrets() {
+        let temp_dir = tempdir().unwrap();
+        let rules_content = format!(
+            r#"
+{{
+  "{}/secret1.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+  }};
+  "{}/secret2.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+  }};
+  "{}/secret3.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+  }};
+}}
+"#,
+            temp_dir.path().to_str().unwrap(),
+            temp_dir.path().to_str().unwrap(),
+            temp_dir.path().to_str().unwrap()
+        );
+        let mut temp_rules = NamedTempFile::new().unwrap();
+        writeln!(temp_rules, "{}", rules_content).unwrap();
+        temp_rules.flush().unwrap();
+
+        // Check only secret1 and secret3
+        let result = check_secrets(
+            temp_rules.path().to_str().unwrap(),
+            &["secret1".to_string(), "secret3".to_string()],
+            &[],
+            false,
+        );
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_check_error_message_includes_file_name() {
+        let temp_dir = tempdir().unwrap();
+        let rules_content = format!(
+            r#"
+{{
+  "{}/bad-secret.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+  }};
+}}
+"#,
+            temp_dir.path().to_str().unwrap()
+        );
+        let mut temp_rules = NamedTempFile::new().unwrap();
+        writeln!(temp_rules, "{}", rules_content).unwrap();
+        temp_rules.flush().unwrap();
+
+        // Create an invalid secret file
+        let secret_path = temp_dir.path().join("bad-secret.age");
+        fs::write(&secret_path, "invalid").unwrap();
+
+        let result = check_secrets(temp_rules.path().to_str().unwrap(), &[], &[], false);
+        assert!(result.is_err());
+        // The error should include information about failed secrets
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("1 of 1") || err_msg.contains("Verification failed"),
+            "Error should provide count: {}",
+            err_msg
+        );
+    }
+
+    // ===========================================
+    // SECRET STATUS TESTS
+    // ===========================================
+
+    #[test]
     fn test_secret_status_display() {
         assert_eq!(format!("{}", SecretStatus::Ok), "ok");
         assert_eq!(format!("{}", SecretStatus::Missing), "missing");
@@ -429,5 +871,43 @@ mod tests {
             format!("{}", SecretStatus::CannotDecrypt("error".to_string())),
             "cannot decrypt"
         );
+    }
+
+    #[test]
+    fn test_secret_status_equality() {
+        assert_eq!(SecretStatus::Ok, SecretStatus::Ok);
+        assert_eq!(SecretStatus::Missing, SecretStatus::Missing);
+        assert_eq!(
+            SecretStatus::CannotDecrypt("e1".to_string()),
+            SecretStatus::CannotDecrypt("e1".to_string())
+        );
+        assert_ne!(SecretStatus::Ok, SecretStatus::Missing);
+        assert_ne!(
+            SecretStatus::CannotDecrypt("e1".to_string()),
+            SecretStatus::CannotDecrypt("e2".to_string())
+        );
+    }
+
+    #[test]
+    fn test_secret_status_clone() {
+        let status = SecretStatus::CannotDecrypt("test error".to_string());
+        let cloned = status.clone();
+        assert_eq!(status, cloned);
+    }
+
+    #[test]
+    fn test_secret_status_debug() {
+        let status = SecretStatus::Ok;
+        let debug_str = format!("{:?}", status);
+        assert!(debug_str.contains("Ok"));
+
+        let status = SecretStatus::Missing;
+        let debug_str = format!("{:?}", status);
+        assert!(debug_str.contains("Missing"));
+
+        let status = SecretStatus::CannotDecrypt("error msg".to_string());
+        let debug_str = format!("{:?}", status);
+        assert!(debug_str.contains("CannotDecrypt"));
+        assert!(debug_str.contains("error msg"));
     }
 }
