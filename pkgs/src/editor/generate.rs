@@ -189,8 +189,10 @@ fn process_single_secret(
         return Ok(ProcessResult::AlreadyProcessed);
     }
 
-    // Get dependencies and check if they're satisfied
+    // Get dependencies
     let deps = get_secret_dependencies(ctx.rules_path(), file).unwrap_or_default();
+
+    // Check if all dependencies are satisfied
     let (all_satisfied, missing) = resolver.are_all_dependencies_satisfied(&deps)?;
 
     if !all_satisfied && !missing.is_empty() {
@@ -205,7 +207,7 @@ fn process_single_secret(
         return Ok(ProcessResult::Deferred);
     }
 
-    // Generate the secret
+    // Build dependency context and generate the secret
     let context = resolver.build_dependency_context(&deps)?;
     let output = if !deps.is_empty() {
         generate_secret_with_public_and_context(ctx.rules_path(), file, &context)?
