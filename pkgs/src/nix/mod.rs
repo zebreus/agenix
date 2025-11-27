@@ -8,10 +8,7 @@ pub mod eval;
 pub mod keypair;
 
 use anyhow::{Context, Result};
-use eval::{
-    eval_nix_expression, value_to_bool, value_to_optional_string, value_to_string,
-    value_to_string_array,
-};
+use eval::{eval_nix_expression, value_to_bool, value_to_string, value_to_string_array};
 use snix_eval::NixString;
 use snix_eval::Value;
 use std::env::current_dir;
@@ -28,11 +25,7 @@ pub(crate) fn resolve_public_key(rules_dir: &Path, key_str: &str) -> Result<Stri
 
     // Try to resolve as a secret reference
     // Remove .age suffix if present to get the base secret name
-    let secret_name = if key_str.ends_with(".age") {
-        &key_str[..key_str.len() - 4]
-    } else {
-        key_str
-    };
+    let secret_name = key_str.strip_suffix(".age").unwrap_or(key_str);
 
     // Try both with and without .age suffix for the pub file
     let pub_file_paths = [
@@ -99,18 +92,6 @@ pub fn should_armor(rules_path: &str, file: &str) -> Result<bool> {
 pub struct GeneratorOutput {
     pub secret: String,
     pub public: Option<String>,
-}
-
-/// Check if a file should be armored (ASCII-armored output)
-pub fn generate_secret(rules_path: &str, file: &str) -> Result<Option<String>> {
-    let nix_expr = format!(
-        "(let rules = import {rules_path}; in if builtins.hasAttr \"generator\" rules.\"{file}\" then (rules.\"{file}\".generator {{}}) else null)",
-    );
-
-    let current_dir = current_dir()?;
-    let output = eval_nix_expression(nix_expr.as_str(), &current_dir)?;
-
-    value_to_optional_string(output)
 }
 
 /// Get the generator output for a file, handling both string and attrset outputs
@@ -1386,11 +1367,14 @@ mod tests {
         "#;
         let temp_file = create_test_rules_file(rules_content)?;
 
-        let result = generate_secret(temp_file.path().to_str().unwrap(), "secret1.age")?;
+        let result =
+            generate_secret_with_public(temp_file.path().to_str().unwrap(), "secret1.age")?;
 
-        assert_eq!(result, Some("generated-secret".to_string()));
-        let result2 = generate_secret(temp_file.path().to_str().unwrap(), "secret2.age")?;
-        assert_eq!(result2, None);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().secret, "generated-secret");
+        let result2 =
+            generate_secret_with_public(temp_file.path().to_str().unwrap(), "secret2.age")?;
+        assert!(result2.is_none());
         // Note: Nix attribute names might not preserve order
         Ok(())
     }
@@ -1407,11 +1391,13 @@ mod tests {
         "#;
         let temp_file = create_test_rules_file(rules_content)?;
 
-        let result = generate_secret(temp_file.path().to_str().unwrap(), "secret1.age")?;
-        let result1 = result.unwrap();
+        let result =
+            generate_secret_with_public(temp_file.path().to_str().unwrap(), "secret1.age")?;
+        let result1 = result.unwrap().secret;
         assert_eq!(result1.len(), 16);
-        let result = generate_secret(temp_file.path().to_str().unwrap(), "secret1.age")?;
-        let result2 = result.unwrap();
+        let result =
+            generate_secret_with_public(temp_file.path().to_str().unwrap(), "secret1.age")?;
+        let result2 = result.unwrap().secret;
         assert_eq!(result2.len(), 16);
         assert_ne!(result1, result2); // Should be different random strings
         Ok(())

@@ -33,26 +33,6 @@ impl<'a> DependencyResolver<'a> {
         }
     }
 
-    /// Get a reference to the generated secrets map.
-    pub fn generated_secrets(&self) -> &HashMap<String, GeneratorOutput> {
-        &self.generated_secrets
-    }
-
-    /// Get a mutable reference to the generated secrets map.
-    pub fn generated_secrets_mut(&mut self) -> &mut HashMap<String, GeneratorOutput> {
-        &mut self.generated_secrets
-    }
-
-    /// Get a reference to the processed set.
-    pub fn processed(&self) -> &HashSet<String> {
-        &self.processed
-    }
-
-    /// Get a mutable reference to the processed set.
-    pub fn processed_mut(&mut self) -> &mut HashSet<String> {
-        &mut self.processed
-    }
-
     /// Check if a file has been processed.
     pub fn is_processed(&self, file: &str) -> bool {
         self.processed.contains(file)
@@ -82,15 +62,14 @@ impl<'a> DependencyResolver<'a> {
     /// Get public content for a secret from either generated secrets or .pub files.
     pub fn get_public_content(&self, file: &str) -> Result<Option<String>> {
         let secret_name = SecretName::new(file);
-        let normalized_name = secret_name.with_age_suffix();
         let basename = secret_name.basename();
 
         // Check if we just generated it - search by basename
         for (key, output) in self.generated_secrets.iter() {
-            if SecretName::new(key).basename() == basename {
-                if let Some(ref public) = output.public {
-                    return Ok(Some(public.clone()));
-                }
+            if SecretName::new(key).basename() == basename
+                && let Some(ref public) = output.public
+            {
+                return Ok(Some(public.clone()));
             }
         }
 
@@ -221,7 +200,7 @@ impl<'a> DependencyResolver<'a> {
             }
 
             // Add secret content if available (from generated_secrets)
-            if let Some(secret) = self.find_generated_secret(&dep_basename) {
+            if let Some(secret) = self.find_generated_secret(dep_basename) {
                 secrets_parts.push(format!(
                     r#""{}" = "{}";"#,
                     dep_key,

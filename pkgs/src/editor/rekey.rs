@@ -95,18 +95,7 @@ fn report_rekey_results(failed_files: &[(String, String)], success_count: usize)
     }
 }
 
-/// Validate that requested secrets exist in the rules file.
-///
-/// Returns an error if secrets are specified but none match.
-fn validate_secrets_exist(filtered_files: &[String], secrets: &[String]) -> Result<()> {
-    if filtered_files.is_empty() && !secrets.is_empty() {
-        return Err(anyhow!(
-            "No matching secrets found in rules file for: {}",
-            secrets.join(", ")
-        ));
-    }
-    Ok(())
-}
+use super::validate_secrets_exist;
 
 /// Filter files based on specified secrets.
 ///
