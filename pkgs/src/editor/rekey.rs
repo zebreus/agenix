@@ -165,7 +165,7 @@ pub fn rekey_files(
         if let Err(e) = edit_file(
             rules_path,
             file,
-            ":",
+            Some(":"),
             identities,
             no_system_identities,
             false,

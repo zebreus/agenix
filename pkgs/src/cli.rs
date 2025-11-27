@@ -5,7 +5,7 @@
 use clap::{CommandFactory, Parser, Subcommand};
 use clap_complete::{Generator, Shell};
 use std::env;
-use std::io;
+use std::io::{self, Write};
 
 #[derive(Parser, Debug)]
 #[command(
@@ -25,9 +25,13 @@ pub struct Args {
     )]
     pub rules: String,
 
-    /// Verbose output
-    #[arg(short, long, global = true)]
+    /// Verbose output (show detailed information about operations)
+    #[arg(short, long, global = true, conflicts_with = "quiet")]
     pub verbose: bool,
+
+    /// Quiet output (suppress non-essential messages)
+    #[arg(short, long, global = true, conflicts_with = "verbose")]
+    pub quiet: bool,
 
     /// Identity (private key) to use when decrypting. Can be specified multiple times.
     /// Identities are tried in order: explicitly specified identities first, then default system identities.
@@ -51,9 +55,9 @@ pub enum Command {
         #[arg(value_name = "FILE", allow_hyphen_values = true)]
         file: String,
 
-        /// Editor command to use (defaults to $EDITOR or vi)
-        #[arg(short = 'e', long, env = "EDITOR", value_name = "COMMAND", default_value_t = String::from("vi"))]
-        editor: String,
+        /// Editor command to use (defaults to $EDITOR, or stdin when not a TTY, or vi)
+        #[arg(short = 'e', long, env = "EDITOR", value_name = "COMMAND")]
+        editor: Option<String>,
 
         /// Open empty editor if decryption fails (useful for recreating secrets)
         #[arg(short, long)]
@@ -141,13 +145,22 @@ pub enum Command {
 }
 
 /// Print shell completions to stdout
+///
+/// This function handles broken pipe errors gracefully, which can occur
+/// when the output is piped to another command (e.g., `agenix completions fish | head`).
 pub fn print_completions<G: Generator>(generator: G, cmd: &mut clap::Command) {
-    clap_complete::generate(
-        generator,
-        cmd,
-        cmd.get_name().to_string(),
-        &mut io::stdout(),
-    );
+    let mut output = Vec::new();
+    clap_complete::generate(generator, cmd, cmd.get_name().to_string(), &mut output);
+
+    // Write to stdout, handling broken pipe gracefully
+    if let Err(e) = io::stdout().write_all(&output) {
+        // BrokenPipe is expected when piping to commands like `head`
+        if e.kind() != io::ErrorKind::BrokenPipe {
+            eprintln!("Error writing completions: {e}");
+        }
+    }
+    // Flush stdout, ignoring broken pipe errors
+    let _ = io::stdout().flush();
 }
 
 /// Get a mutable reference to the command for completions
@@ -315,7 +328,7 @@ mod tests {
             let args = Args::try_parse_from(["agenix", "edit", "test.age"]).unwrap();
             if let Some(Command::Edit { file, editor, .. }) = args.command {
                 assert_eq!(file, "test.age".to_string());
-                assert_eq!(editor, "vi");
+                assert_eq!(editor, None);
             } else {
                 panic!("Expected Edit command");
             }
@@ -327,7 +340,7 @@ mod tests {
         with_env_var("EDITOR", Some("nano"), || {
             let args = Args::try_parse_from(["agenix", "edit", "test.age"]).unwrap();
             if let Some(Command::Edit { editor, .. }) = args.command {
-                assert_eq!(editor, "nano");
+                assert_eq!(editor, Some("nano".to_string()));
             } else {
                 panic!("Expected Edit command");
             }
@@ -340,7 +353,7 @@ mod tests {
             let args =
                 Args::try_parse_from(["agenix", "edit", "--editor", "vim", "test.age"]).unwrap();
             if let Some(Command::Edit { editor, .. }) = args.command {
-                assert_eq!(editor, "vim");
+                assert_eq!(editor, Some("vim".to_string()));
             } else {
                 panic!("Expected Edit command");
             }
@@ -353,7 +366,7 @@ mod tests {
             let args =
                 Args::try_parse_from(["agenix", "edit", "--editor", "micro", "test.age"]).unwrap();
             if let Some(Command::Edit { editor, .. }) = args.command {
-                assert_eq!(editor, "micro");
+                assert_eq!(editor, Some("micro".to_string()));
             } else {
                 panic!("Expected Edit command");
             }
@@ -531,7 +544,7 @@ mod tests {
     fn test_edit_editor_short_flag() {
         let args = Args::try_parse_from(["agenix", "edit", "-e", "nano", "test.age"]).unwrap();
         if let Some(Command::Edit { editor, .. }) = args.command {
-            assert_eq!(editor, "nano");
+            assert_eq!(editor, Some("nano".to_string()));
         } else {
             panic!("Expected Edit command");
         }
@@ -1245,5 +1258,122 @@ mod tests {
         // Completions should not accept extra arguments after the shell
         let result = Args::try_parse_from(["agenix", "completions", "bash", "extra-arg"]);
         assert!(result.is_err(), "Should reject extra arguments");
+    }
+
+    // ===========================================
+    // QUIET FLAG TESTS
+    // ===========================================
+
+    #[test]
+    fn test_quiet_flag() {
+        let args = Args::try_parse_from(["agenix", "-q", "list"]).unwrap();
+        assert!(args.quiet);
+        assert!(!args.verbose);
+    }
+
+    #[test]
+    fn test_quiet_long_flag() {
+        let args = Args::try_parse_from(["agenix", "--quiet", "list"]).unwrap();
+        assert!(args.quiet);
+        assert!(!args.verbose);
+    }
+
+    #[test]
+    fn test_quiet_after_subcommand() {
+        let args = Args::try_parse_from(["agenix", "list", "-q"]).unwrap();
+        assert!(args.quiet);
+        assert!(matches!(args.command, Some(Command::List { .. })));
+    }
+
+    #[test]
+    fn test_quiet_with_decrypt() {
+        let args = Args::try_parse_from(["agenix", "-q", "decrypt", "secret.age"]).unwrap();
+        assert!(args.quiet);
+        if let Some(Command::Decrypt { file, .. }) = args.command {
+            assert_eq!(file, "secret.age");
+        } else {
+            panic!("Expected Decrypt command");
+        }
+    }
+
+    #[test]
+    fn test_quiet_with_check() {
+        let args = Args::try_parse_from(["agenix", "-q", "check"]).unwrap();
+        assert!(args.quiet);
+        assert!(matches!(args.command, Some(Command::Check { .. })));
+    }
+
+    #[test]
+    fn test_quiet_verbose_conflict() {
+        // --quiet and --verbose should conflict
+        let result = Args::try_parse_from(["agenix", "-q", "-v", "list"]);
+        assert!(result.is_err(), "Should conflict: quiet and verbose");
+    }
+
+    #[test]
+    fn test_verbose_quiet_conflict() {
+        // Order shouldn't matter
+        let result = Args::try_parse_from(["agenix", "-v", "-q", "list"]);
+        assert!(result.is_err(), "Should conflict: verbose and quiet");
+    }
+
+    #[test]
+    fn test_quiet_with_all_global_flags() {
+        let args = Args::try_parse_from([
+            "agenix",
+            "-q",
+            "-r",
+            "/rules.nix",
+            "-i",
+            "/key",
+            "--no-system-identities",
+            "list",
+        ])
+        .unwrap();
+        assert!(args.quiet);
+        assert!(!args.verbose);
+        assert_eq!(args.rules, "/rules.nix");
+        assert_eq!(args.identity, vec!["/key".to_string()]);
+        assert!(args.no_system_identities);
+    }
+
+    // ===========================================
+    // EDITOR OPTIONAL TESTS
+    // ===========================================
+
+    #[test]
+    fn test_edit_no_editor_when_env_not_set() {
+        with_env_var("EDITOR", None, || {
+            let args = Args::try_parse_from(["agenix", "edit", "test.age"]).unwrap();
+            if let Some(Command::Edit { editor, .. }) = args.command {
+                assert_eq!(editor, None);
+            } else {
+                panic!("Expected Edit command");
+            }
+        });
+    }
+
+    #[test]
+    fn test_edit_explicit_editor_overrides_none() {
+        with_env_var("EDITOR", None, || {
+            let args = Args::try_parse_from(["agenix", "edit", "-e", "emacs", "test.age"]).unwrap();
+            if let Some(Command::Edit { editor, .. }) = args.command {
+                assert_eq!(editor, Some("emacs".to_string()));
+            } else {
+                panic!("Expected Edit command");
+            }
+        });
+    }
+
+    #[test]
+    fn test_edit_env_editor_is_used() {
+        with_env_var("EDITOR", Some("helix"), || {
+            let args = Args::try_parse_from(["agenix", "edit", "test.age"]).unwrap();
+            if let Some(Command::Edit { editor, .. }) = args.command {
+                assert_eq!(editor, Some("helix".to_string()));
+            } else {
+                panic!("Expected Edit command");
+            }
+        });
     }
 }

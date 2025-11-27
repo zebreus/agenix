@@ -5,6 +5,70 @@ mod nix;
 
 use anyhow::{Context, Result};
 use clap::Parser;
+use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+/// Global verbosity flag - set via command line
+static VERBOSE: AtomicBool = AtomicBool::new(false);
+/// Global quiet flag - set via command line
+static QUIET: AtomicBool = AtomicBool::new(false);
+
+/// Check if verbose output is enabled
+pub fn is_verbose() -> bool {
+    VERBOSE.load(Ordering::Relaxed)
+}
+
+/// Check if quiet mode is enabled
+pub fn is_quiet() -> bool {
+    QUIET.load(Ordering::Relaxed)
+}
+
+/// Print a message if verbose mode is enabled
+#[macro_export]
+macro_rules! verbose {
+    ($($arg:tt)*) => {
+        if $crate::is_verbose() {
+            eprintln!($($arg)*);
+        }
+    };
+}
+
+/// Print a message if quiet mode is NOT enabled
+#[macro_export]
+macro_rules! info {
+    ($($arg:tt)*) => {
+        if !$crate::is_quiet() {
+            eprintln!($($arg)*);
+        }
+    };
+}
+
+/// Normalize a rules path for use in Nix expressions.
+///
+/// This ensures that relative paths without a `.` or `/` prefix are properly
+/// interpreted as file paths rather than Nix variable names.
+///
+/// # Examples
+/// - `"secrets.nix"` -> `"./secrets.nix"`
+/// - `"./secrets.nix"` -> `"./secrets.nix"` (unchanged)
+/// - `"/absolute/path.nix"` -> `"/absolute/path.nix"` (unchanged)
+/// - `"../parent/secrets.nix"` -> `"../parent/secrets.nix"` (unchanged)
+fn normalize_rules_path(rules_path: &str) -> String {
+    let path = Path::new(rules_path);
+
+    // If it's an absolute path, return as-is
+    if path.is_absolute() {
+        return rules_path.to_string();
+    }
+
+    // If it already starts with ./ or ../, return as-is
+    if rules_path.starts_with("./") || rules_path.starts_with("../") {
+        return rules_path.to_string();
+    }
+
+    // Otherwise, prepend ./ to make it a relative path
+    format!("./{}", rules_path)
+}
 
 /// Parse CLI arguments and execute the requested action.
 ///
@@ -20,9 +84,24 @@ where
 {
     let args = cli::Args::parse_from(iter);
 
+    // Set global verbosity/quiet flags
+    VERBOSE.store(args.verbose, Ordering::Relaxed);
+    QUIET.store(args.quiet, Ordering::Relaxed);
+
+    // Normalize the rules path to ensure proper Nix import
+    let rules = normalize_rules_path(&args.rules);
+
+    verbose!("Using rules file: {}", rules);
+    if !args.identity.is_empty() {
+        verbose!("Using {} explicit identity file(s)", args.identity.len());
+    }
+    if args.no_system_identities {
+        verbose!("System identities disabled");
+    }
+
     match args.command {
         Some(cli::Command::Rekey { secrets, partial }) => editor::rekey_files(
-            &args.rules,
+            &rules,
             &secrets,
             &args.identity,
             args.no_system_identities,
@@ -34,10 +113,10 @@ where
             dry_run,
             no_dependencies,
             secrets,
-        }) => editor::generate_secrets(&args.rules, force, dry_run, !no_dependencies, &secrets)
+        }) => editor::generate_secrets(&rules, force, dry_run, !no_dependencies, &secrets)
             .context("Failed to generate secrets"),
         Some(cli::Command::Decrypt { file, output }) => editor::decrypt_file(
-            &args.rules,
+            &rules,
             &file,
             output.as_deref(),
             &args.identity,
@@ -49,36 +128,61 @@ where
             editor,
             force,
         }) => editor::edit_file(
-            &args.rules,
+            &rules,
             &file,
-            &editor,
+            editor.as_deref(),
             &args.identity,
             args.no_system_identities,
             force,
         )
         .with_context(|| format!("Failed to edit {file}")),
-        Some(cli::Command::Encrypt { file, force }) => {
-            editor::encrypt_file(&args.rules, &file, force)
-                .with_context(|| format!("Failed to encrypt {file}"))
+        Some(cli::Command::Encrypt { file, force }) => editor::encrypt_file(&rules, &file, force)
+            .with_context(|| format!("Failed to encrypt {file}")),
+        Some(cli::Command::List { detailed }) => {
+            editor::list_secrets(&rules, detailed, &args.identity, args.no_system_identities)
+                .context("Failed to list secrets")
         }
-        Some(cli::Command::List { detailed }) => editor::list_secrets(
-            &args.rules,
-            detailed,
-            &args.identity,
-            args.no_system_identities,
-        )
-        .context("Failed to list secrets"),
-        Some(cli::Command::Check { secrets }) => editor::check_secrets(
-            &args.rules,
-            &secrets,
-            &args.identity,
-            args.no_system_identities,
-        )
-        .context("Failed to check secrets"),
+        Some(cli::Command::Check { secrets }) => {
+            editor::check_secrets(&rules, &secrets, &args.identity, args.no_system_identities)
+                .context("Failed to check secrets")
+        }
         Some(cli::Command::Completions { shell }) => {
             cli::print_completions(shell, &mut cli::build_cli());
             Ok(())
         }
         None => Ok(()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_normalize_rules_path_relative() {
+        assert_eq!(normalize_rules_path("secrets.nix"), "./secrets.nix");
+        assert_eq!(normalize_rules_path("foo/bar.nix"), "./foo/bar.nix");
+    }
+
+    #[test]
+    fn test_normalize_rules_path_already_relative() {
+        assert_eq!(normalize_rules_path("./secrets.nix"), "./secrets.nix");
+        assert_eq!(normalize_rules_path("../secrets.nix"), "../secrets.nix");
+        assert_eq!(
+            normalize_rules_path("./subdir/secrets.nix"),
+            "./subdir/secrets.nix"
+        );
+    }
+
+    #[test]
+    fn test_normalize_rules_path_absolute() {
+        assert_eq!(
+            normalize_rules_path("/etc/agenix/secrets.nix"),
+            "/etc/agenix/secrets.nix"
+        );
+        assert_eq!(
+            normalize_rules_path("/home/user/secrets.nix"),
+            "/home/user/secrets.nix"
+        );
     }
 }
