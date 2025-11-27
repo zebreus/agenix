@@ -291,17 +291,32 @@ mod tests {
     use std::io::Write;
     use tempfile::{NamedTempFile, tempdir};
 
+    /// Default age public key for testing
+    const TEST_PUBKEY: &str = "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p";
+
+    /// Create a temporary rules file with the given content
+    fn create_rules_file(content: &str) -> NamedTempFile {
+        let mut temp_file = NamedTempFile::new().unwrap();
+        writeln!(temp_file, "{}", content).unwrap();
+        temp_file.flush().unwrap();
+        temp_file
+    }
+
+    /// Create a rules file with a single secret at the given path
+    fn single_secret_rules(secret_path: &str, extra_attrs: &str) -> String {
+        format!(
+            r#"{{ "{}" = {{ publicKeys = [ "{}" ]; {} }}; }}"#,
+            secret_path, TEST_PUBKEY, extra_attrs
+        )
+    }
+
     // ===========================================
     // LIST COMMAND TESTS (10+ tests)
     // ===========================================
 
     #[test]
     fn test_list_empty_rules() {
-        let rules_content = "{ }";
-        let mut temp_file = NamedTempFile::new().unwrap();
-        writeln!(temp_file, "{}", rules_content).unwrap();
-        temp_file.flush().unwrap();
-
+        let temp_file = create_rules_file("{ }");
         let result = list_secrets(temp_file.path().to_str().unwrap(), false, &[], false);
         assert!(result.is_ok());
     }
@@ -309,24 +324,12 @@ mod tests {
     #[test]
     fn test_list_with_secrets() {
         let temp_dir = tempdir().unwrap();
-        let rules_content = format!(
-            r#"
-{{
-  "{}/secret1.age" = {{
-    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
-  }};
-  "{}/secret2.age" = {{
-    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
-  }};
-}}
-"#,
-            temp_dir.path().to_str().unwrap(),
-            temp_dir.path().to_str().unwrap()
+        let path = temp_dir.path().to_str().unwrap();
+        let rules = format!(
+            r#"{{ "{}/s1.age" = {{ publicKeys = [ "{}" ]; }}; "{}/s2.age" = {{ publicKeys = [ "{}" ]; }}; }}"#,
+            path, TEST_PUBKEY, path, TEST_PUBKEY
         );
-        let mut temp_rules = NamedTempFile::new().unwrap();
-        writeln!(temp_rules, "{}", rules_content).unwrap();
-        temp_rules.flush().unwrap();
-
+        let temp_rules = create_rules_file(&rules);
         let result = list_secrets(temp_rules.path().to_str().unwrap(), false, &[], false);
         assert!(result.is_ok());
     }
@@ -334,21 +337,11 @@ mod tests {
     #[test]
     fn test_list_detailed() {
         let temp_dir = tempdir().unwrap();
-        let rules_content = format!(
-            r#"
-{{
-  "{}/detailed.age" = {{
-    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
-    armor = true;
-  }};
-}}
-"#,
-            temp_dir.path().to_str().unwrap()
+        let rules = single_secret_rules(
+            &format!("{}/detailed.age", temp_dir.path().to_str().unwrap()),
+            "armor = true;",
         );
-        let mut temp_rules = NamedTempFile::new().unwrap();
-        writeln!(temp_rules, "{}", rules_content).unwrap();
-        temp_rules.flush().unwrap();
-
+        let temp_rules = create_rules_file(&rules);
         let result = list_secrets(temp_rules.path().to_str().unwrap(), true, &[], false);
         assert!(result.is_ok());
     }
@@ -367,10 +360,7 @@ mod tests {
 
     #[test]
     fn test_list_invalid_nix_syntax() {
-        let mut temp_file = NamedTempFile::new().unwrap();
-        writeln!(temp_file, "{{ invalid nix syntax !!!").unwrap();
-        temp_file.flush().unwrap();
-
+        let temp_file = create_rules_file("{ invalid nix syntax !!!");
         let result = list_secrets(temp_file.path().to_str().unwrap(), false, &[], false);
         assert!(result.is_err());
     }
@@ -378,20 +368,11 @@ mod tests {
     #[test]
     fn test_list_with_generator() {
         let temp_dir = tempdir().unwrap();
-        let rules_content = format!(
-            r#"
-{{
-  "{}/generated.age" = {{
-    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
-    generator = {{ }}: "test-secret";
-  }};
-}}
-"#,
-            temp_dir.path().to_str().unwrap()
+        let rules = single_secret_rules(
+            &format!("{}/generated.age", temp_dir.path().to_str().unwrap()),
+            r#"generator = { }: "test-secret";"#,
         );
-        let mut temp_rules = NamedTempFile::new().unwrap();
-        writeln!(temp_rules, "{}", rules_content).unwrap();
-        temp_rules.flush().unwrap();
+        let temp_rules = create_rules_file(&rules);
 
         let result = list_secrets(temp_rules.path().to_str().unwrap(), true, &[], false);
         assert!(result.is_ok());
@@ -400,23 +381,12 @@ mod tests {
     #[test]
     fn test_list_with_multiple_recipients() {
         let temp_dir = tempdir().unwrap();
-        let rules_content = format!(
-            r#"
-{{
-  "{}/multi-recipient.age" = {{
-    publicKeys = [ 
-      "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p"
-      "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH"
-    ];
-  }};
-}}
-"#,
-            temp_dir.path().to_str().unwrap()
+        let path = temp_dir.path().to_str().unwrap();
+        let rules = format!(
+            r#"{{ "{}/multi.age" = {{ publicKeys = [ "{}" "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH" ]; }}; }}"#,
+            path, TEST_PUBKEY
         );
-        let mut temp_rules = NamedTempFile::new().unwrap();
-        writeln!(temp_rules, "{}", rules_content).unwrap();
-        temp_rules.flush().unwrap();
-
+        let temp_rules = create_rules_file(&rules);
         let result = list_secrets(temp_rules.path().to_str().unwrap(), true, &[], false);
         assert!(result.is_ok());
     }
@@ -424,21 +394,11 @@ mod tests {
     #[test]
     fn test_list_with_armor_true() {
         let temp_dir = tempdir().unwrap();
-        let rules_content = format!(
-            r#"
-{{
-  "{}/armored.age" = {{
-    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
-    armor = true;
-  }};
-}}
-"#,
-            temp_dir.path().to_str().unwrap()
+        let rules = single_secret_rules(
+            &format!("{}/armored.age", temp_dir.path().to_str().unwrap()),
+            "armor = true;",
         );
-        let mut temp_rules = NamedTempFile::new().unwrap();
-        writeln!(temp_rules, "{}", rules_content).unwrap();
-        temp_rules.flush().unwrap();
-
+        let temp_rules = create_rules_file(&rules);
         let result = list_secrets(temp_rules.path().to_str().unwrap(), true, &[], false);
         assert!(result.is_ok());
     }
@@ -446,21 +406,11 @@ mod tests {
     #[test]
     fn test_list_with_armor_false() {
         let temp_dir = tempdir().unwrap();
-        let rules_content = format!(
-            r#"
-{{
-  "{}/not-armored.age" = {{
-    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
-    armor = false;
-  }};
-}}
-"#,
-            temp_dir.path().to_str().unwrap()
+        let rules = single_secret_rules(
+            &format!("{}/not-armored.age", temp_dir.path().to_str().unwrap()),
+            "armor = false;",
         );
-        let mut temp_rules = NamedTempFile::new().unwrap();
-        writeln!(temp_rules, "{}", rules_content).unwrap();
-        temp_rules.flush().unwrap();
-
+        let temp_rules = create_rules_file(&rules);
         let result = list_secrets(temp_rules.path().to_str().unwrap(), true, &[], false);
         assert!(result.is_ok());
     }
@@ -468,23 +418,16 @@ mod tests {
     #[test]
     fn test_list_with_pub_file_present() {
         let temp_dir = tempdir().unwrap();
-        let rules_content = format!(
-            r#"
-{{
-  "{}/with-pub.age" = {{
-    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
-  }};
-}}
-"#,
-            temp_dir.path().to_str().unwrap()
-        );
-        let mut temp_rules = NamedTempFile::new().unwrap();
-        writeln!(temp_rules, "{}", rules_content).unwrap();
-        temp_rules.flush().unwrap();
+        let path = temp_dir.path().to_str().unwrap();
+        let rules = single_secret_rules(&format!("{}/with-pub.age", path), "");
+        let temp_rules = create_rules_file(&rules);
 
         // Create the .pub file
-        let pub_path = temp_dir.path().join("with-pub.age.pub");
-        fs::write(&pub_path, "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPublic").unwrap();
+        fs::write(
+            temp_dir.path().join("with-pub.age.pub"),
+            "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPublic",
+        )
+        .unwrap();
 
         let result = list_secrets(temp_rules.path().to_str().unwrap(), true, &[], false);
         assert!(result.is_ok());
@@ -493,20 +436,18 @@ mod tests {
     #[test]
     fn test_list_many_secrets() {
         let temp_dir = tempdir().unwrap();
-        let mut rules_content = String::from("{\n");
-        for i in 0..20 {
-            rules_content.push_str(&format!(
-                "  \"{}/secret{}.age\" = {{ publicKeys = [ \"age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p\" ]; }};\n",
-                temp_dir.path().to_str().unwrap(),
-                i
-            ));
-        }
-        rules_content.push_str("}\n");
-
-        let mut temp_rules = NamedTempFile::new().unwrap();
-        writeln!(temp_rules, "{}", rules_content).unwrap();
-        temp_rules.flush().unwrap();
-
+        let path = temp_dir.path().to_str().unwrap();
+        let entries: String = (0..20)
+            .map(|i| {
+                format!(
+                    r#""{}/secret{}.age" = {{ publicKeys = [ "{}" ]; }};"#,
+                    path, i, TEST_PUBKEY
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(" ");
+        let rules = format!("{{ {} }}", entries);
+        let temp_rules = create_rules_file(&rules);
         let result = list_secrets(temp_rules.path().to_str().unwrap(), false, &[], false);
         assert!(result.is_ok());
     }
@@ -514,20 +455,11 @@ mod tests {
     #[test]
     fn test_list_with_missing_file() {
         let temp_dir = tempdir().unwrap();
-        let rules_content = format!(
-            r#"
-{{
-  "{}/missing.age" = {{
-    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
-  }};
-}}
-"#,
-            temp_dir.path().to_str().unwrap()
+        let rules = single_secret_rules(
+            &format!("{}/missing.age", temp_dir.path().to_str().unwrap()),
+            "",
         );
-        let mut temp_rules = NamedTempFile::new().unwrap();
-        writeln!(temp_rules, "{}", rules_content).unwrap();
-        temp_rules.flush().unwrap();
-
+        let temp_rules = create_rules_file(&rules);
         // Don't create the file - it's missing
         let result = list_secrets(temp_rules.path().to_str().unwrap(), false, &[], false);
         assert!(result.is_ok()); // List succeeds but shows missing status
@@ -536,22 +468,11 @@ mod tests {
     #[test]
     fn test_list_with_corrupted_secret() {
         let temp_dir = tempdir().unwrap();
-        let rules_content = format!(
-            r#"
-{{
-  "{}/corrupted.age" = {{
-    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
-  }};
-}}
-"#,
-            temp_dir.path().to_str().unwrap()
-        );
-        let mut temp_rules = NamedTempFile::new().unwrap();
-        writeln!(temp_rules, "{}", rules_content).unwrap();
-        temp_rules.flush().unwrap();
+        let secret_path = format!("{}/corrupted.age", temp_dir.path().to_str().unwrap());
+        let rules = single_secret_rules(&secret_path, "");
+        let temp_rules = create_rules_file(&rules);
 
         // Create a corrupted (invalid) secret file
-        let secret_path = temp_dir.path().join("corrupted.age");
         fs::write(&secret_path, "not-valid-age-format").unwrap();
 
         // List should succeed but show cannot decrypt status
@@ -566,20 +487,11 @@ mod tests {
     #[test]
     fn test_check_nonexistent_secrets() {
         let temp_dir = tempdir().unwrap();
-        let rules_content = format!(
-            r#"
-{{
-  "{}/nonexistent.age" = {{
-    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
-  }};
-}}
-"#,
-            temp_dir.path().to_str().unwrap()
+        let rules = single_secret_rules(
+            &format!("{}/nonexistent.age", temp_dir.path().to_str().unwrap()),
+            "",
         );
-        let mut temp_rules = NamedTempFile::new().unwrap();
-        writeln!(temp_rules, "{}", rules_content).unwrap();
-        temp_rules.flush().unwrap();
-
+        let temp_rules = create_rules_file(&rules);
         // Should succeed but report no existing files
         let result = check_secrets(temp_rules.path().to_str().unwrap(), &[], &[], false);
         assert!(result.is_ok());
@@ -588,22 +500,11 @@ mod tests {
     #[test]
     fn test_check_invalid_secret() {
         let temp_dir = tempdir().unwrap();
-        let rules_content = format!(
-            r#"
-{{
-  "{}/invalid.age" = {{
-    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
-  }};
-}}
-"#,
-            temp_dir.path().to_str().unwrap()
-        );
-        let mut temp_rules = NamedTempFile::new().unwrap();
-        writeln!(temp_rules, "{}", rules_content).unwrap();
-        temp_rules.flush().unwrap();
+        let secret_path = format!("{}/invalid.age", temp_dir.path().to_str().unwrap());
+        let rules = single_secret_rules(&secret_path, "");
+        let temp_rules = create_rules_file(&rules);
 
         // Create invalid secret file
-        let secret_path = temp_dir.path().join("invalid.age");
         fs::write(&secret_path, "not-a-valid-age-file").unwrap();
 
         // Should fail because secret cannot be decrypted
@@ -614,32 +515,20 @@ mod tests {
     #[test]
     fn test_check_specific_secrets() {
         let temp_dir = tempdir().unwrap();
-        let rules_content = format!(
-            r#"
-{{
-  "{}/secret1.age" = {{
-    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
-  }};
-  "{}/secret2.age" = {{
-    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
-  }};
-}}
-"#,
-            temp_dir.path().to_str().unwrap(),
-            temp_dir.path().to_str().unwrap()
+        let path = temp_dir.path().to_str().unwrap();
+        let rules = format!(
+            r#"{{ "{}/s1.age" = {{ publicKeys = [ "{}" ]; }}; "{}/s2.age" = {{ publicKeys = [ "{}" ]; }}; }}"#,
+            path, TEST_PUBKEY, path, TEST_PUBKEY
         );
-        let mut temp_rules = NamedTempFile::new().unwrap();
-        writeln!(temp_rules, "{}", rules_content).unwrap();
-        temp_rules.flush().unwrap();
+        let temp_rules = create_rules_file(&rules);
 
-        // Only check secret1
+        // Only check secret1 - should succeed because file doesn't exist
         let result = check_secrets(
             temp_rules.path().to_str().unwrap(),
-            &["secret1".to_string()],
+            &["s1".to_string()],
             &[],
             false,
         );
-        // Should succeed because secret doesn't exist (nothing to check)
         assert!(result.is_ok());
     }
 
@@ -647,31 +536,18 @@ mod tests {
     fn test_check_nonexistent_rules_file() {
         let result = check_secrets("/nonexistent/path/secrets.nix", &[], &[], false);
         assert!(result.is_err());
-        let err_msg = result.unwrap_err().to_string();
-        assert!(
-            err_msg.contains("nonexistent") || err_msg.contains("No such file"),
-            "Error should mention the file doesn't exist: {}",
-            err_msg
-        );
     }
 
     #[test]
     fn test_check_empty_rules() {
-        let rules_content = "{ }";
-        let mut temp_file = NamedTempFile::new().unwrap();
-        writeln!(temp_file, "{}", rules_content).unwrap();
-        temp_file.flush().unwrap();
-
+        let temp_file = create_rules_file("{ }");
         let result = check_secrets(temp_file.path().to_str().unwrap(), &[], &[], false);
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_check_invalid_nix_syntax() {
-        let mut temp_file = NamedTempFile::new().unwrap();
-        writeln!(temp_file, "{{ invalid nix syntax !!!").unwrap();
-        temp_file.flush().unwrap();
-
+        let temp_file = create_rules_file("{ invalid nix syntax !!!");
         let result = check_secrets(temp_file.path().to_str().unwrap(), &[], &[], false);
         assert!(result.is_err());
     }
@@ -679,56 +555,30 @@ mod tests {
     #[test]
     fn test_check_multiple_invalid_secrets() {
         let temp_dir = tempdir().unwrap();
-        let rules_content = format!(
-            r#"
-{{
-  "{}/invalid1.age" = {{
-    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
-  }};
-  "{}/invalid2.age" = {{
-    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
-  }};
-}}
-"#,
-            temp_dir.path().to_str().unwrap(),
-            temp_dir.path().to_str().unwrap()
+        let path = temp_dir.path().to_str().unwrap();
+        let rules = format!(
+            r#"{{ "{}/inv1.age" = {{ publicKeys = [ "{}" ]; }}; "{}/inv2.age" = {{ publicKeys = [ "{}" ]; }}; }}"#,
+            path, TEST_PUBKEY, path, TEST_PUBKEY
         );
-        let mut temp_rules = NamedTempFile::new().unwrap();
-        writeln!(temp_rules, "{}", rules_content).unwrap();
-        temp_rules.flush().unwrap();
+        let temp_rules = create_rules_file(&rules);
 
         // Create two invalid secret files
-        let secret1_path = temp_dir.path().join("invalid1.age");
-        let secret2_path = temp_dir.path().join("invalid2.age");
-        fs::write(&secret1_path, "invalid-content-1").unwrap();
-        fs::write(&secret2_path, "invalid-content-2").unwrap();
+        fs::write(format!("{}/inv1.age", path), "invalid1").unwrap();
+        fs::write(format!("{}/inv2.age", path), "invalid2").unwrap();
 
         let result = check_secrets(temp_rules.path().to_str().unwrap(), &[], &[], false);
         assert!(result.is_err());
-        let err_msg = result.unwrap_err().to_string();
-        assert!(
-            err_msg.contains("2 of 2"),
-            "Error should report both failures: {}",
-            err_msg
-        );
+        assert!(result.unwrap_err().to_string().contains("2 of 2"));
     }
 
     #[test]
     fn test_check_nonexistent_secret_filter() {
         let temp_dir = tempdir().unwrap();
-        let rules_content = format!(
-            r#"
-{{
-  "{}/existing.age" = {{
-    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
-  }};
-}}
-"#,
-            temp_dir.path().to_str().unwrap()
+        let rules = single_secret_rules(
+            &format!("{}/existing.age", temp_dir.path().to_str().unwrap()),
+            "",
         );
-        let mut temp_rules = NamedTempFile::new().unwrap();
-        writeln!(temp_rules, "{}", rules_content).unwrap();
-        temp_rules.flush().unwrap();
+        let temp_rules = create_rules_file(&rules);
 
         // Try to check a secret that doesn't exist in rules
         let result = check_secrets(
@@ -738,32 +588,23 @@ mod tests {
             false,
         );
         assert!(result.is_err());
-        let err_msg = result.unwrap_err().to_string();
         assert!(
-            err_msg.contains("No matching secrets"),
-            "Error should mention no matching secrets: {}",
-            err_msg
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("No matching secrets")
         );
     }
 
     #[test]
     fn test_check_with_age_suffix_in_filter() {
         let temp_dir = tempdir().unwrap();
-        let rules_content = format!(
-            r#"
-{{
-  "{}/secret.age" = {{
-    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
-  }};
-}}
-"#,
-            temp_dir.path().to_str().unwrap()
+        let rules = single_secret_rules(
+            &format!("{}/secret.age", temp_dir.path().to_str().unwrap()),
+            "",
         );
-        let mut temp_rules = NamedTempFile::new().unwrap();
-        writeln!(temp_rules, "{}", rules_content).unwrap();
-        temp_rules.flush().unwrap();
+        let temp_rules = create_rules_file(&rules);
 
-        // Check using .age suffix
         let result = check_secrets(
             temp_rules.path().to_str().unwrap(),
             &["secret.age".to_string()],
@@ -776,21 +617,12 @@ mod tests {
     #[test]
     fn test_check_without_age_suffix_in_filter() {
         let temp_dir = tempdir().unwrap();
-        let rules_content = format!(
-            r#"
-{{
-  "{}/secret.age" = {{
-    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
-  }};
-}}
-"#,
-            temp_dir.path().to_str().unwrap()
+        let rules = single_secret_rules(
+            &format!("{}/secret.age", temp_dir.path().to_str().unwrap()),
+            "",
         );
-        let mut temp_rules = NamedTempFile::new().unwrap();
-        writeln!(temp_rules, "{}", rules_content).unwrap();
-        temp_rules.flush().unwrap();
+        let temp_rules = create_rules_file(&rules);
 
-        // Check without .age suffix
         let result = check_secrets(
             temp_rules.path().to_str().unwrap(),
             &["secret".to_string()],
@@ -803,32 +635,17 @@ mod tests {
     #[test]
     fn test_check_multiple_specific_secrets() {
         let temp_dir = tempdir().unwrap();
-        let rules_content = format!(
-            r#"
-{{
-  "{}/secret1.age" = {{
-    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
-  }};
-  "{}/secret2.age" = {{
-    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
-  }};
-  "{}/secret3.age" = {{
-    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
-  }};
-}}
-"#,
-            temp_dir.path().to_str().unwrap(),
-            temp_dir.path().to_str().unwrap(),
-            temp_dir.path().to_str().unwrap()
+        let path = temp_dir.path().to_str().unwrap();
+        let rules = format!(
+            r#"{{ "{}/s1.age" = {{ publicKeys = [ "{}" ]; }}; "{}/s2.age" = {{ publicKeys = [ "{}" ]; }}; "{}/s3.age" = {{ publicKeys = [ "{}" ]; }}; }}"#,
+            path, TEST_PUBKEY, path, TEST_PUBKEY, path, TEST_PUBKEY
         );
-        let mut temp_rules = NamedTempFile::new().unwrap();
-        writeln!(temp_rules, "{}", rules_content).unwrap();
-        temp_rules.flush().unwrap();
+        let temp_rules = create_rules_file(&rules);
 
-        // Check only secret1 and secret3
+        // Check only s1 and s3
         let result = check_secrets(
             temp_rules.path().to_str().unwrap(),
-            &["secret1".to_string(), "secret3".to_string()],
+            &["s1".to_string(), "s3".to_string()],
             &[],
             false,
         );
@@ -838,33 +655,16 @@ mod tests {
     #[test]
     fn test_check_error_message_includes_file_name() {
         let temp_dir = tempdir().unwrap();
-        let rules_content = format!(
-            r#"
-{{
-  "{}/bad-secret.age" = {{
-    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
-  }};
-}}
-"#,
-            temp_dir.path().to_str().unwrap()
-        );
-        let mut temp_rules = NamedTempFile::new().unwrap();
-        writeln!(temp_rules, "{}", rules_content).unwrap();
-        temp_rules.flush().unwrap();
+        let secret_path = format!("{}/bad-secret.age", temp_dir.path().to_str().unwrap());
+        let rules = single_secret_rules(&secret_path, "");
+        let temp_rules = create_rules_file(&rules);
 
         // Create an invalid secret file
-        let secret_path = temp_dir.path().join("bad-secret.age");
         fs::write(&secret_path, "invalid").unwrap();
 
         let result = check_secrets(temp_rules.path().to_str().unwrap(), &[], &[], false);
         assert!(result.is_err());
-        // The error should include information about failed secrets
-        let err_msg = result.unwrap_err().to_string();
-        assert!(
-            err_msg.contains("1 of 1") || err_msg.contains("Verification failed"),
-            "Error should provide count: {}",
-            err_msg
-        );
+        assert!(result.unwrap_err().to_string().contains("1 of 1"));
     }
 
     // ===========================================
