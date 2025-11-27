@@ -69,17 +69,16 @@ pub fn edit_file(
     let (_temp_dir, cleartext_file) = create_temp_cleartext(filename)?;
 
     // Decrypt existing file if present
-    if Path::new(file).exists() {
-        if let Err(e) =
+    if Path::new(file).exists()
+        && let Err(e) =
             crypto::decrypt_to_file(file, &cleartext_file, identities, no_system_identities)
-        {
-            if force {
-                eprintln!("Warning: Could not decrypt {file}, starting with empty content: {e:#}");
-            } else {
-                return Err(e).with_context(|| {
-                    format!("Failed to decrypt {file}. Use --force to start with empty content")
-                });
-            }
+    {
+        if force {
+            eprintln!("Warning: Could not decrypt {file}, starting with empty content: {e:#}");
+        } else {
+            return Err(e).with_context(|| {
+                format!("Failed to decrypt {file}. Use --force to start with empty content")
+            });
         }
     }
 

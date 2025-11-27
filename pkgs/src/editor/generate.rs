@@ -36,15 +36,7 @@ pub enum ProcessResult {
 }
 
 /// Validate that requested secrets exist in the rules file.
-fn validate_secrets_exist(filtered_files: &[String], secrets: &[String]) -> Result<()> {
-    if filtered_files.is_empty() && !secrets.is_empty() {
-        return Err(anyhow!(
-            "No matching secrets found in rules file for: {}",
-            secrets.join(", ")
-        ));
-    }
-    Ok(())
-}
+use super::validate_secrets_exist;
 
 /// Build the list of files to process, including dependencies if requested.
 fn build_processing_list(
@@ -102,11 +94,10 @@ fn check_missing_dependencies(
             }
 
             // Check if .pub file exists for this dependency
-            let dep_path = Path::new(dep);
             let dep_name = SecretName::new(dep);
             let base_name = dep_name.normalized();
 
-            let pub_paths = vec![
+            let pub_paths = [
                 std::path::PathBuf::from(format!("{}.pub", dep)),
                 ctx.rules_dir().join(format!("{}.pub", base_name)),
                 ctx.rules_dir().join(format!("{}.age.pub", base_name)),

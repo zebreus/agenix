@@ -46,11 +46,6 @@ impl SecretName {
         }
     }
 
-    /// Get the original name as provided.
-    pub fn original(&self) -> &str {
-        &self.original
-    }
-
     /// Get the basename (filename without path).
     pub fn basename(&self) -> &str {
         &self.basename
@@ -73,12 +68,6 @@ impl SecretName {
     /// Check if this secret name matches another (using normalized comparison).
     pub fn matches(&self, other: &SecretName) -> bool {
         self.normalized == other.normalized
-    }
-
-    /// Check if this secret name matches a string (using normalized comparison).
-    pub fn matches_str(&self, other: &str) -> bool {
-        let other_name = SecretName::new(other);
-        self.matches(&other_name)
     }
 
     /// Strip .age suffix from a string if present.
@@ -112,6 +101,20 @@ impl From<String> for SecretName {
 impl AsRef<str> for SecretName {
     fn as_ref(&self) -> &str {
         &self.original
+    }
+}
+
+#[cfg(test)]
+impl SecretName {
+    /// Get the original name as provided.
+    pub fn original(&self) -> &str {
+        &self.original
+    }
+
+    /// Check if this secret name matches a string (using normalized comparison).
+    pub fn matches_str(&self, other: &str) -> bool {
+        let other_name = SecretName::new(other);
+        self.matches(&other_name)
     }
 }
 

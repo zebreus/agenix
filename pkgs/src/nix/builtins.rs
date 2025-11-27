@@ -22,7 +22,7 @@ pub mod impure_builtins {
 
     /// Validates length argument for random generators.
     fn validate_length(length: i64, name: &str) -> Result<usize, ErrorKind> {
-        if length < 0 || length > MAX_LENGTH {
+        if !(0..=MAX_LENGTH).contains(&length) {
             return Err(ErrorKind::Abort(format!(
                 "{}: length must be between 0 and {}",
                 name, MAX_LENGTH
@@ -110,7 +110,7 @@ pub mod impure_builtins {
     async fn builtin_random_hex(co: GenCo, var: Value) -> Result<Value, ErrorKind> {
         let _ = co;
         let len = validate_length(var.as_int()?, "randomHex")?;
-        let byte_count = (len + 1) / 2;
+        let byte_count = len.div_ceil(2);
         let mut bytes = vec![0u8; byte_count];
         rng().fill(&mut bytes[..]);
         let hex: String = bytes

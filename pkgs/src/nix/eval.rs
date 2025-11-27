@@ -109,13 +109,6 @@ pub fn value_to_bool(value: &Value) -> Result<bool> {
     }
 }
 
-pub fn value_to_optional_string(value: Value) -> Result<Option<String>> {
-    match value {
-        Value::Null => Ok(None),
-        _ => value_to_string(value).map(Some),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
