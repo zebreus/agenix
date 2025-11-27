@@ -16,6 +16,7 @@ else
 fi
 
 # Test 2: List with summary
+echo "--- Test 2: List with summary ---"
 if echo "$list_output" | grep -q "Total:"; then
   echo "✓ List shows summary"
 else
@@ -24,7 +25,7 @@ else
 fi
 
 # Test 3: Detailed list
-echo "--- Test 2: Detailed list ---"
+echo "--- Test 3: Detailed list ---"
 detailed_output=$(agenix list --detailed 2>&1)
 if echo "$detailed_output" | grep -q "GENERATOR"; then
   echo "✓ Detailed list shows header"
@@ -34,7 +35,7 @@ else
 fi
 
 # Test 4: List shows status correctly
-echo "--- Test 3: List shows status ---"
+echo "--- Test 4: List shows status ---"
 if echo "$list_output" | grep -q "✓"; then
   echo "✓ List shows OK status"
 else
@@ -43,7 +44,7 @@ else
 fi
 
 # Test 5: Short alias 'l' works
-echo "--- Test 4: Short alias 'l' ---"
+echo "--- Test 5: Short alias 'l' ---"
 alias_output=$(agenix l 2>&1)
 if echo "$alias_output" | grep -q "secret1"; then
   echo "✓ Short alias 'l' works"
