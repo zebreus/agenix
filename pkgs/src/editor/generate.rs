@@ -319,11 +319,9 @@ pub fn generate_secrets(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use anyhow::Result;
     use std::fs;
-    use std::io::Write;
-    use tempfile::{NamedTempFile, tempdir};
+    use tempfile::tempdir;
 
     #[test]
     fn test_generate_secrets_with_nonexistent_rules() {
