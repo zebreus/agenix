@@ -98,6 +98,7 @@ dependencies = [
  "anyhow",
  "base64 0.22.1",
  "clap",
+ "clap_complete",
  "cosmian_crypto_core",
  "hex",
  "itertools 0.14.0",
@@ -394,6 +395,15 @@ dependencies = [
  "anstyle",
  "clap_lex",
  "strsim",
+]
+
+[[package]]
+name = "clap_complete"
+version = "4.5.61"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "39615915e2ece2550c0149addac32fb5bd312c657f43845bb9088cb9c8a7c992"
+dependencies = [
+ "clap",
 ]
 
 [[package]]
