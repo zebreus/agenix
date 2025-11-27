@@ -28,9 +28,9 @@ impl SecretStatus {
     /// Returns the display symbol for this status
     fn symbol(&self) -> &'static str {
         match self {
-            SecretStatus::Ok => "✓",
-            SecretStatus::Missing => "○",
-            SecretStatus::CannotDecrypt(_) => "✗",
+            Self::Ok => "✓",
+            Self::Missing => "○",
+            Self::CannotDecrypt(_) => "✗",
         }
     }
 
@@ -38,14 +38,24 @@ impl SecretStatus {
     fn detailed_text(&self) -> String {
         format!("{} {}", self.symbol(), self)
     }
+
+    /// Updates counts based on status: (ok, missing, error)
+    fn update_counts(&self, counts: (usize, usize, usize)) -> (usize, usize, usize) {
+        let (ok, missing, err) = counts;
+        match self {
+            Self::Ok => (ok + 1, missing, err),
+            Self::Missing => (ok, missing + 1, err),
+            Self::CannotDecrypt(_) => (ok, missing, err + 1),
+        }
+    }
 }
 
 impl std::fmt::Display for SecretStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            SecretStatus::Ok => write!(f, "ok"),
-            SecretStatus::CannotDecrypt(_) => write!(f, "cannot decrypt"),
-            SecretStatus::Missing => write!(f, "missing"),
+            Self::Ok => write!(f, "ok"),
+            Self::CannotDecrypt(_) => write!(f, "cannot decrypt"),
+            Self::Missing => write!(f, "missing"),
         }
     }
 }
@@ -136,9 +146,27 @@ pub fn list_secrets(
         .collect::<Result<Vec<_>>>()?;
     secrets.sort_by(|a, b| a.name.cmp(&b.name));
 
-    let max_name_len = secrets.iter().map(|s| s.name.len()).max().unwrap_or(0);
+    // Print and count
+    let stats = print_secrets(&secrets, detailed);
 
-    // Print header for detailed view
+    // Print summary
+    println!();
+    println!(
+        "Total: {} secrets ({} ok, {} missing, {} errors)",
+        secrets.len(),
+        stats.0,
+        stats.1,
+        stats.2
+    );
+
+    Ok(())
+}
+
+/// Print secrets to stdout and return (ok_count, missing_count, error_count)
+fn print_secrets(secrets: &[SecretInfo], detailed: bool) -> (usize, usize, usize) {
+    let max_name_len = secrets.iter().map(|s| s.name.len()).max().unwrap_or(0);
+    let yes_no = |b: bool| if b { "yes" } else { "no" };
+
     if detailed {
         println!(
             "{:<width$}  {:^15}  {:^9}  {:^6}  {:^7}  {:^4}",
@@ -162,22 +190,8 @@ pub fn list_secrets(
         );
     }
 
-    // Count statistics while printing
-    let (ok_count, missing_count, error_count) =
-        secrets
-            .iter()
-            .fold((0, 0, 0), |(ok, missing, err), secret| {
-                match &secret.status {
-                    SecretStatus::Ok => (ok + 1, missing, err),
-                    SecretStatus::Missing => (ok, missing + 1, err),
-                    SecretStatus::CannotDecrypt(_) => (ok, missing, err + 1),
-                }
-            });
-
-    // Print each secret
-    for secret in &secrets {
+    secrets.iter().fold((0, 0, 0), |counts, secret| {
         if detailed {
-            let yes_no = |b: bool| if b { "yes" } else { "no" };
             println!(
                 "{:<width$}  {:^15}  {:^9}  {:^6}  {:^7}  {:^5}",
                 secret.name,
@@ -191,19 +205,8 @@ pub fn list_secrets(
         } else {
             println!("{} {}", secret.status.symbol(), secret.name);
         }
-    }
-
-    // Print summary
-    println!();
-    println!(
-        "Total: {} secrets ({} ok, {} missing, {} errors)",
-        secrets.len(),
-        ok_count,
-        missing_count,
-        error_count
-    );
-
-    Ok(())
+        secret.status.update_counts(counts)
+    })
 }
 
 /// Check that secrets can be decrypted
