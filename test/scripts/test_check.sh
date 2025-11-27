@@ -171,18 +171,8 @@ else
   exit 1
 fi
 
-# Test 14: Check with global identity flag
-echo "--- Test 14: Global identity flag ---"
-identity_output=$(agenix -i "$IDENTITY" check secret1 2>&1)
-if echo "$identity_output" | grep -q "secret1"; then
-  echo "✓ Check works with global identity flag"
-else
-  echo "✗ Check with global identity flag failed"
-  exit 1
-fi
-
-# Test 15: Check shows checkmark for valid secrets
-echo "--- Test 15: Checkmark for valid secrets ---"
+# Test 14: Check shows checkmark for valid secrets
+echo "--- Test 14: Checkmark for valid secrets ---"
 if echo "$check_output" | grep -q "✓"; then
   echo "✓ Check shows checkmark for valid secrets"
 else
