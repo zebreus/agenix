@@ -45,6 +45,9 @@ let
     "test_encrypt_basic.sh"
     "test_encrypt_edgecases.sh"
     "test_edit_edgecases.sh"
+    "test_list.sh"
+    "test_check.sh"
+    "test_completions.sh"
   ];
 
   # Get all test_*.sh files in the scripts directory

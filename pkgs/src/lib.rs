@@ -61,6 +61,24 @@ where
             editor::encrypt_file(&args.rules, &file, force)
                 .with_context(|| format!("Failed to encrypt {file}"))
         }
+        Some(cli::Command::List { detailed }) => editor::list_secrets(
+            &args.rules,
+            detailed,
+            &args.identity,
+            args.no_system_identities,
+        )
+        .context("Failed to list secrets"),
+        Some(cli::Command::Check { secrets }) => editor::check_secrets(
+            &args.rules,
+            &secrets,
+            &args.identity,
+            args.no_system_identities,
+        )
+        .context("Failed to check secrets"),
+        Some(cli::Command::Completions { shell }) => {
+            cli::print_completions(shell, &mut cli::build_cli());
+            Ok(())
+        }
         None => Ok(()),
     }
 }

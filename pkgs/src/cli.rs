@@ -2,8 +2,10 @@
 //!
 //! This module defines the CLI interface using clap's derive macros with subcommands.
 
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
+use clap_complete::{Generator, Shell};
 use std::env;
+use std::io;
 
 #[derive(Parser, Debug)]
 #[command(
@@ -113,6 +115,44 @@ pub enum Command {
         #[arg(value_name = "SECRET")]
         secrets: Vec<String>,
     },
+
+    /// List secrets defined in the rules file with their status
+    #[command(visible_alias = "l")]
+    List {
+        /// Show detailed information about each secret
+        #[arg(short, long)]
+        detailed: bool,
+    },
+
+    /// Verify that secrets can be decrypted without outputting content
+    #[command(visible_alias = "v")]
+    Check {
+        /// Secrets to check (if none specified, checks all secrets from the rules file)
+        #[arg(value_name = "SECRET")]
+        secrets: Vec<String>,
+    },
+
+    /// Generate shell completions for the specified shell
+    Completions {
+        /// The shell to generate completions for
+        #[arg(value_enum)]
+        shell: Shell,
+    },
+}
+
+/// Print shell completions to stdout
+pub fn print_completions<G: Generator>(generator: G, cmd: &mut clap::Command) {
+    clap_complete::generate(
+        generator,
+        cmd,
+        cmd.get_name().to_string(),
+        &mut io::stdout(),
+    );
+}
+
+/// Get a mutable reference to the command for completions
+pub fn build_cli() -> clap::Command {
+    Args::command()
 }
 
 #[cfg(test)]
