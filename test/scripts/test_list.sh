@@ -82,8 +82,7 @@ fi
 
 # Test 8: List nonexistent rules file fails with helpful error
 echo "--- Test 8: Nonexistent rules file ---"
-error_output=$(agenix list -r "/nonexistent/path/rules.nix" 2>&1)
-if [ $? -ne 0 ]; then
+if ! agenix list -r "/nonexistent/path/rules.nix" 2>/dev/null; then
   echo "✓ List fails on nonexistent rules file"
 else
   echo "✗ List should fail on nonexistent rules file"

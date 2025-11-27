@@ -99,8 +99,7 @@ cat > "$FAIL_RULES" << EOF
 }
 EOF
 echo "invalid" > "$FAIL_SECRET"
-agenix check -r "$FAIL_RULES" 2>/dev/null
-if [ $? -ne 0 ]; then
+if ! agenix check -r "$FAIL_RULES" 2>/dev/null; then
   echo "✓ Check returns non-zero exit code on failure"
 else
   echo "✗ Check should return non-zero exit code on failure"
@@ -109,8 +108,7 @@ fi
 
 # Test 9: Check returns zero exit code on success
 echo "--- Test 9: Exit code on success ---"
-agenix check secret1 2>/dev/null
-if [ $? -eq 0 ]; then
+if agenix check secret1 2>/dev/null; then
   echo "✓ Check returns zero exit code on success"
 else
   echo "✗ Check should return zero exit code on success"
@@ -129,8 +127,7 @@ fi
 
 # Test 11: Check nonexistent secret name fails with helpful error
 echo "--- Test 11: Nonexistent secret name ---"
-error_output=$(agenix check nonexistent-secret 2>&1)
-if [ $? -ne 0 ]; then
+if ! agenix check nonexistent-secret 2>/dev/null; then
   echo "✓ Check fails for nonexistent secret name"
 else
   echo "✗ Check should fail for nonexistent secret name"
