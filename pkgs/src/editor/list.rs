@@ -24,6 +24,22 @@ pub enum SecretStatus {
     Missing,
 }
 
+impl SecretStatus {
+    /// Returns the display symbol for this status
+    fn symbol(&self) -> &'static str {
+        match self {
+            SecretStatus::Ok => "✓",
+            SecretStatus::Missing => "○",
+            SecretStatus::CannotDecrypt(_) => "✗",
+        }
+    }
+
+    /// Returns the display text for detailed view
+    fn detailed_text(&self) -> String {
+        format!("{} {}", self.symbol(), self)
+    }
+}
+
 impl std::fmt::Display for SecretStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -113,20 +129,16 @@ pub fn list_secrets(
         return Ok(());
     }
 
-    // Collect info about all secrets
-    let mut secrets: Vec<SecretInfo> = Vec::new();
-    for file in &all_files {
-        let info = get_secret_info(rules_path, file, identities, no_system_identities)?;
-        secrets.push(info);
-    }
-
-    // Sort by name
+    // Collect and sort secrets
+    let mut secrets: Vec<SecretInfo> = all_files
+        .iter()
+        .map(|file| get_secret_info(rules_path, file, identities, no_system_identities))
+        .collect::<Result<Vec<_>>>()?;
     secrets.sort_by(|a, b| a.name.cmp(&b.name));
 
-    // Calculate column widths for detailed view
     let max_name_len = secrets.iter().map(|s| s.name.len()).max().unwrap_or(0);
 
-    // Print header
+    // Print header for detailed view
     if detailed {
         println!(
             "{:<width$}  {:^15}  {:^9}  {:^6}  {:^7}  {:^4}",
@@ -150,49 +162,34 @@ pub fn list_secrets(
         );
     }
 
-    // Count statistics
-    let mut ok_count = 0;
-    let mut missing_count = 0;
-    let mut error_count = 0;
+    // Count statistics while printing
+    let (ok_count, missing_count, error_count) =
+        secrets
+            .iter()
+            .fold((0, 0, 0), |(ok, missing, err), secret| {
+                match &secret.status {
+                    SecretStatus::Ok => (ok + 1, missing, err),
+                    SecretStatus::Missing => (ok, missing + 1, err),
+                    SecretStatus::CannotDecrypt(_) => (ok, missing, err + 1),
+                }
+            });
 
+    // Print each secret
     for secret in &secrets {
-        match &secret.status {
-            SecretStatus::Ok => ok_count += 1,
-            SecretStatus::Missing => missing_count += 1,
-            SecretStatus::CannotDecrypt(_) => error_count += 1,
-        }
-
         if detailed {
-            let status_str = match &secret.status {
-                SecretStatus::Ok => "✓ ok".to_string(),
-                SecretStatus::Missing => "○ missing".to_string(),
-                SecretStatus::CannotDecrypt(_) => "✗ cannot decrypt".to_string(),
-            };
-            let generator_str = if secret.has_generator { "yes" } else { "no" };
-            let pubkey_str = if secret.has_public_key_file {
-                "yes"
-            } else {
-                "no"
-            };
-            let armor_str = if secret.armored { "yes" } else { "no" };
-
+            let yes_no = |b: bool| if b { "yes" } else { "no" };
             println!(
                 "{:<width$}  {:^15}  {:^9}  {:^6}  {:^7}  {:^5}",
                 secret.name,
-                status_str,
-                generator_str,
-                pubkey_str,
+                secret.status.detailed_text(),
+                yes_no(secret.has_generator),
+                yes_no(secret.has_public_key_file),
                 secret.recipient_count,
-                armor_str,
+                yes_no(secret.armored),
                 width = max_name_len
             );
         } else {
-            let status_symbol = match &secret.status {
-                SecretStatus::Ok => "✓",
-                SecretStatus::Missing => "○",
-                SecretStatus::CannotDecrypt(_) => "✗",
-            };
-            println!("{} {}", status_symbol, secret.name);
+            println!("{} {}", secret.status.symbol(), secret.name);
         }
     }
 
@@ -234,44 +231,52 @@ pub fn check_secrets(
     let existing_files: Vec<_> = files.iter().filter(|f| Path::new(f).exists()).collect();
 
     if existing_files.is_empty() {
-        if files.is_empty() {
-            eprintln!("No secrets defined in {}", rules_path);
+        let msg = if files.is_empty() {
+            format!("No secrets defined in {}", rules_path)
         } else {
-            eprintln!("No existing secret files to check");
-        }
+            "No existing secret files to check".to_string()
+        };
+        eprintln!("{}", msg);
         return Ok(());
     }
 
-    let mut all_ok = true;
-    let mut checked = 0;
-    let mut failed = 0;
-
     eprintln!("Checking {} secrets...", existing_files.len());
 
-    for file in &existing_files {
-        let name = SecretName::new(file);
-        match crypto::can_decrypt(file, identities, no_system_identities) {
+    // Check each file and collect results
+    let results: Vec<_> = existing_files
+        .iter()
+        .map(|file| {
+            let name = SecretName::new(file);
+            let result = crypto::can_decrypt(file, identities, no_system_identities);
+            (name.normalized().to_string(), result)
+        })
+        .collect();
+
+    // Print results and count failures
+    let failed: Vec<_> = results
+        .iter()
+        .filter_map(|(name, result)| match result {
             Ok(()) => {
-                eprintln!("✓ {}", name.normalized());
-                checked += 1;
+                eprintln!("✓ {}", name);
+                None
             }
             Err(e) => {
-                eprintln!("✗ {}: {}", name.normalized(), e);
-                all_ok = false;
-                failed += 1;
+                eprintln!("✗ {}: {}", name, e);
+                Some(name.clone())
             }
-        }
-    }
+        })
+        .collect();
 
     eprintln!();
-    if all_ok {
-        eprintln!("All {} secrets verified successfully.", checked);
+
+    if failed.is_empty() {
+        eprintln!("All {} secrets verified successfully.", results.len());
         Ok(())
     } else {
         Err(anyhow::anyhow!(
             "Verification failed: {} of {} secrets could not be decrypted",
-            failed,
-            checked + failed
+            failed.len(),
+            results.len()
         ))
     }
 }
