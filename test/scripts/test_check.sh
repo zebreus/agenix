@@ -163,7 +163,7 @@ cat > "$MULTI_RULES" << EOF
 EOF
 echo "invalid1" > "$MULTI_SECRET1"
 echo "invalid2" > "$MULTI_SECRET2"
-multi_output=$(agenix check -r "$MULTI_RULES" 2>&1)
+multi_output=$(agenix check -r "$MULTI_RULES" 2>&1 || true)
 if echo "$multi_output" | grep -q "2 of 2"; then
   echo "✓ Check shows correct count for multiple failures"
 else
