@@ -86,7 +86,7 @@ pub enum Command {
     #[command(visible_alias = "r")]
     Rekey {
         /// Allow partial rekeying: continue even if some secrets cannot be decrypted
-        #[arg(long)]
+        #[arg(short, long)]
         partial: bool,
 
         /// Secrets to rekey (if none specified, rekeys all secrets from the rules file)
@@ -797,6 +797,17 @@ mod tests {
     #[test]
     fn test_rekey_partial_flag() {
         let args = Args::try_parse_from(["agenix", "rekey", "--partial"]).unwrap();
+        if let Some(Command::Rekey { partial, secrets }) = args.command {
+            assert!(partial);
+            assert!(secrets.is_empty());
+        } else {
+            panic!("Expected Rekey command");
+        }
+    }
+
+    #[test]
+    fn test_rekey_partial_short_flag() {
+        let args = Args::try_parse_from(["agenix", "rekey", "-p"]).unwrap();
         if let Some(Command::Rekey { partial, secrets }) = args.command {
             assert!(partial);
             assert!(secrets.is_empty());
