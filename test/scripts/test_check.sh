@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Test: Check command
+# Test: Check command - Extensive tests
 
 source "$(dirname "$0")/common_setup.sh"
 
@@ -65,6 +65,132 @@ if agenix check -r "$TEMP_RULES" 2>/dev/null; then
   exit 1
 else
   echo "✓ Check correctly fails on invalid secret"
+fi
+
+# Test 6: Check nonexistent rules file fails with error
+echo "--- Test 6: Nonexistent rules file ---"
+if agenix check -r "/nonexistent/path/rules.nix" 2>/dev/null; then
+  echo "✗ Check should fail on nonexistent rules file"
+  exit 1
+else
+  echo "✓ Check correctly fails on nonexistent rules file"
+fi
+
+# Test 7: Check with invalid nix syntax fails
+echo "--- Test 7: Invalid nix syntax ---"
+INVALID_RULES="$TMPDIR/invalid-check-rules.nix"
+echo "{ invalid nix syntax !!!" > "$INVALID_RULES"
+if agenix check -r "$INVALID_RULES" 2>/dev/null; then
+  echo "✗ Check should fail on invalid nix syntax"
+  exit 1
+else
+  echo "✓ Check correctly fails on invalid nix syntax"
+fi
+
+# Test 8: Check returns non-zero exit code on failure
+echo "--- Test 8: Exit code on failure ---"
+FAIL_RULES="$TMPDIR/fail-check-rules.nix"
+FAIL_SECRET="$TMPDIR/fail-secret.age"
+cat > "$FAIL_RULES" << EOF
+{
+  "$FAIL_SECRET" = {
+    publicKeys = [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH" ];
+  };
+}
+EOF
+echo "invalid" > "$FAIL_SECRET"
+agenix check -r "$FAIL_RULES" 2>/dev/null
+if [ $? -ne 0 ]; then
+  echo "✓ Check returns non-zero exit code on failure"
+else
+  echo "✗ Check should return non-zero exit code on failure"
+  exit 1
+fi
+
+# Test 9: Check returns zero exit code on success
+echo "--- Test 9: Exit code on success ---"
+agenix check secret1 2>/dev/null
+if [ $? -eq 0 ]; then
+  echo "✓ Check returns zero exit code on success"
+else
+  echo "✗ Check should return zero exit code on success"
+  exit 1
+fi
+
+# Test 10: Check with .age suffix in argument
+echo "--- Test 10: Check with .age suffix ---"
+check_suffix=$(agenix check secret1.age 2>&1)
+if echo "$check_suffix" | grep -q "secret1"; then
+  echo "✓ Check works with .age suffix"
+else
+  echo "✗ Check with .age suffix failed"
+  exit 1
+fi
+
+# Test 11: Check nonexistent secret name fails with helpful error
+echo "--- Test 11: Nonexistent secret name ---"
+error_output=$(agenix check nonexistent-secret 2>&1)
+if [ $? -ne 0 ]; then
+  echo "✓ Check fails for nonexistent secret name"
+else
+  echo "✗ Check should fail for nonexistent secret name"
+  exit 1
+fi
+
+# Test 12: Check empty rules shows appropriate message
+echo "--- Test 12: Empty rules file ---"
+EMPTY_RULES="$TMPDIR/empty-check-rules.nix"
+echo "{ }" > "$EMPTY_RULES"
+empty_output=$(agenix check -r "$EMPTY_RULES" 2>&1)
+if echo "$empty_output" | grep -q "No secrets defined"; then
+  echo "✓ Check shows message for empty rules"
+else
+  echo "✗ Check failed to handle empty rules"
+  exit 1
+fi
+
+# Test 13: Check multiple invalid secrets shows count
+echo "--- Test 13: Multiple invalid secrets count ---"
+MULTI_RULES="$TMPDIR/multi-check-rules.nix"
+MULTI_SECRET1="$TMPDIR/multi-invalid1.age"
+MULTI_SECRET2="$TMPDIR/multi-invalid2.age"
+cat > "$MULTI_RULES" << EOF
+{
+  "$MULTI_SECRET1" = {
+    publicKeys = [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH" ];
+  };
+  "$MULTI_SECRET2" = {
+    publicKeys = [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH" ];
+  };
+}
+EOF
+echo "invalid1" > "$MULTI_SECRET1"
+echo "invalid2" > "$MULTI_SECRET2"
+multi_output=$(agenix check -r "$MULTI_RULES" 2>&1)
+if echo "$multi_output" | grep -q "2 of 2"; then
+  echo "✓ Check shows correct count for multiple failures"
+else
+  echo "✗ Check failed to show correct count"
+  exit 1
+fi
+
+# Test 14: Check with global identity flag
+echo "--- Test 14: Global identity flag ---"
+identity_output=$(agenix -i "$IDENTITY" check secret1 2>&1)
+if echo "$identity_output" | grep -q "secret1"; then
+  echo "✓ Check works with global identity flag"
+else
+  echo "✗ Check with global identity flag failed"
+  exit 1
+fi
+
+# Test 15: Check shows checkmark for valid secrets
+echo "--- Test 15: Checkmark for valid secrets ---"
+if echo "$check_output" | grep -q "✓"; then
+  echo "✓ Check shows checkmark for valid secrets"
+else
+  echo "✗ Check failed to show checkmark"
+  exit 1
 fi
 
 echo ""
