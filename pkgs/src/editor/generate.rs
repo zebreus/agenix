@@ -17,7 +17,7 @@ use crate::nix::{
 
 use super::context::SecretContext;
 use super::dependency_resolver::DependencyResolver;
-use super::rekey::filter_files;
+use super::filter_files;
 use super::secret_name::SecretName;
 
 /// Result of processing a single secret.
@@ -120,6 +120,53 @@ fn check_missing_dependencies(
     Ok(())
 }
 
+/// Report what would be generated in dry-run mode.
+fn report_dry_run(file: &str, output: &crate::nix::GeneratorOutput) {
+    if Path::new(file).exists() {
+        eprintln!("Would overwrite {file}");
+    } else {
+        eprintln!("Would generate {file}");
+    }
+    if output.public.is_some() {
+        let pub_file = format!("{}.pub", file);
+        eprintln!("Would generate public file {pub_file}");
+    }
+}
+
+/// Write the public key file if the generator produced one.
+fn write_public_key_file(file: &str, output: &crate::nix::GeneratorOutput) -> Result<()> {
+    if let Some(public_content) = &output.public {
+        let pub_file = format!("{}.pub", file);
+        fs::write(&pub_file, public_content)
+            .with_context(|| format!("Failed to write public file {pub_file}"))?;
+        eprintln!("Generated public file {pub_file}");
+    }
+    Ok(())
+}
+
+/// Encrypt the generated secret content to the output file.
+fn encrypt_secret(file: &str, secret_content: &str, rules_path: &str) -> Result<ProcessResult> {
+    let public_keys = get_public_keys(rules_path, file)?;
+    let armor = should_armor(rules_path, file)?;
+
+    if public_keys.is_empty() {
+        eprintln!("Warning: No public keys found for {file}, skipping");
+        return Ok(ProcessResult::NoPublicKeys);
+    }
+
+    // Create temporary file with the generated secret content
+    let temp_dir = TempDir::new().context("Failed to create temporary directory")?;
+    let temp_file = temp_dir.path().join("generated_secret");
+    fs::write(&temp_file, secret_content)
+        .context("Failed to write generated content to temporary file")?;
+
+    // Encrypt the generated secret content
+    encrypt_from_file(&temp_file.to_string_lossy(), file, &public_keys, armor)
+        .with_context(|| format!("Failed to encrypt generated secret {file}"))?;
+
+    Ok(ProcessResult::Generated)
+}
+
 /// Process a single secret file - check dependencies, generate, encrypt, and store.
 fn process_single_secret(
     file: &str,
@@ -142,10 +189,8 @@ fn process_single_secret(
         return Ok(ProcessResult::AlreadyProcessed);
     }
 
-    // Get dependencies
+    // Get dependencies and check if they're satisfied
     let deps = get_secret_dependencies(ctx.rules_path(), file).unwrap_or_default();
-
-    // Check if all dependencies are satisfied
     let (all_satisfied, missing) = resolver.are_all_dependencies_satisfied(&deps)?;
 
     if !all_satisfied && !missing.is_empty() {
@@ -160,10 +205,8 @@ fn process_single_secret(
         return Ok(ProcessResult::Deferred);
     }
 
-    // Build the context for the generator
+    // Generate the secret
     let context = resolver.build_dependency_context(&deps)?;
-
-    // Generate with dependencies context
     let output = if !deps.is_empty() {
         generate_secret_with_public_and_context(ctx.rules_path(), file, &context)?
     } else {
@@ -175,58 +218,28 @@ fn process_single_secret(
         return Ok(ProcessResult::NoGenerator);
     };
 
-    // In dry-run mode, just report what would be done
+    // Handle dry-run mode
     if dry_run {
-        if Path::new(file).exists() {
-            eprintln!("Would overwrite {file}");
-        } else {
-            eprintln!("Would generate {file}");
-        }
-        if output.public.is_some() {
-            let pub_file = format!("{}.pub", file);
-            eprintln!("Would generate public file {pub_file}");
-        }
-        // Store the output for dependency resolution even in dry-run mode
+        report_dry_run(file, &output);
         resolver.store_generated(file, output);
         resolver.mark_processed(file);
         return Ok(ProcessResult::Generated);
     }
 
+    // Encrypt and write the secret
     eprintln!("Generating {file}...");
+    let result = encrypt_secret(file, &output.secret, ctx.rules_path())?;
 
-    let public_keys = get_public_keys(ctx.rules_path(), file)?;
-    let armor = should_armor(ctx.rules_path(), file)?;
-
-    if public_keys.is_empty() {
-        eprintln!("Warning: No public keys found for {file}, skipping");
+    if result == ProcessResult::NoPublicKeys {
         resolver.mark_processed(file);
-        return Ok(ProcessResult::NoPublicKeys);
+        return Ok(result);
     }
-
-    // Create temporary file with the generated secret content
-    let temp_dir = TempDir::new().context("Failed to create temporary directory")?;
-    let temp_file = temp_dir.path().join("generated_secret");
-    fs::write(&temp_file, &output.secret)
-        .context("Failed to write generated content to temporary file")?;
-
-    // Encrypt the generated secret content
-    encrypt_from_file(&temp_file.to_string_lossy(), file, &public_keys, armor)
-        .with_context(|| format!("Failed to encrypt generated secret {file}"))?;
 
     eprintln!("Generated and encrypted {file}");
-
-    // Store the generated output for dependencies
     resolver.store_generated(file, output.clone());
-
-    // If there's public content, write it to a .pub file
-    if let Some(public_content) = &output.public {
-        let pub_file = format!("{}.pub", file);
-        fs::write(&pub_file, public_content)
-            .with_context(|| format!("Failed to write public file {pub_file}"))?;
-        eprintln!("Generated public file {pub_file}");
-    }
-
+    write_public_key_file(file, &output)?;
     resolver.mark_processed(file);
+
     Ok(ProcessResult::Generated)
 }
 

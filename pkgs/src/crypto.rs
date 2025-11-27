@@ -11,6 +11,28 @@ use std::io::{Read, Write};
 use std::path::Path;
 use std::str::FromStr;
 
+/// Read and decode an encrypted file, handling both armored and binary formats.
+fn read_ciphertext(input_file: &str) -> Result<Vec<u8>> {
+    let mut ciphertext = vec![];
+    fs::File::open(input_file)
+        .with_context(|| format!("Failed to open ciphertext file {input_file}"))?
+        .read_to_end(&mut ciphertext)
+        .with_context(|| format!("Failed to read ciphertext file {input_file}"))?;
+
+    // Auto-detect and decode armored content
+    if ciphertext.starts_with(b"-----BEGIN AGE ENCRYPTED FILE-----") {
+        let mut reader = std::io::Cursor::new(&ciphertext);
+        let mut decoder = armor::ArmoredReader::new(&mut reader);
+        let mut decoded = Vec::new();
+        decoder
+            .read_to_end(&mut decoded)
+            .context("Failed to decode armored content")?;
+        Ok(decoded)
+    } else {
+        Ok(ciphertext)
+    }
+}
+
 /// Check if a file can be decrypted with the given identities.
 /// This performs a "dry-run" decryption to verify the identities are valid
 /// without writing any output.
@@ -27,29 +49,8 @@ pub fn can_decrypt(
     identities: &[String],
     no_system_identities: bool,
 ) -> Result<()> {
-    // Read ciphertext
-    let mut ciphertext = vec![];
-    fs::File::open(input_file)
-        .with_context(|| format!("Failed to open ciphertext file {input_file}"))?
-        .read_to_end(&mut ciphertext)
-        .with_context(|| format!("Failed to read ciphertext file {input_file}"))?;
-
-    // Parse decryptor (auto-detect armored)
-    let ciphertext_bytes = if ciphertext.starts_with(b"-----BEGIN AGE ENCRYPTED FILE-----") {
-        let mut reader = std::io::Cursor::new(&ciphertext);
-        let mut decoder = armor::ArmoredReader::new(&mut reader);
-        let mut ciphertext_bytes = Vec::new();
-        decoder
-            .read_to_end(&mut ciphertext_bytes)
-            .context("Failed to decode armored content")?;
-        ciphertext_bytes
-    } else {
-        ciphertext
-    };
-
+    let ciphertext_bytes = read_ciphertext(input_file)?;
     let decryptor = Decryptor::new(&ciphertext_bytes[..]).context("Failed to parse age file")?;
-
-    // Collect identities
     let all_identities = collect_identities(identities, no_system_identities)?;
 
     // Try to decrypt - this verifies the identities work
@@ -80,32 +81,8 @@ pub fn decrypt_to_file<P: AsRef<Path>>(
     identities: &[String],
     no_system_identities: bool,
 ) -> Result<()> {
-    // Read ciphertext
-    let mut ciphertext = vec![];
-    fs::File::open(input_file)
-        .with_context(|| format!("Failed to open ciphertext file {input_file}"))?
-        .read_to_end(&mut ciphertext)
-        .with_context(|| format!("Failed to read ciphertext file {input_file}"))?;
-
-    // Parse decryptor (auto-detect armored)
-    // Check if content is armored and decode it if necessary
-    let ciphertext_bytes = if ciphertext.starts_with(b"-----BEGIN AGE ENCRYPTED FILE-----") {
-        // Armored content - decode it first
-        let mut reader = std::io::Cursor::new(&ciphertext);
-        let mut decoder = armor::ArmoredReader::new(&mut reader);
-        let mut ciphertext_bytes = Vec::new();
-        decoder
-            .read_to_end(&mut ciphertext_bytes)
-            .context("Failed to decode armored content")?;
-        ciphertext_bytes
-    } else {
-        // Binary content - use as is
-        ciphertext
-    };
-
+    let ciphertext_bytes = read_ciphertext(input_file)?;
     let decryptor = Decryptor::new(&ciphertext_bytes[..]).context("Failed to parse age file")?;
-
-    // Collect identities: explicit identities first, then system defaults (unless disabled)
     let all_identities = collect_identities(identities, no_system_identities)?;
 
     let mut reader = decryptor

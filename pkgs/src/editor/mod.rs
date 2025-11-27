@@ -21,6 +21,8 @@ pub mod secret_name;
 
 use anyhow::{Result, anyhow};
 
+use secret_name::SecretName;
+
 /// Validate that requested secrets exist in the rules file.
 ///
 /// Returns an error if secrets are specified but none match.
@@ -32,6 +34,28 @@ pub(crate) fn validate_secrets_exist(filtered_files: &[String], secrets: &[Strin
         ));
     }
     Ok(())
+}
+
+/// Filter files based on specified secrets.
+///
+/// If secrets is empty, return all files. Otherwise, return files that match
+/// any of the specified secrets.
+pub(crate) fn filter_files(files: &[String], secrets: &[String]) -> Vec<String> {
+    if secrets.is_empty() {
+        return files.to_vec();
+    }
+
+    files
+        .iter()
+        .filter(|file| {
+            let file_name = SecretName::new(file);
+            secrets.iter().any(|s| {
+                let secret_name = SecretName::new(s);
+                file_name.matches(&secret_name) || s == *file
+            })
+        })
+        .cloned()
+        .collect()
 }
 
 // Re-export main public functions for backwards compatibility

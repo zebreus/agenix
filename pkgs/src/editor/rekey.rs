@@ -8,7 +8,6 @@ use std::path::Path;
 use crate::nix::get_all_files;
 
 use super::edit::edit_file;
-use super::secret_name::SecretName;
 
 /// Result of the pre-flight decryption check.
 pub struct PreflightResult {
@@ -95,29 +94,8 @@ fn report_rekey_results(failed_files: &[(String, String)], success_count: usize)
     }
 }
 
+use super::filter_files;
 use super::validate_secrets_exist;
-
-/// Filter files based on specified secrets.
-///
-/// If secrets is empty, return all files. Otherwise, return files that match
-/// any of the specified secrets.
-pub fn filter_files(files: &[String], secrets: &[String]) -> Vec<String> {
-    if secrets.is_empty() {
-        return files.to_vec();
-    }
-
-    files
-        .iter()
-        .filter(|file| {
-            let file_name = SecretName::new(file);
-            secrets.iter().any(|s| {
-                let secret_name = SecretName::new(s);
-                file_name.matches(&secret_name) || s == *file
-            })
-        })
-        .cloned()
-        .collect()
-}
 
 /// Rekey files in the rules (no-op editor used to avoid launching an editor).
 ///
