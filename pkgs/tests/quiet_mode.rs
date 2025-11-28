@@ -48,7 +48,7 @@ fn test_list_quiet_outputs_secrets_but_no_summary() {
     assert!(output.status.success(), "list should succeed");
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    // Should contain secrets list (note: .age suffix may be stripped in output)
+    // Should contain secrets list (SecretName normalizes names by removing .age suffix)
     assert!(
         stdout.contains("s1") && stdout.contains("s2"),
         "stdout should contain secret names in quiet mode, got: {:?}",
