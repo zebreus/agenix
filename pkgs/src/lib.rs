@@ -2,46 +2,11 @@ mod cli;
 mod crypto;
 mod editor;
 mod nix;
+pub mod output;
 
 use anyhow::{Context, Result};
 use clap::Parser;
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
-
-/// Global verbosity flag - set via command line
-static VERBOSE: AtomicBool = AtomicBool::new(false);
-/// Global quiet flag - set via command line
-static QUIET: AtomicBool = AtomicBool::new(false);
-
-/// Check if verbose output is enabled
-pub fn is_verbose() -> bool {
-    VERBOSE.load(Ordering::Relaxed)
-}
-
-/// Check if quiet mode is enabled
-pub fn is_quiet() -> bool {
-    QUIET.load(Ordering::Relaxed)
-}
-
-/// Print a message if verbose mode is enabled
-#[macro_export]
-macro_rules! verbose {
-    ($($arg:tt)*) => {
-        if $crate::is_verbose() {
-            eprintln!($($arg)*);
-        }
-    };
-}
-
-/// Print a message if quiet mode is NOT enabled
-#[macro_export]
-macro_rules! info {
-    ($($arg:tt)*) => {
-        if !$crate::is_quiet() {
-            eprintln!($($arg)*);
-        }
-    };
-}
 
 /// Normalize a rules path for use in Nix expressions.
 ///
@@ -85,8 +50,8 @@ where
     let args = cli::Args::parse_from(iter);
 
     // Set global verbosity/quiet flags
-    VERBOSE.store(args.verbose, Ordering::Relaxed);
-    QUIET.store(args.quiet, Ordering::Relaxed);
+    output::set_verbose(args.verbose);
+    output::set_quiet(args.quiet);
 
     // Normalize the rules path to ensure proper Nix import
     let rules = normalize_rules_path(&args.rules);

@@ -6,6 +6,7 @@ use anyhow::{Result, anyhow};
 use std::path::Path;
 
 use crate::nix::get_all_files;
+use crate::{info, status, success, warn};
 
 use super::edit::edit_file;
 
@@ -67,7 +68,7 @@ fn handle_undecryptable_files(undecryptable: &[(String, String)], partial: bool)
     }
 
     // Partial mode: warn about skipped files
-    eprintln!(
+    warn!(
         "Warning: Skipping {} undecryptable secret(s):\n{}",
         undecryptable.len(),
         file_list.join("\n")
@@ -79,18 +80,18 @@ fn handle_undecryptable_files(undecryptable: &[(String, String)], partial: bool)
 /// Report the results of the rekey operation.
 fn report_rekey_results(failed_files: &[(String, String)], success_count: usize) {
     if !failed_files.is_empty() {
-        eprintln!();
-        eprintln!(
+        warn!("");
+        warn!(
             "Warning: Failed to rekey {} secret(s) during processing:",
             failed_files.len()
         );
         for (file, err) in failed_files {
-            eprintln!("  - {}: {}", file, err);
+            warn!("  - {}: {}", file, err);
         }
     }
 
     if success_count > 0 {
-        eprintln!("Successfully rekeyed {} secrets.", success_count);
+        success!("Successfully rekeyed {} secrets.", success_count);
     }
 }
 
@@ -131,7 +132,7 @@ pub fn rekey_files(
         .collect();
 
     // Pre-flight check: verify which files can be decrypted
-    eprintln!(
+    status!(
         "Checking decryption for {} secrets...",
         existing_files.len()
     );
@@ -146,11 +147,11 @@ pub fn rekey_files(
     }
 
     if preflight.decryptable.is_empty() {
-        eprintln!("No existing secrets to rekey.");
+        info!("No existing secrets to rekey.");
         return Ok(());
     }
 
-    eprintln!(
+    status!(
         "Proceeding to rekey {} secrets...",
         preflight.decryptable.len()
     );
@@ -160,7 +161,7 @@ pub fn rekey_files(
     let mut success_count = 0;
 
     for file in &preflight.decryptable {
-        eprintln!("Rekeying {file}...");
+        status!("Rekeying {file}...");
         // Never use force for rekey - we already verified decryptability in preflight
         if let Err(e) = edit_file(
             rules_path,
