@@ -74,6 +74,10 @@ pub enum Command {
         /// Overwrite existing secret file
         #[arg(short, long)]
         force: bool,
+
+        /// Show what would be encrypted without making changes
+        #[arg(short = 'n', long)]
+        dry_run: bool,
     },
 
     /// Decrypt a secret file to stdout or a file
@@ -94,6 +98,10 @@ pub enum Command {
         /// Allow partial rekeying: continue even if some secrets cannot be decrypted
         #[arg(short, long)]
         partial: bool,
+
+        /// Show what would be rekeyed without making changes
+        #[arg(short = 'n', long)]
+        dry_run: bool,
 
         /// Secrets to rekey (if none specified, rekeys all secrets from the rules file)
         #[arg(value_name = "SECRET")]
@@ -272,7 +280,7 @@ mod tests {
     fn test_encrypt_subcommand() {
         let args = Args::try_parse_from(["agenix", "encrypt", "test.age"]).unwrap();
         assert!(matches!(args.command, Some(Command::Encrypt { .. })));
-        if let Some(Command::Encrypt { file, force }) = args.command {
+        if let Some(Command::Encrypt { file, force, .. }) = args.command {
             assert_eq!(file, "test.age".to_string());
             assert!(!force);
         } else {
@@ -289,7 +297,7 @@ mod tests {
     #[test]
     fn test_encrypt_with_force() {
         let args = Args::try_parse_from(["agenix", "encrypt", "--force", "test.age"]).unwrap();
-        if let Some(Command::Encrypt { file, force }) = args.command {
+        if let Some(Command::Encrypt { file, force, .. }) = args.command {
             assert_eq!(file, "test.age".to_string());
             assert!(force);
         } else {
@@ -300,7 +308,7 @@ mod tests {
     #[test]
     fn test_encrypt_with_force_short() {
         let args = Args::try_parse_from(["agenix", "encrypt", "-f", "test.age"]).unwrap();
-        if let Some(Command::Encrypt { file, force }) = args.command {
+        if let Some(Command::Encrypt { file, force, .. }) = args.command {
             assert_eq!(file, "test.age".to_string());
             assert!(force);
         } else {
@@ -850,7 +858,10 @@ mod tests {
     #[test]
     fn test_rekey_partial_flag() {
         let args = Args::try_parse_from(["agenix", "rekey", "--partial"]).unwrap();
-        if let Some(Command::Rekey { partial, secrets }) = args.command {
+        if let Some(Command::Rekey {
+            partial, secrets, ..
+        }) = args.command
+        {
             assert!(partial);
             assert!(secrets.is_empty());
         } else {
@@ -861,7 +872,10 @@ mod tests {
     #[test]
     fn test_rekey_partial_short_flag() {
         let args = Args::try_parse_from(["agenix", "rekey", "-p"]).unwrap();
-        if let Some(Command::Rekey { partial, secrets }) = args.command {
+        if let Some(Command::Rekey {
+            partial, secrets, ..
+        }) = args.command
+        {
             assert!(partial);
             assert!(secrets.is_empty());
         } else {
@@ -874,7 +888,10 @@ mod tests {
         let args =
             Args::try_parse_from(["agenix", "rekey", "--partial", "secret1.age", "secret2.age"])
                 .unwrap();
-        if let Some(Command::Rekey { partial, secrets }) = args.command {
+        if let Some(Command::Rekey {
+            partial, secrets, ..
+        }) = args.command
+        {
             assert!(partial);
             assert_eq!(
                 secrets,
@@ -888,11 +905,54 @@ mod tests {
     #[test]
     fn test_rekey_default_not_partial() {
         let args = Args::try_parse_from(["agenix", "rekey"]).unwrap();
-        if let Some(Command::Rekey { partial, secrets }) = args.command {
+        if let Some(Command::Rekey {
+            partial, secrets, ..
+        }) = args.command
+        {
             assert!(!partial);
             assert!(secrets.is_empty());
         } else {
             panic!("Expected Rekey command");
+        }
+    }
+
+    #[test]
+    fn test_rekey_dry_run_flag() {
+        let args = Args::try_parse_from(["agenix", "rekey", "--dry-run"]).unwrap();
+        if let Some(Command::Rekey { dry_run, .. }) = args.command {
+            assert!(dry_run);
+        } else {
+            panic!("Expected Rekey command");
+        }
+    }
+
+    #[test]
+    fn test_rekey_dry_run_short_flag() {
+        let args = Args::try_parse_from(["agenix", "rekey", "-n"]).unwrap();
+        if let Some(Command::Rekey { dry_run, .. }) = args.command {
+            assert!(dry_run);
+        } else {
+            panic!("Expected Rekey command");
+        }
+    }
+
+    #[test]
+    fn test_encrypt_dry_run_flag() {
+        let args = Args::try_parse_from(["agenix", "encrypt", "--dry-run", "test.age"]).unwrap();
+        if let Some(Command::Encrypt { dry_run, .. }) = args.command {
+            assert!(dry_run);
+        } else {
+            panic!("Expected Encrypt command");
+        }
+    }
+
+    #[test]
+    fn test_encrypt_dry_run_short_flag() {
+        let args = Args::try_parse_from(["agenix", "encrypt", "-n", "test.age"]).unwrap();
+        if let Some(Command::Encrypt { dry_run, .. }) = args.command {
+            assert!(dry_run);
+        } else {
+            panic!("Expected Encrypt command");
         }
     }
 

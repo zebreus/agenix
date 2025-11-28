@@ -112,12 +112,14 @@ use super::validate_secrets_exist;
 /// * `identities` - Identity files for decryption
 /// * `no_system_identities` - If true, don't use default system identities
 /// * `partial` - If true, continue even if some secrets can't be decrypted
+/// * `dry_run` - If true, only show what would be rekeyed without making changes
 pub fn rekey_files(
     rules_path: &str,
     secrets: &[String],
     identities: &[String],
     no_system_identities: bool,
     partial: bool,
+    dry_run: bool,
 ) -> Result<()> {
     let all_files = get_all_files(rules_path)?;
     let files = filter_files(&all_files, secrets);
@@ -162,6 +164,13 @@ pub fn rekey_files(
 
     for file in &preflight.decryptable {
         log!("Rekeying {file}...");
+
+        // In dry-run mode, skip the actual edit operation
+        if dry_run {
+            success_count += 1;
+            continue;
+        }
+
         // Never use force for rekey - we already verified decryptability in preflight
         if let Err(e) = edit_file(
             rules_path,
@@ -228,7 +237,7 @@ mod tests {
     #[test]
     fn test_rekey_uses_no_op_editor() {
         let rules = "./test_secrets.nix";
-        let result = rekey_files(rules, &[], &[], false, false);
+        let result = rekey_files(rules, &[], &[], false, false, false);
         assert!(result.is_err());
     }
 

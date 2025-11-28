@@ -203,7 +203,7 @@ pub fn edit_file(
 ///
 /// Reads from stdin and encrypts the content to the specified file. Does not require
 /// an editor or decryption capabilities.
-pub fn encrypt_file(rules_path: &str, file: &str, force: bool) -> Result<()> {
+pub fn encrypt_file(rules_path: &str, file: &str, force: bool, dry_run: bool) -> Result<()> {
     // Check if file exists before doing any work
     if Path::new(file).exists() && !force {
         return Err(anyhow!(
@@ -229,8 +229,14 @@ pub fn encrypt_file(rules_path: &str, file: &str, force: bool) -> Result<()> {
         return Err(anyhow!("No input provided on stdin"));
     }
 
+    log!("Encrypting to: {}", file);
+
+    // In dry-run mode, skip the actual encryption
+    if dry_run {
+        return Ok(());
+    }
+
     fs::write(&cleartext_file, stdin_content).context("Failed to write stdin content to file")?;
-    verbose!("Encrypting to: {}", file);
     ctx.encrypt(&cleartext_file.to_string_lossy(), file)
 }
 
@@ -301,7 +307,7 @@ mod tests {
     #[test]
     fn test_encrypt_file_no_keys() {
         let rules = "./test_secrets.nix";
-        let result = encrypt_file(rules, "nonexistent.age", false);
+        let result = encrypt_file(rules, "nonexistent.age", false, false);
         assert!(result.is_err());
     }
 
@@ -333,6 +339,7 @@ publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" 
             temp_rules.to_str().unwrap(),
             test_file_path.to_str().unwrap(),
             false,
+            false,
         );
         assert!(result.is_err());
         let err = result.unwrap_err();
@@ -353,7 +360,7 @@ publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" 
     fn test_encrypt_file_invalid_path() {
         // Test with a path that has no filename component
         let rules = "./test_secrets.nix";
-        let result = encrypt_file(rules, "/", false);
+        let result = encrypt_file(rules, "/", false, false);
         assert!(result.is_err());
     }
 }
