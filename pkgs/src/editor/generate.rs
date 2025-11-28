@@ -226,7 +226,7 @@ fn process_single_secret(
         return Ok(ProcessResult::NoGenerator);
     };
 
-    // Encrypt and write the secret (in dry-run mode, encryption is skipped)
+    // Encrypt and write the secret. In dry-run mode, validation occurs but no files are written.
     log!("Generating {file}...");
     let result = encrypt_secret(file, &output.secret, ctx.rules_path(), dry_run)?;
 
