@@ -141,11 +141,6 @@ pub fn list_secrets(
         return Ok(());
     }
 
-    // In quiet mode, just return successfully without output
-    if is_quiet() {
-        return Ok(());
-    }
-
     // Collect and sort secrets
     let mut secrets: Vec<SecretInfo> = all_files
         .iter()
@@ -153,18 +148,20 @@ pub fn list_secrets(
         .collect::<Result<Vec<_>>>()?;
     secrets.sort_by(|a, b| a.name.cmp(&b.name));
 
-    // Print and count
+    // Print secrets list (always shown, even in quiet mode)
     let stats = print_secrets(&secrets, detailed);
 
-    // Print summary
-    println!();
-    println!(
-        "Total: {} secrets ({} ok, {} missing, {} errors)",
-        secrets.len(),
-        stats.0,
-        stats.1,
-        stats.2
-    );
+    // Print summary (suppressed in quiet mode)
+    if !is_quiet() {
+        println!();
+        println!(
+            "Total: {} secrets ({} ok, {} missing, {} errors)",
+            secrets.len(),
+            stats.0,
+            stats.1,
+            stats.2
+        );
+    }
 
     Ok(())
 }
