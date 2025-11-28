@@ -121,38 +121,43 @@ fn check_missing_dependencies(
     Ok(())
 }
 
-/// Report what would be generated in dry-run mode.
-fn report_dry_run(file: &str, output: &crate::nix::GeneratorOutput) {
-    if Path::new(file).exists() {
-        log!("Would overwrite {file}");
-    } else {
-        log!("Would generate {file}");
-    }
-    if output.public.is_some() {
-        let pub_file = format!("{}.pub", file);
-        log!("Would generate public file {pub_file}");
-    }
-}
-
 /// Write the public key file if the generator produced one.
-fn write_public_key_file(file: &str, output: &crate::nix::GeneratorOutput) -> Result<()> {
+/// In dry-run mode, only logs what would happen without writing.
+fn write_public_key_file(
+    file: &str,
+    output: &crate::nix::GeneratorOutput,
+    dry_run: bool,
+) -> Result<()> {
     if let Some(public_content) = &output.public {
         let pub_file = format!("{}.pub", file);
-        fs::write(&pub_file, public_content)
-            .with_context(|| format!("Failed to write public file {pub_file}"))?;
+        if !dry_run {
+            fs::write(&pub_file, public_content)
+                .with_context(|| format!("Failed to write public file {pub_file}"))?;
+        }
         log!("Generated public file {pub_file}");
     }
     Ok(())
 }
 
 /// Encrypt the generated secret content to the output file.
-fn encrypt_secret(file: &str, secret_content: &str, rules_path: &str) -> Result<ProcessResult> {
+/// In dry-run mode, only validates that encryption would succeed without writing.
+fn encrypt_secret(
+    file: &str,
+    secret_content: &str,
+    rules_path: &str,
+    dry_run: bool,
+) -> Result<ProcessResult> {
     let public_keys = get_public_keys(rules_path, file)?;
     let armor = should_armor(rules_path, file)?;
 
     if public_keys.is_empty() {
         log!("Warning: No public keys found for {file}, skipping");
         return Ok(ProcessResult::NoPublicKeys);
+    }
+
+    // Skip actual encryption in dry-run mode
+    if dry_run {
+        return Ok(ProcessResult::Generated);
     }
 
     // Create temporary file with the generated secret content
@@ -221,17 +226,9 @@ fn process_single_secret(
         return Ok(ProcessResult::NoGenerator);
     };
 
-    // Handle dry-run mode
-    if dry_run {
-        report_dry_run(file, &output);
-        resolver.store_generated(file, output);
-        resolver.mark_processed(file);
-        return Ok(ProcessResult::Generated);
-    }
-
-    // Encrypt and write the secret
+    // Encrypt and write the secret (in dry-run mode, encryption is skipped)
     log!("Generating {file}...");
-    let result = encrypt_secret(file, &output.secret, ctx.rules_path())?;
+    let result = encrypt_secret(file, &output.secret, ctx.rules_path(), dry_run)?;
 
     if result == ProcessResult::NoPublicKeys {
         resolver.mark_processed(file);
@@ -240,7 +237,7 @@ fn process_single_secret(
 
     log!("Generated and encrypted {file}");
     resolver.store_generated(file, output.clone());
-    write_public_key_file(file, &output)?;
+    write_public_key_file(file, &output, dry_run)?;
     resolver.mark_processed(file);
 
     Ok(ProcessResult::Generated)
