@@ -13,7 +13,7 @@ use tempfile::TempDir;
 
 use crate::crypto::{self, encrypt_from_file, files_equal};
 use crate::nix::{get_public_keys, should_armor};
-use crate::{verbose, warn};
+use crate::{log, verbose};
 
 /// Context for encryption operations, containing validated settings from the rules file.
 struct EncryptionContext {
@@ -115,7 +115,7 @@ pub fn edit_file(
             crypto::decrypt_to_file(file, &cleartext_file, identities, no_system_identities)
         {
             if force {
-                warn!("Warning: Could not decrypt {file}, starting with empty content: {e:#}");
+                log!("Warning: Could not decrypt {file}, starting with empty content: {e:#}");
             } else {
                 return Err(e).with_context(|| {
                     format!("Failed to decrypt {file}. Use --force to start with empty content")
@@ -182,7 +182,7 @@ pub fn edit_file(
 
     // Handle case where editor didn't create the file
     if !cleartext_file.exists() {
-        warn!("Warning: {file} wasn't created");
+        log!("Warning: {file} wasn't created");
         return Ok(());
     }
 
@@ -191,7 +191,7 @@ pub fn edit_file(
         && Path::new(&backup_file).exists()
         && files_equal(&backup_file, &cleartext_file.to_string_lossy())?
     {
-        warn!("Warning: {file} wasn't changed, skipping re-encryption");
+        log!("Warning: {file} wasn't changed, skipping re-encryption");
         return Ok(());
     }
 
