@@ -30,7 +30,7 @@ fn agenix_bin() -> String {
 // ============================================
 
 #[test]
-fn test_list_quiet_produces_no_output() {
+fn test_list_quiet_outputs_secrets_but_no_summary() {
     let temp_dir = tempdir().unwrap();
     let path = temp_dir.path().to_str().unwrap();
 
@@ -46,11 +46,21 @@ fn test_list_quiet_produces_no_output() {
         .expect("Failed to execute agenix");
 
     assert!(output.status.success(), "list should succeed");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    // Should contain secrets list (note: .age suffix may be stripped in output)
     assert!(
-        output.stdout.is_empty(),
-        "stdout should be empty in quiet mode, got: {:?}",
-        String::from_utf8_lossy(&output.stdout)
+        stdout.contains("s1") && stdout.contains("s2"),
+        "stdout should contain secret names in quiet mode, got: {:?}",
+        stdout
     );
+    // Should NOT contain summary
+    assert!(
+        !stdout.contains("Total:"),
+        "stdout should NOT contain summary in quiet mode, got: {:?}",
+        stdout
+    );
+
     assert!(
         output.stderr.is_empty(),
         "stderr should be empty in quiet mode, got: {:?}",

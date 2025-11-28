@@ -15,7 +15,7 @@
 //!
 //! | Command         | Normal Mode                    | Quiet Mode                       |
 //! |-----------------|--------------------------------|----------------------------------|
-//! | list            | Secret list + summary          | Nothing (exit code only)         |
+//! | list            | Secret list + summary          | Secret list only (no summary)    |
 //! | check           | Progress + results + summary   | Nothing (exit code only)         |
 //! | generate        | Progress per secret            | Nothing (exit code only)         |
 //! | generate --dry-run | What would be generated     | Nothing (no actual changes)      |
@@ -25,7 +25,7 @@
 //! | decrypt         | Content to stdout              | Content to stdout (unchanged)    |
 //! | completions     | Completions to stdout          | Completions to stdout (unchanged)|
 //!
-//! Note: Actual content output (decrypt, completions) goes to stdout and is never suppressed.
+//! Note: Actual content output (decrypt, completions, list) goes to stdout and is never suppressed.
 //! Error messages always go to stderr and are never suppressed by quiet mode.
 
 use std::sync::atomic::{AtomicBool, Ordering};
