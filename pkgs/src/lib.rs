@@ -65,12 +65,17 @@ where
     }
 
     match args.command {
-        Some(cli::Command::Rekey { secrets, partial }) => editor::rekey_files(
+        Some(cli::Command::Rekey {
+            secrets,
+            partial,
+            dry_run,
+        }) => editor::rekey_files(
             &rules,
             &secrets,
             &args.identity,
             args.no_system_identities,
             partial,
+            dry_run,
         )
         .context("Failed to rekey files"),
         Some(cli::Command::Generate {
@@ -101,7 +106,11 @@ where
             force,
         )
         .with_context(|| format!("Failed to edit {file}")),
-        Some(cli::Command::Encrypt { file, force }) => editor::encrypt_file(&rules, &file, force)
+        Some(cli::Command::Encrypt {
+            file,
+            force,
+            dry_run,
+        }) => editor::encrypt_file(&rules, &file, force, dry_run)
             .with_context(|| format!("Failed to encrypt {file}")),
         Some(cli::Command::List { detailed }) => {
             editor::list_secrets(&rules, detailed, &args.identity, args.no_system_identities)
