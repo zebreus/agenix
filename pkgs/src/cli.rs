@@ -1279,8 +1279,101 @@ mod tests {
     }
 
     #[test]
+    fn test_quiet_after_subcommand() {
+        let args = Args::try_parse_from(["agenix", "list", "-q"]).unwrap();
+        assert!(args.quiet);
+        assert!(matches!(args.command, Some(Command::List { .. })));
+    }
+
+    #[test]
+    fn test_quiet_with_decrypt() {
+        let args = Args::try_parse_from(["agenix", "-q", "decrypt", "secret.age"]).unwrap();
+        assert!(args.quiet);
+        if let Some(Command::Decrypt { file, .. }) = args.command {
+            assert_eq!(file, "secret.age");
+        } else {
+            panic!("Expected Decrypt command");
+        }
+    }
+
+    #[test]
+    fn test_quiet_with_check() {
+        let args = Args::try_parse_from(["agenix", "-q", "check"]).unwrap();
+        assert!(args.quiet);
+        assert!(matches!(args.command, Some(Command::Check { .. })));
+    }
+
+    #[test]
     fn test_quiet_verbose_conflict() {
+        // --quiet and --verbose should conflict
         let result = Args::try_parse_from(["agenix", "-q", "-v", "list"]);
         assert!(result.is_err(), "Should conflict: quiet and verbose");
+    }
+
+    #[test]
+    fn test_verbose_quiet_conflict() {
+        // Order shouldn't matter
+        let result = Args::try_parse_from(["agenix", "-v", "-q", "list"]);
+        assert!(result.is_err(), "Should conflict: verbose and quiet");
+    }
+
+    #[test]
+    fn test_quiet_with_all_global_flags() {
+        let args = Args::try_parse_from([
+            "agenix",
+            "-q",
+            "-r",
+            "/rules.nix",
+            "-i",
+            "/key",
+            "--no-system-identities",
+            "list",
+        ])
+        .unwrap();
+        assert!(args.quiet);
+        assert!(!args.verbose);
+        assert_eq!(args.rules, "/rules.nix");
+        assert_eq!(args.identity, vec!["/key".to_string()]);
+        assert!(args.no_system_identities);
+    }
+
+    // ===========================================
+    // EDITOR OPTIONAL TESTS
+    // ===========================================
+
+    #[test]
+    fn test_edit_no_editor_when_env_not_set() {
+        with_env_var("EDITOR", None, || {
+            let args = Args::try_parse_from(["agenix", "edit", "test.age"]).unwrap();
+            if let Some(Command::Edit { editor, .. }) = args.command {
+                assert_eq!(editor, None);
+            } else {
+                panic!("Expected Edit command");
+            }
+        });
+    }
+
+    #[test]
+    fn test_edit_explicit_editor_overrides_none() {
+        with_env_var("EDITOR", None, || {
+            let args = Args::try_parse_from(["agenix", "edit", "-e", "emacs", "test.age"]).unwrap();
+            if let Some(Command::Edit { editor, .. }) = args.command {
+                assert_eq!(editor, Some("emacs".to_string()));
+            } else {
+                panic!("Expected Edit command");
+            }
+        });
+    }
+
+    #[test]
+    fn test_edit_env_editor_is_used() {
+        with_env_var("EDITOR", Some("helix"), || {
+            let args = Args::try_parse_from(["agenix", "edit", "test.age"]).unwrap();
+            if let Some(Command::Edit { editor, .. }) = args.command {
+                assert_eq!(editor, Some("helix".to_string()));
+            } else {
+                panic!("Expected Edit command");
+            }
+        });
     }
 }
