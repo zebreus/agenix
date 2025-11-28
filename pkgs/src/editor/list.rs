@@ -7,9 +7,9 @@ use anyhow::Result;
 use std::path::Path;
 
 use crate::crypto;
+use crate::log;
 use crate::nix::{generate_secret_with_public, get_all_files, get_public_keys, should_armor};
 use crate::output::is_quiet;
-use crate::{info, status, success};
 
 use super::filter_files;
 use super::secret_name::SecretName;
@@ -137,7 +137,7 @@ pub fn list_secrets(
     let all_files = get_all_files(rules_path)?;
 
     if all_files.is_empty() {
-        info!("No secrets defined in {}", rules_path);
+        log!("No secrets defined in {}", rules_path);
         return Ok(());
     }
 
@@ -243,11 +243,11 @@ pub fn check_secrets(
         } else {
             "No existing secret files to check".to_string()
         };
-        info!("{}", msg);
+        log!("{}", msg);
         return Ok(());
     }
 
-    status!("Checking {} secrets...", existing_files.len());
+    log!("Checking {} secrets...", existing_files.len());
 
     // Check each file and collect results
     let results: Vec<_> = existing_files
@@ -264,20 +264,20 @@ pub fn check_secrets(
         .iter()
         .filter_map(|(name, result)| match result {
             Ok(()) => {
-                status!("✓ {}", name);
+                log!("✓ {}", name);
                 None
             }
             Err(e) => {
-                status!("✗ {}: {}", name, e);
+                log!("✗ {}: {}", name, e);
                 Some(name.clone())
             }
         })
         .collect();
 
-    status!("");
+    log!("");
 
     if failed.is_empty() {
-        success!("All {} secrets verified successfully.", results.len());
+        log!("All {} secrets verified successfully.", results.len());
         Ok(())
     } else {
         Err(anyhow::anyhow!(

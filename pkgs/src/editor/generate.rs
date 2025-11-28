@@ -10,11 +10,11 @@ use std::path::Path;
 use tempfile::TempDir;
 
 use crate::crypto::encrypt_from_file;
+use crate::log;
 use crate::nix::{
     generate_secret_with_public, generate_secret_with_public_and_context, get_all_files,
     get_public_keys, get_secret_dependencies, should_armor,
 };
-use crate::{info, status, success, warn};
 
 use super::context::SecretContext;
 use super::dependency_resolver::DependencyResolver;
@@ -124,13 +124,13 @@ fn check_missing_dependencies(
 /// Report what would be generated in dry-run mode.
 fn report_dry_run(file: &str, output: &crate::nix::GeneratorOutput) {
     if Path::new(file).exists() {
-        info!("Would overwrite {file}");
+        log!("Would overwrite {file}");
     } else {
-        info!("Would generate {file}");
+        log!("Would generate {file}");
     }
     if output.public.is_some() {
         let pub_file = format!("{}.pub", file);
-        info!("Would generate public file {pub_file}");
+        log!("Would generate public file {pub_file}");
     }
 }
 
@@ -140,7 +140,7 @@ fn write_public_key_file(file: &str, output: &crate::nix::GeneratorOutput) -> Re
         let pub_file = format!("{}.pub", file);
         fs::write(&pub_file, public_content)
             .with_context(|| format!("Failed to write public file {pub_file}"))?;
-        status!("Generated public file {pub_file}");
+        log!("Generated public file {pub_file}");
     }
     Ok(())
 }
@@ -151,7 +151,7 @@ fn encrypt_secret(file: &str, secret_content: &str, rules_path: &str) -> Result<
     let armor = should_armor(rules_path, file)?;
 
     if public_keys.is_empty() {
-        warn!("Warning: No public keys found for {file}, skipping");
+        log!("Warning: No public keys found for {file}, skipping");
         return Ok(ProcessResult::NoPublicKeys);
     }
 
@@ -184,7 +184,7 @@ fn process_single_secret(
     // Skip if the file already exists (unless force is set)
     if Path::new(file).exists() && !force {
         if let Ok(Some(_)) = generate_secret_with_public(ctx.rules_path(), file) {
-            info!("Skipping {file}: already exists (use --force to overwrite)");
+            log!("Skipping {file}: already exists (use --force to overwrite)");
         }
         resolver.mark_processed(file);
         return Ok(ProcessResult::AlreadyProcessed);
@@ -230,7 +230,7 @@ fn process_single_secret(
     }
 
     // Encrypt and write the secret
-    status!("Generating {file}...");
+    log!("Generating {file}...");
     let result = encrypt_secret(file, &output.secret, ctx.rules_path())?;
 
     if result == ProcessResult::NoPublicKeys {
@@ -238,7 +238,7 @@ fn process_single_secret(
         return Ok(result);
     }
 
-    success!("Generated and encrypted {file}");
+    log!("Generated and encrypted {file}");
     resolver.store_generated(file, output.clone());
     write_public_key_file(file, &output)?;
     resolver.mark_processed(file);

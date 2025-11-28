@@ -3,13 +3,10 @@
 //! This module provides centralized output handling with support for quiet and verbose modes.
 //! All output to stderr should go through these utilities to ensure consistent behavior.
 //!
-//! ## Output Levels
+//! ## Output Macros
 //!
-//! - **verbose**: Detailed debugging information, only shown when `-v` is passed
-//! - **info**: Normal informational messages, suppressed in quiet mode
-//! - **status**: Progress and status messages, suppressed in quiet mode
-//! - **warn**: Warnings that may indicate problems, suppressed in quiet mode
-//! - **success**: Success messages, suppressed in quiet mode
+//! - **verbose!**: Detailed debugging information, only shown when `-v` is passed
+//! - **log!**: Normal output messages, suppressed in quiet mode
 //!
 //! ## Quiet Mode Behavior by Command
 //!
@@ -76,89 +73,22 @@ macro_rules! verbose {
 
 /// Print a message only if quiet mode is NOT enabled.
 ///
-/// Use for normal informational messages that users would typically want to see.
+/// Use for normal output messages that users would typically want to see.
+/// This includes informational messages, progress updates, warnings, and success messages.
 ///
 /// # Example
 /// ```ignore
-/// info!("Generating secret...");
-/// info!("Successfully completed operation");
+/// log!("Generating secret...");
+/// log!("✓ secret verified");
+/// log!("Warning: File was not modified");
+/// log!("Successfully rekeyed {} secrets", count);
 /// ```
 #[macro_export]
-macro_rules! info {
+macro_rules! log {
     ($($arg:tt)*) => {
         if !$crate::output::is_quiet() {
             eprintln!($($arg)*);
         }
-    };
-}
-
-/// Print status/progress messages only if quiet mode is NOT enabled.
-///
-/// Use for progress indicators and status updates during operations.
-///
-/// # Example
-/// ```ignore
-/// status!("Checking {} secrets...", count);
-/// status!("✓ secret1");
-/// ```
-#[macro_export]
-macro_rules! status {
-    ($($arg:tt)*) => {
-        if !$crate::output::is_quiet() {
-            eprintln!($($arg)*);
-        }
-    };
-}
-
-/// Print warning messages only if quiet mode is NOT enabled.
-///
-/// Use for warnings that indicate potential problems but don't prevent operation.
-///
-/// # Example
-/// ```ignore
-/// warn!("File was not modified");
-/// warn!("Skipping undecryptable secret: {}", name);
-/// ```
-#[macro_export]
-macro_rules! warn {
-    ($($arg:tt)*) => {
-        if !$crate::output::is_quiet() {
-            eprintln!($($arg)*);
-        }
-    };
-}
-
-/// Print success messages only if quiet mode is NOT enabled.
-///
-/// Use for indicating successful completion of operations.
-///
-/// # Example
-/// ```ignore
-/// success!("All {} secrets verified successfully.", count);
-/// success!("Successfully rekeyed {} secrets.", count);
-/// ```
-#[macro_export]
-macro_rules! success {
-    ($($arg:tt)*) => {
-        if !$crate::output::is_quiet() {
-            eprintln!($($arg)*);
-        }
-    };
-}
-
-/// Print to stdout (never suppressed by quiet mode).
-///
-/// Use for actual content output like decrypted secrets or completions.
-/// This should be used sparingly - most output should go to stderr.
-///
-/// # Example
-/// ```ignore
-/// stdout!("{}", decrypted_content);
-/// ```
-#[macro_export]
-macro_rules! stdout {
-    ($($arg:tt)*) => {
-        println!($($arg)*);
     };
 }
 
