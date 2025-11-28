@@ -148,10 +148,10 @@ pub fn list_secrets(
         .collect::<Result<Vec<_>>>()?;
     secrets.sort_by(|a, b| a.name.cmp(&b.name));
 
-    // Print secrets list (always shown, even in quiet mode)
+    // Print secrets list to stdout (always shown, even in quiet mode)
     let stats = print_secrets(&secrets, detailed);
 
-    // Print summary (suppressed in quiet mode)
+    // Print summary to stdout (suppressed in quiet mode)
     if !is_quiet() {
         println!();
         println!(
