@@ -21,13 +21,8 @@ const TEST_PUBKEY: &str = "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn
 
 /// Get the path to the agenix binary.
 fn agenix_bin() -> String {
-    // First try the debug build
-    let debug_path = env!("CARGO_MANIFEST_DIR").to_string() + "/target/debug/agenix";
-    if std::path::Path::new(&debug_path).exists() {
-        return debug_path;
-    }
-    // Fallback to release build
-    env!("CARGO_MANIFEST_DIR").to_string() + "/target/release/agenix"
+    // Use CARGO_BIN_EXE_agenix which is set by cargo when running integration tests
+    env!("CARGO_BIN_EXE_agenix").to_string()
 }
 
 // ============================================
