@@ -11,7 +11,7 @@ use tempfile::{NamedTempFile, tempdir};
 /// Create a temporary rules file with the given content.
 fn create_rules_file(content: &str) -> NamedTempFile {
     let mut temp_file = NamedTempFile::new().unwrap();
-    writeln!(temp_file, "{}", content).unwrap();
+    temp_file.write_all(content.as_bytes()).unwrap();
     temp_file.flush().unwrap();
     temp_file
 }
@@ -160,8 +160,10 @@ fn test_rekey_dry_run_does_not_modify_files() {
     );
     let temp_rules = create_rules_file(&rules);
 
-    // Create a dummy secret file (invalid but fine for testing existence check)
-    fs::write(&secret_path, "not-real-encrypted-content").unwrap();
+    // Create a file with some content to verify it's not modified by dry-run.
+    // The content doesn't need to be valid encrypted data since we're using --partial
+    // which continues even if decryption fails.
+    fs::write(&secret_path, "test-content-to-verify-no-modification").unwrap();
     let original_content = fs::read(&secret_path).unwrap();
 
     // Run rekey with --dry-run (will report undecryptable but --partial would continue)
