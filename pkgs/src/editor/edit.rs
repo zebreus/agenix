@@ -214,6 +214,8 @@ pub fn edit_file(
 ///
 /// Reads from stdin and encrypts the content to the specified file. Does not require
 /// an editor or decryption capabilities.
+///
+/// In dry-run mode, the content is read and validated but not encrypted to disk.
 pub fn encrypt_file(rules_path: &str, file: &str, force: bool, dry_run: bool) -> Result<()> {
     // Check if file exists before doing any work
     if Path::new(file).exists() && !force {
@@ -240,14 +242,16 @@ pub fn encrypt_file(rules_path: &str, file: &str, force: bool, dry_run: bool) ->
         return Err(anyhow!("No input provided on stdin"));
     }
 
+    // Write stdin content to temp file (same code path for both modes)
+    fs::write(&cleartext_file, stdin_content).context("Failed to write stdin content to file")?;
+
     log!("Encrypting to: {}", file);
 
-    // In dry-run mode, skip the actual encryption
+    // In dry-run mode, skip only the final file write
     if dry_run {
         return Ok(());
     }
 
-    fs::write(&cleartext_file, stdin_content).context("Failed to write stdin content to file")?;
     ctx.encrypt(&cleartext_file.to_string_lossy(), file)
 }
 
