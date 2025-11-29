@@ -203,8 +203,8 @@ fn test_generate_dry_run_quiet_produces_no_output() {
     let output = Command::new(agenix_bin())
         .args([
             "-q",
-            "generate",
             "--dry-run",
+            "generate",
             "--rules",
             temp_rules.path().to_str().unwrap(),
         ])

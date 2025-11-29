@@ -63,27 +63,25 @@ where
     if args.no_system_identities {
         verbose!("System identities disabled");
     }
+    if args.dry_run {
+        verbose!("Dry-run mode enabled");
+    }
 
     match args.command {
-        Some(cli::Command::Rekey {
-            secrets,
-            partial,
-            dry_run,
-        }) => editor::rekey_files(
+        Some(cli::Command::Rekey { secrets, partial }) => editor::rekey_files(
             &rules,
             &secrets,
             &args.identity,
             args.no_system_identities,
             partial,
-            dry_run,
+            args.dry_run,
         )
         .context("Failed to rekey files"),
         Some(cli::Command::Generate {
             force,
-            dry_run,
             no_dependencies,
             secrets,
-        }) => editor::generate_secrets(&rules, force, dry_run, !no_dependencies, &secrets)
+        }) => editor::generate_secrets(&rules, force, args.dry_run, !no_dependencies, &secrets)
             .context("Failed to generate secrets"),
         Some(cli::Command::Decrypt { file, output }) => editor::decrypt_file(
             &rules,
@@ -97,7 +95,6 @@ where
             file,
             editor,
             force,
-            dry_run,
         }) => editor::edit_file(
             &rules,
             &file,
@@ -105,15 +102,13 @@ where
             &args.identity,
             args.no_system_identities,
             force,
-            dry_run,
+            args.dry_run,
         )
         .with_context(|| format!("Failed to edit {file}")),
-        Some(cli::Command::Encrypt {
-            file,
-            force,
-            dry_run,
-        }) => editor::encrypt_file(&rules, &file, force, dry_run)
-            .with_context(|| format!("Failed to encrypt {file}")),
+        Some(cli::Command::Encrypt { file, force }) => {
+            editor::encrypt_file(&rules, &file, force, args.dry_run)
+                .with_context(|| format!("Failed to encrypt {file}"))
+        }
         Some(cli::Command::List { detailed }) => {
             editor::list_secrets(&rules, detailed, &args.identity, args.no_system_identities)
                 .context("Failed to list secrets")
