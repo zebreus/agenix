@@ -165,14 +165,8 @@ pub fn rekey_files(
     for file in &preflight.decryptable {
         log!("Rekeying {file}...");
 
-        // In dry-run mode, skip the actual edit operation
-        if dry_run {
-            success_count += 1;
-            continue;
-        }
-
+        // Call edit_file with dry_run flag - it will skip the actual file write in dry-run mode
         // Never use force for rekey - we already verified decryptability in preflight
-        // Never use dry_run for rekey - the rekey function handles dry_run at a higher level
         if let Err(e) = edit_file(
             rules_path,
             file,
@@ -180,7 +174,7 @@ pub fn rekey_files(
             identities,
             no_system_identities,
             false,
-            false,
+            dry_run,
         ) {
             if partial {
                 failed_files.push((file.clone(), format!("{e:#}")));
