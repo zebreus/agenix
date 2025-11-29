@@ -62,6 +62,10 @@ pub enum Command {
         /// Open empty editor if decryption fails (useful for recreating secrets)
         #[arg(short, long)]
         force: bool,
+
+        /// Show what would be edited without saving changes
+        #[arg(short = 'n', long)]
+        dry_run: bool,
     },
 
     /// Encrypt content from stdin to a secret file
@@ -241,6 +245,28 @@ mod tests {
         if let Some(Command::Edit { file, force, .. }) = args.command {
             assert_eq!(file, "test.age".to_string());
             assert!(force);
+        } else {
+            panic!("Expected Edit command");
+        }
+    }
+
+    #[test]
+    fn test_edit_with_dry_run() {
+        let args = Args::try_parse_from(["agenix", "edit", "--dry-run", "test.age"]).unwrap();
+        if let Some(Command::Edit { file, dry_run, .. }) = args.command {
+            assert_eq!(file, "test.age".to_string());
+            assert!(dry_run);
+        } else {
+            panic!("Expected Edit command");
+        }
+    }
+
+    #[test]
+    fn test_edit_with_dry_run_short() {
+        let args = Args::try_parse_from(["agenix", "edit", "-n", "test.age"]).unwrap();
+        if let Some(Command::Edit { file, dry_run, .. }) = args.command {
+            assert_eq!(file, "test.age".to_string());
+            assert!(dry_run);
         } else {
             panic!("Expected Edit command");
         }

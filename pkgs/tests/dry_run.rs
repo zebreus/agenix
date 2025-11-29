@@ -1,7 +1,8 @@
 //! Integration tests for dry-run functionality across all commands.
 //!
-//! These tests verify that --dry-run flag works correctly for generate, rekey, and encrypt commands,
-//! ensuring they follow the same code paths as normal mode but without modifying files.
+//! These tests verify that --dry-run flag works correctly for generate, rekey, encrypt,
+//! and edit commands, ensuring they follow the same code paths as normal mode but
+//! without modifying files.
 
 use std::fs;
 use std::io::Write;
@@ -411,6 +412,204 @@ fn test_encrypt_dry_run_short_flag() {
     assert!(
         output.status.success(),
         "encrypt -n should succeed, stderr: {:?}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // File should not exist
+    assert!(
+        !std::path::Path::new(&secret_path).exists(),
+        "File should NOT be created with -n flag"
+    );
+}
+
+// ============================================
+// EDIT --dry-run TESTS
+// ============================================
+
+#[test]
+fn test_edit_dry_run_does_not_create_file() {
+    let temp_dir = tempdir().unwrap();
+    let path = temp_dir.path().to_str().unwrap();
+    let secret_path = format!("{}/new-secret.age", path);
+
+    let rules = format!(
+        r#"{{ "{}" = {{ publicKeys = [ "{}" ]; }}; }}"#,
+        secret_path, TEST_PUBKEY
+    );
+    let temp_rules = create_rules_file(&rules);
+
+    // Run edit with --dry-run, providing input via stdin (simulating piped input)
+    let mut child = Command::new(agenix_bin())
+        .args([
+            "edit",
+            "--dry-run",
+            "--rules",
+            temp_rules.path().to_str().unwrap(),
+            &secret_path,
+        ])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("Failed to spawn agenix");
+
+    // Write content to stdin (simulating non-TTY input)
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin.write_all(b"test-secret-content").unwrap();
+    }
+
+    let output = child.wait_with_output().expect("Failed to wait for agenix");
+
+    assert!(
+        output.status.success(),
+        "edit --dry-run should succeed, stderr: {:?}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // Verify file was NOT created
+    assert!(
+        !std::path::Path::new(&secret_path).exists(),
+        "File should NOT be created in dry-run mode"
+    );
+}
+
+#[test]
+fn test_edit_dry_run_does_not_modify_existing_file() {
+    let temp_dir = tempdir().unwrap();
+    let path = temp_dir.path().to_str().unwrap();
+    let secret_path = format!("{}/existing-secret.age", path);
+
+    let rules = format!(
+        r#"{{ "{}" = {{ publicKeys = [ "{}" ]; }}; }}"#,
+        secret_path, TEST_PUBKEY
+    );
+    let temp_rules = create_rules_file(&rules);
+
+    // Create a file with some content to verify it's not modified by dry-run
+    let original_content = b"original-encrypted-content";
+    fs::write(&secret_path, original_content).unwrap();
+
+    // Run edit with --dry-run, providing new content via stdin
+    let mut child = Command::new(agenix_bin())
+        .args([
+            "edit",
+            "--dry-run",
+            "--force", // Force to allow starting with empty content since we can't decrypt
+            "--rules",
+            temp_rules.path().to_str().unwrap(),
+            &secret_path,
+        ])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("Failed to spawn agenix");
+
+    // Write new content to stdin
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin.write_all(b"new-secret-content").unwrap();
+    }
+
+    let output = child.wait_with_output().expect("Failed to wait for agenix");
+
+    assert!(
+        output.status.success(),
+        "edit --dry-run should succeed, stderr: {:?}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // Verify file content was NOT modified
+    let new_content = fs::read(&secret_path).unwrap();
+    assert_eq!(
+        original_content.to_vec(),
+        new_content,
+        "File content should not be modified in dry-run mode"
+    );
+}
+
+#[test]
+fn test_edit_dry_run_produces_output() {
+    let temp_dir = tempdir().unwrap();
+    let path = temp_dir.path().to_str().unwrap();
+    let secret_path = format!("{}/test.age", path);
+
+    let rules = format!(
+        r#"{{ "{}" = {{ publicKeys = [ "{}" ]; }}; }}"#,
+        secret_path, TEST_PUBKEY
+    );
+    let temp_rules = create_rules_file(&rules);
+
+    let mut child = Command::new(agenix_bin())
+        .args([
+            "edit",
+            "--dry-run",
+            "--rules",
+            temp_rules.path().to_str().unwrap(),
+            &secret_path,
+        ])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("Failed to spawn agenix");
+
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin.write_all(b"test-content").unwrap();
+    }
+
+    let output = child.wait_with_output().expect("Failed to wait for agenix");
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    // Should show the encrypting message and dry-run message
+    assert!(
+        stderr.contains("Encrypting to:"),
+        "Edit --dry-run should show encrypting message, got: {:?}",
+        stderr
+    );
+    assert!(
+        stderr.contains("Dry-run mode: not saving changes"),
+        "Edit --dry-run should show dry-run message, got: {:?}",
+        stderr
+    );
+}
+
+#[test]
+fn test_edit_dry_run_short_flag() {
+    let temp_dir = tempdir().unwrap();
+    let path = temp_dir.path().to_str().unwrap();
+    let secret_path = format!("{}/test.age", path);
+
+    let rules = format!(
+        r#"{{ "{}" = {{ publicKeys = [ "{}" ]; }}; }}"#,
+        secret_path, TEST_PUBKEY
+    );
+    let temp_rules = create_rules_file(&rules);
+
+    // Use -n instead of --dry-run
+    let mut child = Command::new(agenix_bin())
+        .args([
+            "edit",
+            "-n",
+            "--rules",
+            temp_rules.path().to_str().unwrap(),
+            &secret_path,
+        ])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("Failed to spawn agenix");
+
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin.write_all(b"test-content").unwrap();
+    }
+
+    let output = child.wait_with_output().expect("Failed to wait for agenix");
+
+    assert!(
+        output.status.success(),
+        "edit -n should succeed, stderr: {:?}",
         String::from_utf8_lossy(&output.stderr)
     );
 

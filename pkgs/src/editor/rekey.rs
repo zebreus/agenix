@@ -172,12 +172,14 @@ pub fn rekey_files(
         }
 
         // Never use force for rekey - we already verified decryptability in preflight
+        // Never use dry_run for rekey - the rekey function handles dry_run at a higher level
         if let Err(e) = edit_file(
             rules_path,
             file,
             Some(":"),
             identities,
             no_system_identities,
+            false,
             false,
         ) {
             if partial {

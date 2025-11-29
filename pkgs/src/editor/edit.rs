@@ -94,6 +94,9 @@ enum EditorChoice {
 ///
 /// When stdin is not a TTY and no editor is explicitly specified, the content
 /// is read directly from stdin instead of launching an editor.
+///
+/// In dry-run mode, the editor is still opened and content can be modified, but
+/// the encrypted file is not actually updated.
 pub fn edit_file(
     rules_path: &str,
     file: &str,
@@ -101,6 +104,7 @@ pub fn edit_file(
     identities: &[String],
     no_system_identities: bool,
     force: bool,
+    dry_run: bool,
 ) -> Result<()> {
     let ctx = EncryptionContext::new(rules_path, file)?;
     let filename = get_filename(file)?;
@@ -195,7 +199,14 @@ pub fn edit_file(
         return Ok(());
     }
 
-    verbose!("Encrypting to: {}", file);
+    log!("Encrypting to: {}", file);
+
+    // In dry-run mode, skip the actual encryption to disk
+    if dry_run {
+        log!("Dry-run mode: not saving changes to {}", file);
+        return Ok(());
+    }
+
     ctx.encrypt(&cleartext_file.to_string_lossy(), file)
 }
 
@@ -277,7 +288,15 @@ mod tests {
     #[test]
     fn test_edit_file_no_keys() {
         let rules = "./test_secrets.nix";
-        let result = edit_file(rules, "nonexistent.age", Some("vi"), &[], false, false);
+        let result = edit_file(
+            rules,
+            "nonexistent.age",
+            Some("vi"),
+            &[],
+            false,
+            false,
+            false,
+        );
         assert!(result.is_err());
     }
 
@@ -298,6 +317,7 @@ mod tests {
             secret_path.to_str().unwrap(),
             Some(":"),
             &[],
+            false,
             false,
             false,
         );
@@ -352,7 +372,7 @@ publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" 
     fn test_edit_file_invalid_path() {
         // Test with a path that has no filename component
         let rules = "./test_secrets.nix";
-        let result = edit_file(rules, "/", Some("vi"), &[], false, false);
+        let result = edit_file(rules, "/", Some("vi"), &[], false, false, false);
         assert!(result.is_err());
     }
 

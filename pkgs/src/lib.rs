@@ -97,6 +97,7 @@ where
             file,
             editor,
             force,
+            dry_run,
         }) => editor::edit_file(
             &rules,
             &file,
@@ -104,6 +105,7 @@ where
             &args.identity,
             args.no_system_identities,
             force,
+            dry_run,
         )
         .with_context(|| format!("Failed to edit {file}")),
         Some(cli::Command::Encrypt {
