@@ -60,7 +60,7 @@ EOF
 
 echo "not-valid-age-content" > "$INVALID_SECRET"
 
-if agenix check -r "$TEMP_RULES" 2>/dev/null; then
+if agenix check --secrets-nix "$TEMP_RULES" 2>/dev/null; then
   echo "✗ Check should fail on invalid secret"
   exit 1
 else
@@ -69,7 +69,7 @@ fi
 
 # Test 6: Check nonexistent rules file fails with error
 echo "--- Test 6: Nonexistent rules file ---"
-if agenix check -r "/nonexistent/path/rules.nix" 2>/dev/null; then
+if agenix check --secrets-nix "/nonexistent/path/rules.nix" 2>/dev/null; then
   echo "✗ Check should fail on nonexistent rules file"
   exit 1
 else
@@ -80,7 +80,7 @@ fi
 echo "--- Test 7: Invalid nix syntax ---"
 INVALID_RULES="$TMPDIR/invalid-check-rules.nix"
 echo "{ invalid nix syntax !!!" > "$INVALID_RULES"
-if agenix check -r "$INVALID_RULES" 2>/dev/null; then
+if agenix check --secrets-nix "$INVALID_RULES" 2>/dev/null; then
   echo "✗ Check should fail on invalid nix syntax"
   exit 1
 else
@@ -99,7 +99,7 @@ cat > "$FAIL_RULES" << EOF
 }
 EOF
 echo "invalid" > "$FAIL_SECRET"
-if ! agenix check -r "$FAIL_RULES" 2>/dev/null; then
+if ! agenix check --secrets-nix "$FAIL_RULES" 2>/dev/null; then
   echo "✓ Check returns non-zero exit code on failure"
 else
   echo "✗ Check should return non-zero exit code on failure"
@@ -138,7 +138,7 @@ fi
 echo "--- Test 12: Empty rules file ---"
 EMPTY_RULES="$TMPDIR/empty-check-rules.nix"
 echo "{ }" > "$EMPTY_RULES"
-empty_output=$(agenix check -r "$EMPTY_RULES" 2>&1)
+empty_output=$(agenix check --secrets-nix "$EMPTY_RULES" 2>&1)
 if echo "$empty_output" | grep -q "No secrets defined"; then
   echo "✓ Check shows message for empty rules"
 else
@@ -163,7 +163,7 @@ cat > "$MULTI_RULES" << EOF
 EOF
 echo "invalid1" > "$MULTI_SECRET1"
 echo "invalid2" > "$MULTI_SECRET2"
-multi_output=$(agenix check -r "$MULTI_RULES" 2>&1 || true)
+multi_output=$(agenix check --secrets-nix "$MULTI_RULES" 2>&1 || true)
 if echo "$multi_output" | grep -q "2 of 2"; then
   echo "✓ Check shows correct count for multiple failures"
 else

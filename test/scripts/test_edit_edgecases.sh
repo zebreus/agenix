@@ -20,13 +20,13 @@ cat > "$TEMP_RULES" << EOF
 EOF
 
 # First create a valid secret
-echo "original-content" | agenix encrypt -r "$TEMP_RULES" "$FORCE_SECRET"
+echo "original-content" | agenix encrypt --secrets-nix "$TEMP_RULES" "$FORCE_SECRET"
 
 # Now corrupt it (write garbage)
 echo "not-valid-age-format" > "$FORCE_SECRET"
 
 # Try to edit without --force (should fail)
-if EDITOR="echo 'new-content' >" agenix edit -r "$TEMP_RULES" "$FORCE_SECRET" 2>/dev/null; then
+if EDITOR="echo 'new-content' >" agenix edit --secrets-nix "$TEMP_RULES" "$FORCE_SECRET" 2>/dev/null; then
   echo "✗ Edit should fail on corrupted file without --force"
   exit 1
 else
@@ -34,8 +34,8 @@ else
 fi
 
 # Try with --force (should succeed, starting fresh)
-EDITOR="echo 'force-content' >" agenix edit -r "$TEMP_RULES" --force "$FORCE_SECRET"
-decrypted=$(agenix decrypt -r "$TEMP_RULES" "$FORCE_SECRET")
+EDITOR="echo 'force-content' >" agenix edit --secrets-nix "$TEMP_RULES" --force "$FORCE_SECRET"
+decrypted=$(agenix decrypt --secrets-nix "$TEMP_RULES" "$FORCE_SECRET")
 if [ "$decrypted" = "force-content" ]; then
   echo "✓ Edit --force works on corrupted file"
 else
@@ -57,10 +57,10 @@ EOF
 # Ensure file doesn't exist
 rm -f "$NEW_EDIT_SECRET"
 
-EDITOR="echo 'created-by-edit' >" agenix edit -r "$TEMP_RULES" "$NEW_EDIT_SECRET"
+EDITOR="echo 'created-by-edit' >" agenix edit --secrets-nix "$TEMP_RULES" "$NEW_EDIT_SECRET"
 
 if [ -f "$NEW_EDIT_SECRET" ]; then
-  decrypted=$(agenix decrypt -r "$TEMP_RULES" "$NEW_EDIT_SECRET")
+  decrypted=$(agenix decrypt --secrets-nix "$TEMP_RULES" "$NEW_EDIT_SECRET")
   if [ "$decrypted" = "created-by-edit" ]; then
     echo "✓ Edit creates new file"
   else
@@ -83,11 +83,11 @@ cat > "$TEMP_RULES" << EOF
 }
 EOF
 
-echo "original" | agenix encrypt -r "$TEMP_RULES" "$UNCHANGED_SECRET"
+echo "original" | agenix encrypt --secrets-nix "$TEMP_RULES" "$UNCHANGED_SECRET"
 original_hash=$(sha256sum "$UNCHANGED_SECRET" | cut -d' ' -f1)
 
 # Use cat as editor (makes no changes)
-EDITOR="cat" agenix edit -r "$TEMP_RULES" "$UNCHANGED_SECRET" 2>&1 | grep -q "wasn't changed"
+EDITOR="cat" agenix edit --secrets-nix "$TEMP_RULES" "$UNCHANGED_SECRET" 2>&1 | grep -q "wasn't changed"
 if [ $? -eq 0 ]; then
   echo "✓ Edit detects unchanged content"
 else
@@ -106,8 +106,8 @@ cat > "$TEMP_RULES" << EOF
 }
 EOF
 
-EDITOR="echo 'alias-test' >" agenix e -r "$TEMP_RULES" "$ALIAS_SECRET"
-decrypted=$(agenix decrypt -r "$TEMP_RULES" "$ALIAS_SECRET")
+EDITOR="echo 'alias-test' >" agenix e --secrets-nix "$TEMP_RULES" "$ALIAS_SECRET"
+decrypted=$(agenix decrypt --secrets-nix "$TEMP_RULES" "$ALIAS_SECRET")
 if [ "$decrypted" = "alias-test" ]; then
   echo "✓ Short alias 'e' works"
 else
@@ -125,7 +125,7 @@ cat > "$TEMP_RULES" << EOF
 }
 EOF
 
-if EDITOR="echo test >" agenix edit -r "$TEMP_RULES" "$TMPDIR/not-in-rules.age" 2>/dev/null; then
+if EDITOR="echo test >" agenix edit --secrets-nix "$TEMP_RULES" "$TMPDIR/not-in-rules.age" 2>/dev/null; then
   echo "✗ Edit should fail for file not in rules"
   exit 1
 else
@@ -143,17 +143,17 @@ cat > "$TEMP_RULES" << EOF
 }
 EOF
 
-echo "original" | agenix encrypt -r "$TEMP_RULES" "$FAILING_SECRET"
-original_content=$(agenix decrypt -r "$TEMP_RULES" "$FAILING_SECRET")
+echo "original" | agenix encrypt --secrets-nix "$TEMP_RULES" "$FAILING_SECRET"
+original_content=$(agenix decrypt --secrets-nix "$TEMP_RULES" "$FAILING_SECRET")
 
 # Use an editor that exits with error
-if EDITOR="false" agenix edit -r "$TEMP_RULES" "$FAILING_SECRET" 2>/dev/null; then
+if EDITOR="false" agenix edit --secrets-nix "$TEMP_RULES" "$FAILING_SECRET" 2>/dev/null; then
   echo "✗ Edit should fail when editor exits with error"
   exit 1
 fi
 
 # Verify content unchanged
-current_content=$(agenix decrypt -r "$TEMP_RULES" "$FAILING_SECRET")
+current_content=$(agenix decrypt --secrets-nix "$TEMP_RULES" "$FAILING_SECRET")
 if [ "$current_content" = "$original_content" ]; then
   echo "✓ Edit preserves content when editor fails"
 else

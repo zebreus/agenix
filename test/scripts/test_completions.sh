@@ -140,10 +140,10 @@ fi
 
 # Test 15: Completions include global flags
 echo "--- Test 15: Global flags in completions ---"
-if [[ "$bash_completions" == *"--rules"* ]]; then
-  echo "✓ Completions include --rules flag"
+if [[ "$bash_completions" == *"--secrets-nix"* ]]; then
+  echo "✓ Completions include --secrets-nix flag"
 else
-  echo "✗ Completions missing --rules flag"
+  echo "✗ Completions missing --secrets-nix flag"
   exit 1
 fi
 

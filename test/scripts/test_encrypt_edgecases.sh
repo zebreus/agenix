@@ -19,7 +19,7 @@ cat > "$TEMP_RULES" << EOF
 }
 EOF
 
-if echo -n "" | agenix encrypt -r "$TEMP_RULES" "$NEW_SECRET" 2>/dev/null; then
+if echo -n "" | agenix encrypt --secrets-nix "$TEMP_RULES" "$NEW_SECRET" 2>/dev/null; then
   echo "✗ Encrypt should fail with empty stdin"
   exit 1
 else
@@ -37,8 +37,8 @@ cat > "$TEMP_RULES" << EOF
 }
 EOF
 
-printf "line1\nline2\nline3\n" | agenix encrypt -r "$TEMP_RULES" "$NEWLINE_SECRET"
-decrypted=$(agenix decrypt -r "$TEMP_RULES" "$NEWLINE_SECRET")
+printf "line1\nline2\nline3\n" | agenix encrypt --secrets-nix "$TEMP_RULES" "$NEWLINE_SECRET"
+decrypted=$(agenix decrypt --secrets-nix "$TEMP_RULES" "$NEWLINE_SECRET")
 expected=$(printf "line1\nline2\nline3\n")
 if [ "$decrypted" = "$expected" ]; then
   echo "✓ Encrypt preserves newlines"
@@ -61,8 +61,8 @@ cat > "$TEMP_RULES" << EOF
 EOF
 
 SPECIAL_CONTENT='!@#$%^&*()_+-=[]{}|;:'"'"'",.<>?/\`~'
-echo "$SPECIAL_CONTENT" | agenix encrypt -r "$TEMP_RULES" "$SPECIAL_SECRET"
-decrypted=$(agenix decrypt -r "$TEMP_RULES" "$SPECIAL_SECRET")
+echo "$SPECIAL_CONTENT" | agenix encrypt --secrets-nix "$TEMP_RULES" "$SPECIAL_SECRET"
+decrypted=$(agenix decrypt --secrets-nix "$TEMP_RULES" "$SPECIAL_SECRET")
 if [ "$decrypted" = "$SPECIAL_CONTENT" ]; then
   echo "✓ Encrypt handles special characters"
 else
@@ -82,8 +82,8 @@ cat > "$TEMP_RULES" << EOF
 EOF
 
 UNICODE_CONTENT="Hello 世界 🌍 Привет مرحبا"
-echo "$UNICODE_CONTENT" | agenix encrypt -r "$TEMP_RULES" "$UNICODE_SECRET"
-decrypted=$(agenix decrypt -r "$TEMP_RULES" "$UNICODE_SECRET")
+echo "$UNICODE_CONTENT" | agenix encrypt --secrets-nix "$TEMP_RULES" "$UNICODE_SECRET"
+decrypted=$(agenix decrypt --secrets-nix "$TEMP_RULES" "$UNICODE_SECRET")
 if [ "$decrypted" = "$UNICODE_CONTENT" ]; then
   echo "✓ Encrypt handles unicode"
 else
@@ -101,7 +101,7 @@ cat > "$TEMP_RULES" << EOF
 }
 EOF
 
-if echo "test" | agenix encrypt -r "$TEMP_RULES" "/nonexistent/directory/secret.age" 2>/dev/null; then
+if echo "test" | agenix encrypt --secrets-nix "$TEMP_RULES" "/nonexistent/directory/secret.age" 2>/dev/null; then
   echo "✗ Encrypt should fail for nonexistent directory"
   exit 1
 else
@@ -118,7 +118,7 @@ cat > "$TEMP_RULES" << EOF
 }
 EOF
 
-if echo "test" | agenix encrypt -r "$TEMP_RULES" "$TMPDIR/not-in-rules.age" 2>/dev/null; then
+if echo "test" | agenix encrypt --secrets-nix "$TEMP_RULES" "$TMPDIR/not-in-rules.age" 2>/dev/null; then
   echo "✗ Encrypt should fail for file not in rules"
   exit 1
 else
@@ -136,8 +136,8 @@ cat > "$TEMP_RULES" << EOF
 }
 EOF
 
-echo "alias-test" | agenix c -r "$TEMP_RULES" "$ALIAS_SECRET"
-decrypted=$(agenix decrypt -r "$TEMP_RULES" "$ALIAS_SECRET")
+echo "alias-test" | agenix c --secrets-nix "$TEMP_RULES" "$ALIAS_SECRET"
+decrypted=$(agenix decrypt --secrets-nix "$TEMP_RULES" "$ALIAS_SECRET")
 if [ "$decrypted" = "alias-test" ]; then
   echo "✓ Short alias 'c' works"
 else
@@ -158,8 +158,8 @@ EOF
 
 # Generate 100KB of random data
 LARGE_CONTENT=$(head -c 102400 /dev/urandom | base64)
-echo "$LARGE_CONTENT" | agenix encrypt -r "$TEMP_RULES" "$LARGE_SECRET"
-decrypted=$(agenix decrypt -r "$TEMP_RULES" "$LARGE_SECRET")
+echo "$LARGE_CONTENT" | agenix encrypt --secrets-nix "$TEMP_RULES" "$LARGE_SECRET"
+decrypted=$(agenix decrypt --secrets-nix "$TEMP_RULES" "$LARGE_SECRET")
 if [ "$decrypted" = "$LARGE_CONTENT" ]; then
   echo "✓ Encrypt handles large content"
 else

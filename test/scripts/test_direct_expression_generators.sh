@@ -50,7 +50,7 @@ cat > "direct-expr-secrets.nix" << 'EOF'
 EOF
 
 # Run generate command
-agenix generate --rules "$TMPDIR/direct-expr-test/direct-expr-secrets.nix"
+agenix generate --secrets-nix "$TMPDIR/direct-expr-test/direct-expr-secrets.nix"
 
 # Test 1: Direct string generator
 if [ -f "direct-string.age" ]; then
@@ -60,7 +60,7 @@ else
   exit 1
 fi
 
-decrypted=$(agenix decrypt direct-string.age --rules "$TMPDIR/direct-expr-test/direct-expr-secrets.nix" -i "$TEST_USER_KEY" --no-system-identities)
+decrypted=$(agenix decrypt direct-string.age --secrets-nix "$TMPDIR/direct-expr-test/direct-expr-secrets.nix" -i "$TEST_USER_KEY" --no-system-identities)
 if [ "$decrypted" = "my-direct-string-secret" ]; then
   echo "✓ Direct string secret decrypts correctly"
 else
@@ -76,7 +76,7 @@ else
   exit 1
 fi
 
-decrypted=$(agenix decrypt direct-attrset.age --rules "$TMPDIR/direct-expr-test/direct-expr-secrets.nix" -i "$TEST_USER_KEY" --no-system-identities)
+decrypted=$(agenix decrypt direct-attrset.age --secrets-nix "$TMPDIR/direct-expr-test/direct-expr-secrets.nix" -i "$TEST_USER_KEY" --no-system-identities)
 if [ "$decrypted" = "direct-secret-part" ]; then
   echo "✓ Direct attrset secret decrypts correctly"
 else
@@ -100,7 +100,7 @@ else
   exit 1
 fi
 
-decrypted=$(agenix decrypt direct-ssh-call.age --rules "$TMPDIR/direct-expr-test/direct-expr-secrets.nix" -i "$TEST_USER_KEY" --no-system-identities)
+decrypted=$(agenix decrypt direct-ssh-call.age --secrets-nix "$TMPDIR/direct-expr-test/direct-expr-secrets.nix" -i "$TEST_USER_KEY" --no-system-identities)
 if echo "$decrypted" | grep -q "BEGIN PRIVATE KEY"; then
   echo "✓ Direct SSH key call produces valid private key"
 else
@@ -124,7 +124,7 @@ else
   exit 1
 fi
 
-decrypted=$(agenix decrypt direct-random.age --rules "$TMPDIR/direct-expr-test/direct-expr-secrets.nix" -i "$TEST_USER_KEY" --no-system-identities)
+decrypted=$(agenix decrypt direct-random.age --secrets-nix "$TMPDIR/direct-expr-test/direct-expr-secrets.nix" -i "$TEST_USER_KEY" --no-system-identities)
 decrypted_len=${#decrypted}
 if [ "$decrypted_len" = "16" ]; then
   echo "✓ Direct random string has correct length (16 chars)"
@@ -141,7 +141,7 @@ else
   exit 1
 fi
 
-decrypted=$(agenix decrypt direct-age-key.age --rules "$TMPDIR/direct-expr-test/direct-expr-secrets.nix" -i "$TEST_USER_KEY" --no-system-identities)
+decrypted=$(agenix decrypt direct-age-key.age --secrets-nix "$TMPDIR/direct-expr-test/direct-expr-secrets.nix" -i "$TEST_USER_KEY" --no-system-identities)
 if echo "$decrypted" | grep -q "^AGE-SECRET-KEY-"; then
   echo "✓ Direct age key call produces valid age secret key"
 else
@@ -165,7 +165,7 @@ else
   exit 1
 fi
 
-decrypted=$(agenix decrypt func-based.age --rules "$TMPDIR/direct-expr-test/direct-expr-secrets.nix" -i "$TEST_USER_KEY" --no-system-identities)
+decrypted=$(agenix decrypt func-based.age --secrets-nix "$TMPDIR/direct-expr-test/direct-expr-secrets.nix" -i "$TEST_USER_KEY" --no-system-identities)
 if [ "$decrypted" = "function-based-secret" ]; then
   echo "✓ Function-based secret decrypts correctly"
 else

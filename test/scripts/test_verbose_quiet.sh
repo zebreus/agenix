@@ -50,13 +50,13 @@ else
   exit 1
 fi
 
-# Test 5: Verbose shows rules file path
-echo "--- Test 5: Verbose shows rules file ---"
+# Test 5: Verbose shows secrets.nix path
+echo "--- Test 5: Verbose shows secrets.nix ---"
 output=$(agenix -v list 2>&1)
-if [[ "$output" == *"Using rules file:"* ]]; then
-  echo "✓ Verbose shows rules file"
+if [[ "$output" == *"Using secrets.nix:"* ]]; then
+  echo "✓ Verbose shows secrets.nix"
 else
-  echo "✗ Verbose should show rules file"
+  echo "✗ Verbose should show secrets.nix"
   exit 1
 fi
 
