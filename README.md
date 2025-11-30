@@ -117,11 +117,6 @@ $ agenix rekey                              # Re-encrypt with updated keys
 
 For user-scoped secrets, use `agenix.homeManagerModules.default`. See the [tutorial](doc/tutorial.md#using-agenix-with-home-manager) for details.
 
-## Community
-
-- [GitHub Issues](https://github.com/ryantm/agenix/issues)
-- [Matrix: #agenix:nixos.org](https://matrix.to/#/#agenix:nixos.org)
-
 ## Contributing
 
 See [CONTRIBUTING](doc/contributing.md). Run tests with `nix flake check`.
