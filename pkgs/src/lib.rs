@@ -82,19 +82,8 @@ where
         verbose!("Dry-run mode enabled");
     }
 
-    // Check if rules file exists for commands that need it
-    let needs_rules_file = matches!(
-        args.command,
-        Some(cli::Command::Rekey { .. })
-            | Some(cli::Command::Generate { .. })
-            | Some(cli::Command::Decrypt { .. })
-            | Some(cli::Command::Edit { .. })
-            | Some(cli::Command::Encrypt { .. })
-            | Some(cli::Command::List { .. })
-            | Some(cli::Command::Check { .. })
-    );
-
-    if needs_rules_file {
+    // Check if rules file exists (for all commands except completions and no command)
+    if args.command.is_some() && !matches!(args.command, Some(cli::Command::Completions { .. })) {
         check_rules_file_exists(&rules)?;
     }
 
