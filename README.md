@@ -108,18 +108,18 @@ $ agenix rekey                              # Re-encrypt with updated keys
 
 ## Documentation
 
-- **[Tutorial](doc/toc.md#tutorial)** – Step-by-step guide
-- **[Module Reference](doc/toc.md#reference)** – All `age.secrets.*` options
+- **[Tutorial](doc/readme.adoc#tutorial)** – Step-by-step guide
+- **[Module Reference](doc/readme.adoc#reference)** – All `age.secrets.*` options
 - **[CLI Reference](pkgs/README.md)** – Full CLI documentation
-- **[Threat Model](doc/toc.md#threat-model-warnings)** – Security considerations
+- **[Threat Model](doc/readme.adoc#threat-modelwarnings)** – Security considerations
 
 ## Home Manager
 
-For user-scoped secrets, use `agenix.homeManagerModules.default`. See the [tutorial](doc/toc.md#tutorial) for details.
+For user-scoped secrets, use `agenix.homeManagerModules.default`. See the [tutorial](doc/readme.adoc#tutorial) for details.
 
 ## Contributing
 
-See [CONTRIBUTING](doc/toc.md#contributing). Run tests with `nix flake check`.
+See [CONTRIBUTING](doc/readme.adoc#contributing). Run tests with `nix flake check`.
 
 ## Acknowledgements
 

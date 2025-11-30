@@ -1,11 +1,15 @@
 {
   stdenvNoCC,
-  mmdoc,
+  asciidoctor,
   self,
 }:
 stdenvNoCC.mkDerivation rec {
   name = "agenix-doc";
   src = ../doc;
-  phases = [ "mmdocPhase" ];
-  mmdocPhase = "${mmdoc}/bin/mmdoc agenix $src $out";
+  nativeBuildInputs = [ asciidoctor ];
+  phases = [ "buildPhase" ];
+  buildPhase = ''
+    mkdir -p $out
+    asciidoctor -o $out/index.html $src/readme.adoc
+  '';
 }
