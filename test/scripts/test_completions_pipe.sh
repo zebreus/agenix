@@ -60,7 +60,7 @@ fi
 # Test 5: Piping to a process that closes early
 echo "--- Test 5: Pipe to process that closes early ---"
 disable_pipefail
-agenix completions fish 2>&1 | { read --secrets-nix line; exit 0; }
+agenix completions fish 2>&1 | { read -r line; exit 0; }
 exit_code=${PIPESTATUS[0]}
 enable_pipefail
 # Exit code 0 means no panic

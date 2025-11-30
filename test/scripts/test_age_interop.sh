@@ -6,7 +6,7 @@ source "$(dirname "$0")/common_setup.sh"
 echo "=== Test 10: Encrypt with age CLI, decrypt with agenix ==="
 # Test interoperability: encrypt with age CLI, decrypt with agenix
 echo "age-interop-test" > "$TMPDIR/test-message.txt"
-age --secrets-nix "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH" \
+age -r "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH" \
     -o "$TMPDIR/interop-secret.age" \
     "$TMPDIR/test-message.txt"
 

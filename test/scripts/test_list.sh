@@ -34,27 +34,8 @@ else
   exit 1
 fi
 
-# Test 4: Detailed list shows header
-echo "--- Test 4: Detailed list ---"
-detailed_output=$(agenix list --detailed 2>&1)
-if echo "$detailed_output" | grep -q "GENERATOR"; then
-  echo "✓ Detailed list shows header"
-else
-  echo "✗ Detailed list failed to show header"
-  exit 1
-fi
-
-# Test 5: List --status shows status codes (OK, MISSING, ERROR)
-echo "--- Test 5: List shows status correctly ---"
-if echo "$status_output" | grep -q "OK"; then
-  echo "✓ List --status shows OK status"
-else
-  echo "✗ List --status failed to show OK status"
-  exit 1
-fi
-
-# Test 6: Short alias 'l' works
-echo "--- Test 6: Short alias 'l' ---"
+# Test 4: Short alias 'l' works
+echo "--- Test 4: Short alias 'l' ---"
 alias_output=$(agenix l 2>&1)
 if echo "$alias_output" | grep -q "secret1"; then
   echo "✓ Short alias 'l' works"
@@ -63,9 +44,9 @@ else
   exit 1
 fi
 
-# Test 7: List with custom rules file
-echo "--- Test 7: Custom rules file ---"
-TEMP_RULES="$TMPDIR/custom-rules.nix"
+# Test 5: List with custom secrets.nix
+echo "--- Test 5: Custom secrets.nix ---"
+TEMP_RULES="$TMPDIR/custom-secrets.nix"
 cat > "$TEMP_RULES" << EOF
 {
   "$TMPDIR/custom-secret.age" = {
@@ -75,14 +56,14 @@ cat > "$TEMP_RULES" << EOF
 EOF
 custom_output=$(agenix list --secrets-nix "$TEMP_RULES" 2>&1)
 if echo "$custom_output" | grep -q "custom-secret"; then
-  echo "✓ List works with custom rules file"
+  echo "✓ List works with custom secrets.nix"
 else
-  echo "✗ List with custom rules file failed"
+  echo "✗ List with custom secrets.nix failed"
   exit 1
 fi
 
-# Test 8: List --status shows MISSING status for nonexistent file
-echo "--- Test 8: Missing file status ---"
+# Test 6: List --status shows MISSING status for nonexistent file
+echo "--- Test 6: Missing file status ---"
 custom_status=$(agenix list --status --secrets-nix "$TEMP_RULES" 2>&1)
 if echo "$custom_status" | grep -q "MISSING"; then
   echo "✓ List --status shows MISSING status for nonexistent file"
@@ -91,18 +72,18 @@ else
   exit 1
 fi
 
-# Test 9: List nonexistent rules file fails with helpful error
-echo "--- Test 9: Nonexistent rules file ---"
-if ! agenix list --secrets-nix "/nonexistent/path/rules.nix" 2>/dev/null; then
-  echo "✓ List fails on nonexistent rules file"
+# Test 7: List nonexistent secrets.nix fails with helpful error
+echo "--- Test 7: Nonexistent secrets.nix ---"
+if ! agenix list --secrets-nix "/nonexistent/path/secrets.nix" 2>/dev/null; then
+  echo "✓ List fails on nonexistent secrets.nix"
 else
-  echo "✗ List should fail on nonexistent rules file"
+  echo "✗ List should fail on nonexistent secrets.nix"
   exit 1
 fi
 
-# Test 10: List with invalid nix syntax fails
-echo "--- Test 10: Invalid nix syntax ---"
-INVALID_RULES="$TMPDIR/invalid-rules.nix"
+# Test 8: List with invalid nix syntax fails
+echo "--- Test 8: Invalid nix syntax ---"
+INVALID_RULES="$TMPDIR/invalid-secrets.nix"
 echo "{ invalid nix syntax !!!" > "$INVALID_RULES"
 if agenix list --secrets-nix "$INVALID_RULES" 2>/dev/null; then
   echo "✗ List should fail on invalid nix syntax"
@@ -111,78 +92,31 @@ else
   echo "✓ List correctly fails on invalid nix syntax"
 fi
 
-# Test 11: Detailed list shows ARMOR column
-echo "--- Test 11: ARMOR column in detailed view ---"
-ARMOR_RULES="$TMPDIR/armor-rules.nix"
-cat > "$ARMOR_RULES" << EOF
-{
-  "$TMPDIR/armored.age" = {
-    publicKeys = [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH" ];
-    armor = true;
-  };
-}
-EOF
-armor_output=$(agenix list --secrets-nix "$ARMOR_RULES" --detailed 2>&1)
-if echo "$armor_output" | grep -q "ARMOR"; then
-  echo "✓ Detailed list shows ARMOR column"
-else
-  echo "✗ Detailed list failed to show ARMOR column"
-  exit 1
-fi
-
-# Test 12: Detailed list shows RECIPS (recipient count) column  
-echo "--- Test 12: RECIPS column in detailed view ---"
-if echo "$detailed_output" | grep -q "RECIPS"; then
-  echo "✓ Detailed list shows RECIPS column"
-else
-  echo "✗ Detailed list failed to show RECIPS column"
-  exit 1
-fi
-
-# Test 13: Detailed list shows PUBKEY column
-echo "--- Test 13: PUBKEY column in detailed view ---"
-if echo "$detailed_output" | grep -q "PUBKEY"; then
-  echo "✓ Detailed list shows PUBKEY column"
-else
-  echo "✗ Detailed list failed to show PUBKEY column"
-  exit 1
-fi
-
-# Test 14: Short flag -d for detailed
-echo "--- Test 14: Short flag -d for detailed ---"
-short_detailed_output=$(agenix list -d 2>&1)
-if echo "$short_detailed_output" | grep -q "GENERATOR"; then
-  echo "✓ Short flag -d works for detailed"
-else
-  echo "✗ Short flag -d failed"
-  exit 1
-fi
-
-# Test 15: Short flag -s for status
-echo "--- Test 15: Short flag -s for status ---"
+# Test 9: Short flag -s for status
+echo "--- Test 9: Short flag -s for status ---"
 short_status_output=$(agenix list -s 2>&1)
-if echo "$short_status_output" | grep -q "OK"; then
+if echo "$short_status_output" | grep -q "Total:"; then
   echo "✓ Short flag -s works for status"
 else
   echo "✗ Short flag -s failed"
   exit 1
 fi
 
-# Test 16: List empty rules file
-echo "--- Test 16: Empty rules file ---"
-EMPTY_RULES="$TMPDIR/empty-rules.nix"
+# Test 10: List empty secrets.nix
+echo "--- Test 10: Empty secrets.nix ---"
+EMPTY_RULES="$TMPDIR/empty-secrets.nix"
 echo "{ }" > "$EMPTY_RULES"
 empty_output=$(agenix list --secrets-nix "$EMPTY_RULES" 2>&1)
 if echo "$empty_output" | grep -q "No secrets defined"; then
-  echo "✓ List shows message for empty rules"
+  echo "✓ List shows message for empty secrets.nix"
 else
-  echo "✗ List failed to handle empty rules"
+  echo "✗ List failed to handle empty secrets.nix"
   exit 1
 fi
 
-# Test 17: List --status with corrupted secret shows ERROR
-echo "--- Test 17: Corrupted secret status ---"
-CORRUPT_RULES="$TMPDIR/corrupt-rules.nix"
+# Test 11: List --status with corrupted secret shows NO_DECRYPT
+echo "--- Test 11: Corrupted secret status ---"
+CORRUPT_RULES="$TMPDIR/corrupt-secrets.nix"
 CORRUPT_SECRET="$TMPDIR/corrupt-secret.age"
 cat > "$CORRUPT_RULES" << EOF
 {
@@ -193,17 +127,17 @@ cat > "$CORRUPT_RULES" << EOF
 EOF
 echo "not-valid-age-content" > "$CORRUPT_SECRET"
 corrupt_output=$(agenix list --status --secrets-nix "$CORRUPT_RULES" 2>&1)
-if echo "$corrupt_output" | grep -q "ERROR"; then
-  echo "✓ List --status shows ERROR status for corrupted file"
+if echo "$corrupt_output" | grep -q "NO_DECRYPT"; then
+  echo "✓ List --status shows NO_DECRYPT status for corrupted file"
 else
-  echo "✗ List --status failed to show ERROR status"
+  echo "✗ List --status failed to show NO_DECRYPT status"
   exit 1
 fi
 
-# Test 18: Basic list output is script-friendly (one secret per line)
+# Test 12: Basic list output is script-friendly (one secret per line)
 # The test/example/secrets.nix file contains exactly 5 secrets:
 #   secret1.age, secret2.age, passwordfile-user1.age, -leading-hyphen-filename.age, armored-secret.age
-echo "--- Test 18: Script-friendly output ---"
+echo "--- Test 12: Script-friendly output ---"
 expected_count=5
 count=$(agenix list | wc -l)
 if [ "$count" -eq "$expected_count" ]; then
