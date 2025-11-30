@@ -30,9 +30,9 @@ impl SecretStatus {
     /// Returns the short code for this status (script-friendly)
     fn code(&self) -> &'static str {
         match self {
-            Self::Ok => "OK",
+            Self::Ok => "EXISTS",
             Self::Missing => "MISSING",
-            Self::CannotDecrypt(_) => "ERROR",
+            Self::CannotDecrypt(_) => "NO_DECRYPT",
         }
     }
 
@@ -136,7 +136,7 @@ pub fn list_secrets(
 
     if !is_quiet() {
         eprintln!(
-            "Total: {} {} ({} ok, {} missing, {} errors)",
+            "Total: {} {} ({} exists, {} missing, {} no decrypt)",
             secret_infos.len(),
             pluralize_secret(secret_infos.len()),
             ok,
@@ -649,7 +649,7 @@ mod tests {
 
     #[test]
     fn test_status_code_ok() {
-        assert_eq!(SecretStatus::Ok.code(), "OK");
+        assert_eq!(SecretStatus::Ok.code(), "EXISTS");
     }
 
     #[test]
@@ -661,7 +661,7 @@ mod tests {
     fn test_status_code_error() {
         assert_eq!(
             SecretStatus::CannotDecrypt("any error".to_string()).code(),
-            "ERROR"
+            "NO_DECRYPT"
         );
     }
 
