@@ -1574,4 +1574,191 @@ mod tests {
             }
         });
     }
+
+    // ===========================================
+    // --public FLAG CLI TESTS
+    // ===========================================
+
+    #[test]
+    fn test_edit_public_flag() {
+        let args = Args::try_parse_from(["agenix", "edit", "--public", "test.age"]).unwrap();
+        if let Some(Command::Edit { file, public, .. }) = args.command {
+            assert_eq!(file, "test.age");
+            assert!(public);
+        } else {
+            panic!("Expected Edit command");
+        }
+    }
+
+    #[test]
+    fn test_edit_public_short_flag() {
+        let args = Args::try_parse_from(["agenix", "edit", "-p", "test.age"]).unwrap();
+        if let Some(Command::Edit { file, public, .. }) = args.command {
+            assert_eq!(file, "test.age");
+            assert!(public);
+        } else {
+            panic!("Expected Edit command");
+        }
+    }
+
+    #[test]
+    fn test_edit_public_with_force() {
+        let args = Args::try_parse_from(["agenix", "edit", "-p", "-f", "test.age"]).unwrap();
+        if let Some(Command::Edit {
+            file,
+            public,
+            force,
+            ..
+        }) = args.command
+        {
+            assert_eq!(file, "test.age");
+            assert!(public);
+            assert!(force);
+        } else {
+            panic!("Expected Edit command");
+        }
+    }
+
+    #[test]
+    fn test_encrypt_public_flag() {
+        let args = Args::try_parse_from(["agenix", "encrypt", "--public", "test.age"]).unwrap();
+        if let Some(Command::Encrypt { file, public, .. }) = args.command {
+            assert_eq!(file, "test.age");
+            assert!(public);
+        } else {
+            panic!("Expected Encrypt command");
+        }
+    }
+
+    #[test]
+    fn test_encrypt_public_short_flag() {
+        let args = Args::try_parse_from(["agenix", "encrypt", "-p", "test.age"]).unwrap();
+        if let Some(Command::Encrypt { file, public, .. }) = args.command {
+            assert_eq!(file, "test.age");
+            assert!(public);
+        } else {
+            panic!("Expected Encrypt command");
+        }
+    }
+
+    #[test]
+    fn test_encrypt_public_with_force() {
+        let args = Args::try_parse_from(["agenix", "encrypt", "-p", "-f", "test.age"]).unwrap();
+        if let Some(Command::Encrypt {
+            file,
+            public,
+            force,
+            ..
+        }) = args.command
+        {
+            assert_eq!(file, "test.age");
+            assert!(public);
+            assert!(force);
+        } else {
+            panic!("Expected Encrypt command");
+        }
+    }
+
+    #[test]
+    fn test_encrypt_public_with_input() {
+        let args = Args::try_parse_from([
+            "agenix",
+            "encrypt",
+            "-p",
+            "--input",
+            "/path/to/input",
+            "test.age",
+        ])
+        .unwrap();
+        if let Some(Command::Encrypt {
+            file,
+            public,
+            input,
+            ..
+        }) = args.command
+        {
+            assert_eq!(file, "test.age");
+            assert!(public);
+            assert_eq!(input, Some("/path/to/input".to_string()));
+        } else {
+            panic!("Expected Encrypt command");
+        }
+    }
+
+    #[test]
+    fn test_decrypt_public_flag() {
+        let args = Args::try_parse_from(["agenix", "decrypt", "--public", "test.age"]).unwrap();
+        if let Some(Command::Decrypt { file, public, .. }) = args.command {
+            assert_eq!(file, "test.age");
+            assert!(public);
+        } else {
+            panic!("Expected Decrypt command");
+        }
+    }
+
+    #[test]
+    fn test_decrypt_public_short_flag() {
+        let args = Args::try_parse_from(["agenix", "decrypt", "-p", "test.age"]).unwrap();
+        if let Some(Command::Decrypt { file, public, .. }) = args.command {
+            assert_eq!(file, "test.age");
+            assert!(public);
+        } else {
+            panic!("Expected Decrypt command");
+        }
+    }
+
+    #[test]
+    fn test_decrypt_public_with_output() {
+        let args = Args::try_parse_from([
+            "agenix",
+            "decrypt",
+            "-p",
+            "-o",
+            "/path/to/output",
+            "test.age",
+        ])
+        .unwrap();
+        if let Some(Command::Decrypt {
+            file,
+            public,
+            output,
+        }) = args.command
+        {
+            assert_eq!(file, "test.age");
+            assert!(public);
+            assert_eq!(output, Some("/path/to/output".to_string()));
+        } else {
+            panic!("Expected Decrypt command");
+        }
+    }
+
+    #[test]
+    fn test_edit_default_not_public() {
+        let args = Args::try_parse_from(["agenix", "edit", "test.age"]).unwrap();
+        if let Some(Command::Edit { public, .. }) = args.command {
+            assert!(!public);
+        } else {
+            panic!("Expected Edit command");
+        }
+    }
+
+    #[test]
+    fn test_encrypt_default_not_public() {
+        let args = Args::try_parse_from(["agenix", "encrypt", "test.age"]).unwrap();
+        if let Some(Command::Encrypt { public, .. }) = args.command {
+            assert!(!public);
+        } else {
+            panic!("Expected Encrypt command");
+        }
+    }
+
+    #[test]
+    fn test_decrypt_default_not_public() {
+        let args = Args::try_parse_from(["agenix", "decrypt", "test.age"]).unwrap();
+        if let Some(Command::Decrypt { public, .. }) = args.command {
+            assert!(!public);
+        } else {
+            panic!("Expected Decrypt command");
+        }
+    }
 }
