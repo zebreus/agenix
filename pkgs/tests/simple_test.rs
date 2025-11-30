@@ -8,7 +8,7 @@ fn test_simple_generate() -> Result<()> {
     // Create a temporary directory for the generated secrets
     let temp_dir = tempdir()?;
 
-    // Create a rules file with absolute paths to avoid race conditions
+    // Create a secrets.nix with absolute paths to avoid race conditions
     let rules_content = format!(
         r#"
 {{
@@ -29,7 +29,7 @@ fn test_simple_generate() -> Result<()> {
     let args = vec![
         "agenix".to_string(),
         "generate".to_string(),
-        "--rules".to_string(),
+        "--secrets-nix".to_string(),
         temp_rules.path().to_str().unwrap().to_string(),
     ];
 

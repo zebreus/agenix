@@ -15,16 +15,15 @@ use std::io::{self, Write};
     arg_required_else_help = true
 )]
 pub struct Args {
-    /// Path to Nix rules file (can also be set via RULES env var)
+    /// Path to secrets.nix file (can also be set via SECRETS_NIX env var)
     #[arg(
-        short = 'r',
-        long,
-        env = "RULES",
+        long = "secrets-nix",
+        env = "SECRETS_NIX",
         value_name = "FILE",
         default_value = "./secrets.nix",
         global = true
     )]
-    pub rules: String,
+    pub secrets_nix: String,
 
     /// Verbose output (show detailed information about operations)
     #[arg(short, long, global = true, conflicts_with = "quiet")]
@@ -53,7 +52,7 @@ pub struct Args {
 
 #[derive(Subcommand, Debug)]
 pub enum Command {
-    /// Edit a secret file using $EDITOR (creates new file if it doesn't exist)
+    /// Edit or create a secret file interactively using $EDITOR
     #[command(visible_alias = "e")]
     Edit {
         /// The secret to edit
@@ -104,12 +103,12 @@ pub enum Command {
         #[arg(short, long)]
         partial: bool,
 
-        /// Secrets to rekey (if none specified, rekeys all secrets from the rules file)
+        /// Secrets to rekey (if none specified, rekeys all secrets from secrets.nix)
         #[arg(value_name = "SECRET")]
         secrets: Vec<String>,
     },
 
-    /// Generate secrets using generator functions from rules
+    /// Generate secrets using generator functions from secrets.nix
     #[command(visible_alias = "g")]
     Generate {
         /// Overwrite existing secret files
@@ -120,19 +119,19 @@ pub enum Command {
         #[arg(long)]
         no_dependencies: bool,
 
-        /// Secrets to generate (if none specified, generates all secrets from the rules file)
+        /// Secrets to generate (if none specified, generates all secrets from secrets.nix)
         #[arg(value_name = "SECRET")]
         secrets: Vec<String>,
     },
 
-    /// List secrets defined in the rules file
+    /// List secrets defined in secrets.nix
     #[command(visible_alias = "l")]
     List {
         /// Show status of each secret (ok/missing/cannot decrypt)
         #[arg(short, long)]
         status: bool,
 
-        /// Secrets to list (if none specified, lists all secrets from the rules file)
+        /// Secrets to list (if none specified, lists all secrets from secrets.nix)
         #[arg(value_name = "SECRET")]
         secrets: Vec<String>,
     },
@@ -140,7 +139,7 @@ pub enum Command {
     /// Verify that secrets can be decrypted without outputting content
     #[command(visible_alias = "v")]
     Check {
-        /// Secrets to check (if none specified, checks all secrets from the rules file)
+        /// Secrets to check (if none specified, checks all secrets from secrets.nix)
         #[arg(value_name = "SECRET")]
         secrets: Vec<String>,
     },
@@ -485,10 +484,10 @@ mod tests {
     }
 
     #[test]
-    fn test_rules_env_var() {
-        with_env_var("RULES", Some("/custom/path/secrets.nix"), || {
+    fn test_secrets_nix_env_var() {
+        with_env_var("SECRETS_NIX", Some("/custom/path/secrets.nix"), || {
             let args = Args::try_parse_from(["agenix", "generate"]).unwrap();
-            assert_eq!(args.rules, "/custom/path/secrets.nix");
+            assert_eq!(args.secrets_nix, "/custom/path/secrets.nix");
         });
     }
 
@@ -649,17 +648,11 @@ mod tests {
     }
 
     #[test]
-    fn test_global_rules_option() {
+    fn test_global_secrets_nix_option() {
         let args =
-            Args::try_parse_from(["agenix", "--rules", "/custom/rules.nix", "generate"]).unwrap();
-        assert_eq!(args.rules, "/custom/rules.nix");
-        assert!(matches!(args.command, Some(Command::Generate { .. })));
-    }
-
-    #[test]
-    fn test_global_rules_short_flag() {
-        let args = Args::try_parse_from(["agenix", "-r", "/custom/rules.nix", "generate"]).unwrap();
-        assert_eq!(args.rules, "/custom/rules.nix");
+            Args::try_parse_from(["agenix", "--secrets-nix", "/custom/secrets.nix", "generate"])
+                .unwrap();
+        assert_eq!(args.secrets_nix, "/custom/secrets.nix");
         assert!(matches!(args.command, Some(Command::Generate { .. })));
     }
 
@@ -704,13 +697,6 @@ mod tests {
         // Old: agenix --decrypt file.age
         let result = Args::try_parse_from(["agenix", "--decrypt", "test.age"]);
         assert!(result.is_err(), "Old --decrypt flag should be rejected");
-    }
-
-    #[test]
-    fn test_rules_short_flag_requires_value() {
-        // -r is now for --rules and requires a value
-        let result = Args::try_parse_from(["agenix", "-r"]);
-        assert!(result.is_err(), "-r requires a value");
     }
 
     #[test]
@@ -1137,9 +1123,10 @@ mod tests {
     }
 
     #[test]
-    fn test_list_with_rules_flag() {
-        let args = Args::try_parse_from(["agenix", "-r", "/custom/rules.nix", "list"]).unwrap();
-        assert_eq!(args.rules, "/custom/rules.nix");
+    fn test_list_with_secrets_nix_flag() {
+        let args = Args::try_parse_from(["agenix", "--secrets-nix", "/custom/secrets.nix", "list"])
+            .unwrap();
+        assert_eq!(args.secrets_nix, "/custom/secrets.nix");
         assert!(matches!(args.command, Some(Command::List { .. })));
     }
 
@@ -1181,8 +1168,8 @@ mod tests {
         let args = Args::try_parse_from([
             "agenix",
             "-v",
-            "-r",
-            "/rules.nix",
+            "--secrets-nix",
+            "/secrets.nix",
             "-i",
             "/key",
             "--no-system-identities",
@@ -1192,7 +1179,7 @@ mod tests {
         ])
         .unwrap();
         assert!(args.verbose);
-        assert_eq!(args.rules, "/rules.nix");
+        assert_eq!(args.secrets_nix, "/secrets.nix");
         assert_eq!(args.identity, vec!["/key".to_string()]);
         assert!(args.no_system_identities);
         if let Some(Command::List { status, secrets }) = args.command {
@@ -1257,9 +1244,11 @@ mod tests {
     }
 
     #[test]
-    fn test_check_with_rules_flag() {
-        let args = Args::try_parse_from(["agenix", "-r", "/custom/rules.nix", "check"]).unwrap();
-        assert_eq!(args.rules, "/custom/rules.nix");
+    fn test_check_with_secrets_nix_flag() {
+        let args =
+            Args::try_parse_from(["agenix", "--secrets-nix", "/custom/secrets.nix", "check"])
+                .unwrap();
+        assert_eq!(args.secrets_nix, "/custom/secrets.nix");
         assert!(matches!(args.command, Some(Command::Check { .. })));
     }
 
@@ -1323,8 +1312,8 @@ mod tests {
         let args = Args::try_parse_from([
             "agenix",
             "-v",
-            "-r",
-            "/rules.nix",
+            "--secrets-nix",
+            "/secrets.nix",
             "-i",
             "/key",
             "--no-system-identities",
@@ -1334,7 +1323,7 @@ mod tests {
         ])
         .unwrap();
         assert!(args.verbose);
-        assert_eq!(args.rules, "/rules.nix");
+        assert_eq!(args.secrets_nix, "/secrets.nix");
         assert_eq!(args.identity, vec!["/key".to_string()]);
         assert!(args.no_system_identities);
         if let Some(Command::Check { secrets }) = args.command {
@@ -1421,12 +1410,17 @@ mod tests {
     }
 
     #[test]
-    fn test_completions_with_rules_flag() {
+    fn test_completions_with_secrets_nix_flag() {
         // Global flags should work but are ignored for completions
-        let args =
-            Args::try_parse_from(["agenix", "-r", "/custom/rules.nix", "completions", "bash"])
-                .unwrap();
-        assert_eq!(args.rules, "/custom/rules.nix");
+        let args = Args::try_parse_from([
+            "agenix",
+            "--secrets-nix",
+            "/custom/secrets.nix",
+            "completions",
+            "bash",
+        ])
+        .unwrap();
+        assert_eq!(args.secrets_nix, "/custom/secrets.nix");
         if let Some(Command::Completions { shell }) = args.command {
             assert_eq!(shell, Shell::Bash);
         } else {
@@ -1514,8 +1508,8 @@ mod tests {
         let args = Args::try_parse_from([
             "agenix",
             "-q",
-            "-r",
-            "/rules.nix",
+            "--secrets-nix",
+            "/secrets.nix",
             "-i",
             "/key",
             "--no-system-identities",
@@ -1524,7 +1518,7 @@ mod tests {
         .unwrap();
         assert!(args.quiet);
         assert!(!args.verbose);
-        assert_eq!(args.rules, "/rules.nix");
+        assert_eq!(args.secrets_nix, "/secrets.nix");
         assert_eq!(args.identity, vec!["/key".to_string()]);
         assert!(args.no_system_identities);
     }

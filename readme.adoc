@@ -1,6 +1,5 @@
 = agenix
-:toc:
-:toclevels: 2
+:toc!:
 :sectnums:
 
 https://github.com/FiloSottile/age[age]-encrypted secrets for NixOS and Home Manager.
@@ -227,7 +226,7 @@ Generators can return:
   # Generator with public output (e.g., for SSH keys)
   "ssh-key.age" = {
     publicKeys = [ "..." ];
-    generator = builtins.sshKey;  # Returns { secret, public }
+    generator = builtins.sshKey {};  # Returns { secret, public }
   };
 
   # Custom generator with public output
@@ -250,7 +249,7 @@ List of other secrets whose values can be accessed in the generator function. De
 {
   "base-secret.age" = {
     publicKeys = [ "..." ];
-    generator = builtins.sshKey;
+    generator = builtins.sshKey {};
   };
 
   "derived-secret.age" = {
@@ -288,16 +287,16 @@ The CLI provides these generator functions:
 |`builtins.passwordSafe <length>`
 |Random password (alphanumeric + `-_+=.`)
 
-|`builtins.uuid` or `builtins.uuid {}`
+|`builtins.uuid {}`
 |Random UUIDv4
 
-|`builtins.sshKey` or `builtins.sshKey {}`
+|`builtins.sshKey {}`
 |SSH Ed25519 keypair (returns `{secret, public}`)
 
-|`builtins.rsaKey` or `builtins.rsaKey {}`
+|`builtins.rsaKey {}`
 |SSH RSA keypair; options: `keySize` (2048, 3072, 4096)
 
-|`builtins.ageKey` or `builtins.ageKey {}`
+|`builtins.ageKey {}`
 |age x25519 keypair (returns `{secret, public}`)
 
 |`builtins.blake2b <string>`
@@ -319,19 +318,19 @@ When no `generator` is specified, agenix automatically selects a generator based
 |File ending |Generator |Output
 
 |`*ed25519.age`
-|`builtins.sshKey`
+|`builtins.sshKey {}`
 |SSH keypair with `.pub`
 
 |`*ssh.age`
-|`builtins.sshKey`
+|`builtins.sshKey {}`
 |SSH keypair with `.pub`
 
 |`*ssh_key.age`
-|`builtins.sshKey`
+|`builtins.sshKey {}`
 |SSH keypair with `.pub`
 
 |`*x25519.age`
-|`builtins.ageKey`
+|`builtins.ageKey {}`
 |age keypair with `.pub`
 
 |`*password.age`
@@ -363,7 +362,7 @@ in {
   # Generated SSH key with automatic .pub file
   "deploy-key.age" = {
     publicKeys = [ user1 system1 ];
-    generator = builtins.sshKey;
+    generator = builtins.sshKey {};
   };
 
   # Secret that references the deploy key's public key
