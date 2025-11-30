@@ -118,10 +118,10 @@ fn test_list_status_produces_status_output() {
     assert!(output.status.success(), "list --status should succeed");
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
-    // In status mode, should show status codes and summary
+    // These files don't exist, so should show MISSING status
     assert!(
-        stdout.contains("MISSING") || stdout.contains("ERROR") || stdout.contains("OK"),
-        "status mode should show status codes, got: {:?}",
+        stdout.contains("MISSING"),
+        "status mode should show MISSING for nonexistent files, got: {:?}",
         stdout
     );
     assert!(
