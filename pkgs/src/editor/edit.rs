@@ -203,13 +203,19 @@ pub fn edit_file(
     ctx.encrypt(&cleartext_file.to_string_lossy(), file)
 }
 
-/// Encrypt content from stdin to a secret file.
+/// Encrypt content from stdin or a file to a secret file.
 ///
-/// Reads from stdin and encrypts the content to the specified file. Does not require
-/// an editor or decryption capabilities.
+/// Reads from stdin (or the specified input file) and encrypts the content to the specified file.
+/// Does not require an editor or decryption capabilities.
 ///
 /// In dry-run mode, the content is read and validated but not encrypted to disk.
-pub fn encrypt_file(rules_path: &str, file: &str, force: bool, dry_run: bool) -> Result<()> {
+pub fn encrypt_file(
+    rules_path: &str,
+    file: &str,
+    input: Option<&str>,
+    force: bool,
+    dry_run: bool,
+) -> Result<()> {
     // Check if file exists before doing any work
     if Path::new(file).exists() && !force {
         return Err(anyhow!(
@@ -224,19 +230,36 @@ pub fn encrypt_file(rules_path: &str, file: &str, force: bool, dry_run: bool) ->
     let filename = get_filename(file)?;
     let (_temp_dir, cleartext_file) = create_temp_cleartext(filename)?;
 
-    // Read and validate stdin content
-    verbose!("Reading content from stdin");
-    let mut stdin_content = String::new();
-    io::stdin()
-        .read_to_string(&mut stdin_content)
-        .context("Failed to read from stdin")?;
+    // Read content from input file or stdin
+    let content = match input {
+        Some(input_path) => {
+            verbose!("Reading content from file: {}", input_path);
+            fs::read_to_string(input_path)
+                .with_context(|| format!("Failed to read input file: {}", input_path))?
+        }
+        None => {
+            verbose!("Reading content from stdin");
+            let mut stdin_content = String::new();
+            io::stdin()
+                .read_to_string(&mut stdin_content)
+                .context("Failed to read from stdin")?;
+            stdin_content
+        }
+    };
 
-    if stdin_content.is_empty() {
-        return Err(anyhow!("No input provided on stdin"));
+    if content.is_empty() {
+        return Err(anyhow!(
+            "No input provided{}",
+            if input.is_some() {
+                " in input file"
+            } else {
+                " on stdin"
+            }
+        ));
     }
 
-    // Write stdin content to temp file (same code path for both modes)
-    fs::write(&cleartext_file, stdin_content).context("Failed to write stdin content to file")?;
+    // Write content to temp file (same code path for both modes)
+    fs::write(&cleartext_file, content).context("Failed to write content to file")?;
 
     log!("Encrypting to: {}", file);
 
@@ -325,7 +348,7 @@ mod tests {
     #[test]
     fn test_encrypt_file_no_keys() {
         let rules = "./test_secrets.nix";
-        let result = encrypt_file(rules, "nonexistent.age", false, false);
+        let result = encrypt_file(rules, "nonexistent.age", None, false, false);
         assert!(result.is_err());
     }
 
@@ -356,6 +379,7 @@ publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" 
         let result = encrypt_file(
             temp_rules.to_str().unwrap(),
             test_file_path.to_str().unwrap(),
+            None,
             false,
             false,
         );
@@ -378,7 +402,7 @@ publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" 
     fn test_encrypt_file_invalid_path() {
         // Test with a path that has no filename component
         let rules = "./test_secrets.nix";
-        let result = encrypt_file(rules, "/", false, false);
+        let result = encrypt_file(rules, "/", None, false, false);
         assert!(result.is_err());
     }
 }
