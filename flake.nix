@@ -21,7 +21,13 @@
       home-manager,
     }:
     let
-      eachSystem = nixpkgs.lib.genAttrs (import ./systems.nix);
+      systems = [
+        "x86_64-linux"
+        "aarch64-linux"
+        "x86_64-darwin"
+        "aarch64-darwin"
+      ];
+      eachSystem = nixpkgs.lib.genAttrs systems;
     in
     {
       nixosModules.age = ./modules/age.nix;
@@ -33,7 +39,7 @@
       homeManagerModules.age = ./modules/age-home.nix;
       homeManagerModules.default = self.homeManagerModules.age;
 
-      overlays.default = import ./overlay.nix;
+      overlays.default = final: prev: { agenix = prev.callPackage ./pkgs/agenix.nix { }; };
 
       formatter = eachSystem (system: nixpkgs.legacyPackages.${system}.nixfmt-tree);
 
