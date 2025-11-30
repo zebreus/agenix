@@ -38,7 +38,7 @@ pub struct Args {
     #[arg(short = 'n', long, global = true)]
     pub dry_run: bool,
 
-    /// Identity (private key) to use when decrypting. Can be specified multiple times.
+    /// Identities to use when decrypting. Can be specified multiple times.
     /// Identities are tried in order: explicitly specified identities first, then default system identities.
     #[arg(short, long, value_name = "KEY", global = true, action = clap::ArgAction::Append)]
     pub identity: Vec<String>,
@@ -56,8 +56,8 @@ pub enum Command {
     /// Edit a secret file using $EDITOR (creates new file if it doesn't exist)
     #[command(visible_alias = "e")]
     Edit {
-        /// The secret file to edit
-        #[arg(value_name = "FILE", allow_hyphen_values = true)]
+        /// The secret to edit
+        #[arg(value_name = "SECRET", allow_hyphen_values = true)]
         file: String,
 
         /// Editor command to use (defaults to $EDITOR, or stdin when not a TTY, or vi)
@@ -69,12 +69,16 @@ pub enum Command {
         force: bool,
     },
 
-    /// Encrypt content from stdin to a secret file
+    /// Encrypt content from stdin (or a file) to a secret file
     #[command(visible_alias = "c")]
     Encrypt {
-        /// The secret file to create
-        #[arg(value_name = "FILE", allow_hyphen_values = true)]
+        /// The secret to create
+        #[arg(value_name = "SECRET", allow_hyphen_values = true)]
         file: String,
+
+        /// Input file to read content from (defaults to stdin)
+        #[arg(long, value_name = "FILE")]
+        input: Option<String>,
 
         /// Overwrite existing secret file
         #[arg(short, long)]
@@ -84,8 +88,8 @@ pub enum Command {
     /// Decrypt a secret file to stdout or a file
     #[command(visible_alias = "d")]
     Decrypt {
-        /// The secret file to decrypt
-        #[arg(value_name = "FILE", allow_hyphen_values = true)]
+        /// The secret to decrypt
+        #[arg(value_name = "SECRET", allow_hyphen_values = true)]
         file: String,
 
         /// Output file (defaults to stdout)
@@ -128,9 +132,9 @@ pub enum Command {
         #[arg(short, long)]
         status: bool,
 
-        /// Show detailed information about each secret (implies --status)
-        #[arg(short, long)]
-        detailed: bool,
+        /// Secrets to list (if none specified, lists all secrets from the rules file)
+        #[arg(value_name = "SECRET")]
+        secrets: Vec<String>,
     },
 
     /// Verify that secrets can be decrypted without outputting content
@@ -299,8 +303,12 @@ mod tests {
     fn test_encrypt_subcommand() {
         let args = Args::try_parse_from(["agenix", "encrypt", "test.age"]).unwrap();
         assert!(matches!(args.command, Some(Command::Encrypt { .. })));
-        if let Some(Command::Encrypt { file, force, .. }) = args.command {
+        if let Some(Command::Encrypt {
+            file, input, force, ..
+        }) = args.command
+        {
             assert_eq!(file, "test.age".to_string());
+            assert!(input.is_none());
             assert!(!force);
         } else {
             panic!("Expected Encrypt command");
@@ -316,8 +324,12 @@ mod tests {
     #[test]
     fn test_encrypt_with_force() {
         let args = Args::try_parse_from(["agenix", "encrypt", "--force", "test.age"]).unwrap();
-        if let Some(Command::Encrypt { file, force, .. }) = args.command {
+        if let Some(Command::Encrypt {
+            file, input, force, ..
+        }) = args.command
+        {
             assert_eq!(file, "test.age".to_string());
+            assert!(input.is_none());
             assert!(force);
         } else {
             panic!("Expected Encrypt command");
@@ -327,8 +339,80 @@ mod tests {
     #[test]
     fn test_encrypt_with_force_short() {
         let args = Args::try_parse_from(["agenix", "encrypt", "-f", "test.age"]).unwrap();
-        if let Some(Command::Encrypt { file, force, .. }) = args.command {
+        if let Some(Command::Encrypt {
+            file, input, force, ..
+        }) = args.command
+        {
             assert_eq!(file, "test.age".to_string());
+            assert!(input.is_none());
+            assert!(force);
+        } else {
+            panic!("Expected Encrypt command");
+        }
+    }
+
+    #[test]
+    fn test_encrypt_with_input_file() {
+        let args = Args::try_parse_from([
+            "agenix",
+            "encrypt",
+            "--input",
+            "/path/to/input.txt",
+            "test.age",
+        ])
+        .unwrap();
+        if let Some(Command::Encrypt {
+            file, input, force, ..
+        }) = args.command
+        {
+            assert_eq!(file, "test.age".to_string());
+            assert_eq!(input, Some("/path/to/input.txt".to_string()));
+            assert!(!force);
+        } else {
+            panic!("Expected Encrypt command");
+        }
+    }
+
+    #[test]
+    fn test_encrypt_with_input_short() {
+        // Note: --input doesn't have a short flag because -i is used by global --identity
+        let args = Args::try_parse_from([
+            "agenix",
+            "encrypt",
+            "--input",
+            "/path/to/input.txt",
+            "test.age",
+        ])
+        .unwrap();
+        if let Some(Command::Encrypt {
+            file, input, force, ..
+        }) = args.command
+        {
+            assert_eq!(file, "test.age".to_string());
+            assert_eq!(input, Some("/path/to/input.txt".to_string()));
+            assert!(!force);
+        } else {
+            panic!("Expected Encrypt command");
+        }
+    }
+
+    #[test]
+    fn test_encrypt_with_input_and_force() {
+        let args = Args::try_parse_from([
+            "agenix",
+            "encrypt",
+            "--input",
+            "/path/to/input.txt",
+            "-f",
+            "test.age",
+        ])
+        .unwrap();
+        if let Some(Command::Encrypt {
+            file, input, force, ..
+        }) = args.command
+        {
+            assert_eq!(file, "test.age".to_string());
+            assert_eq!(input, Some("/path/to/input.txt".to_string()));
             assert!(force);
         } else {
             panic!("Expected Encrypt command");
@@ -988,9 +1072,9 @@ mod tests {
     fn test_list_subcommand() {
         let args = Args::try_parse_from(["agenix", "list"]).unwrap();
         assert!(matches!(args.command, Some(Command::List { .. })));
-        if let Some(Command::List { status, detailed }) = args.command {
+        if let Some(Command::List { status, secrets }) = args.command {
             assert!(!status);
-            assert!(!detailed);
+            assert!(secrets.is_empty());
         }
     }
 
@@ -1003,9 +1087,9 @@ mod tests {
     #[test]
     fn test_list_status_flag() {
         let args = Args::try_parse_from(["agenix", "list", "--status"]).unwrap();
-        if let Some(Command::List { status, detailed }) = args.command {
+        if let Some(Command::List { status, secrets }) = args.command {
             assert!(status);
-            assert!(!detailed);
+            assert!(secrets.is_empty());
         } else {
             panic!("Expected List command");
         }
@@ -1014,31 +1098,39 @@ mod tests {
     #[test]
     fn test_list_status_short_flag() {
         let args = Args::try_parse_from(["agenix", "list", "-s"]).unwrap();
-        if let Some(Command::List { status, detailed }) = args.command {
+        if let Some(Command::List { status, secrets }) = args.command {
             assert!(status);
-            assert!(!detailed);
+            assert!(secrets.is_empty());
         } else {
             panic!("Expected List command");
         }
     }
 
     #[test]
-    fn test_list_detailed_flag() {
-        let args = Args::try_parse_from(["agenix", "list", "--detailed"]).unwrap();
-        if let Some(Command::List { status, detailed }) = args.command {
+    fn test_list_with_secrets() {
+        let args = Args::try_parse_from(["agenix", "list", "secret1.age", "secret2.age"]).unwrap();
+        if let Some(Command::List { status, secrets }) = args.command {
             assert!(!status);
-            assert!(detailed);
+            assert_eq!(
+                secrets,
+                vec!["secret1.age".to_string(), "secret2.age".to_string()]
+            );
         } else {
             panic!("Expected List command");
         }
     }
 
     #[test]
-    fn test_list_detailed_short_flag() {
-        let args = Args::try_parse_from(["agenix", "list", "-d"]).unwrap();
-        if let Some(Command::List { status, detailed }) = args.command {
-            assert!(!status);
-            assert!(detailed);
+    fn test_list_with_status_and_secrets() {
+        let args =
+            Args::try_parse_from(["agenix", "list", "--status", "secret1.age", "secret2.age"])
+                .unwrap();
+        if let Some(Command::List { status, secrets }) = args.command {
+            assert!(status);
+            assert_eq!(
+                secrets,
+                vec!["secret1.age".to_string(), "secret2.age".to_string()]
+            );
         } else {
             panic!("Expected List command");
         }
@@ -1053,12 +1145,11 @@ mod tests {
 
     #[test]
     fn test_list_with_identity_flag() {
-        let args =
-            Args::try_parse_from(["agenix", "-i", "/path/to/key", "list", "--detailed"]).unwrap();
+        let args = Args::try_parse_from(["agenix", "-i", "/path/to/key", "list"]).unwrap();
         assert_eq!(args.identity, vec!["/path/to/key".to_string()]);
-        if let Some(Command::List { status, detailed }) = args.command {
+        if let Some(Command::List { status, secrets }) = args.command {
             assert!(!status);
-            assert!(detailed);
+            assert!(secrets.is_empty());
         } else {
             panic!("Expected List command");
         }
@@ -1086,29 +1177,6 @@ mod tests {
     }
 
     #[test]
-    fn test_list_detailed_and_verbose() {
-        let args = Args::try_parse_from(["agenix", "list", "-d", "-v"]).unwrap();
-        assert!(args.verbose);
-        if let Some(Command::List { status, detailed }) = args.command {
-            assert!(!status);
-            assert!(detailed);
-        } else {
-            panic!("Expected List command");
-        }
-    }
-
-    #[test]
-    fn test_list_status_and_detailed() {
-        let args = Args::try_parse_from(["agenix", "list", "-s", "-d"]).unwrap();
-        if let Some(Command::List { status, detailed }) = args.command {
-            assert!(status);
-            assert!(detailed);
-        } else {
-            panic!("Expected List command");
-        }
-    }
-
-    #[test]
     fn test_list_all_flags_combined() {
         let args = Args::try_parse_from([
             "agenix",
@@ -1120,16 +1188,16 @@ mod tests {
             "--no-system-identities",
             "list",
             "--status",
-            "--detailed",
+            "secret1.age",
         ])
         .unwrap();
         assert!(args.verbose);
         assert_eq!(args.rules, "/rules.nix");
         assert_eq!(args.identity, vec!["/key".to_string()]);
         assert!(args.no_system_identities);
-        if let Some(Command::List { status, detailed }) = args.command {
+        if let Some(Command::List { status, secrets }) = args.command {
             assert!(status);
-            assert!(detailed);
+            assert_eq!(secrets, vec!["secret1.age".to_string()]);
         } else {
             panic!("Expected List command");
         }

@@ -8,7 +8,7 @@ use std::path::Path;
 
 use crate::crypto;
 use crate::log;
-use crate::nix::{generate_secret_with_public, get_all_files, get_public_keys, should_armor};
+use crate::nix::get_all_files;
 use crate::output::{is_quiet, pluralize_secret};
 
 use super::filter_files;
@@ -62,10 +62,6 @@ impl std::fmt::Display for SecretStatus {
 pub struct SecretInfo {
     pub name: String,
     pub status: SecretStatus,
-    pub has_generator: bool,
-    pub has_public_key_file: bool,
-    pub recipient_count: usize,
-    pub armored: bool,
 }
 
 /// Get the status of a secret file
@@ -85,52 +81,40 @@ fn get_secret_status(
 }
 
 /// Get information about a secret
-fn get_secret_info(
-    rules_path: &str,
-    file: &str,
-    identities: &[String],
-    no_system_identities: bool,
-) -> Result<SecretInfo> {
-    Ok(SecretInfo {
+fn get_secret_info(file: &str, identities: &[String], no_system_identities: bool) -> SecretInfo {
+    SecretInfo {
         name: SecretName::new(file).normalized().to_string(),
         status: get_secret_status(file, identities, no_system_identities),
-        has_generator: generate_secret_with_public(rules_path, file)
-            .ok()
-            .flatten()
-            .is_some(),
-        has_public_key_file: Path::new(&format!("{}.pub", file)).exists(),
-        recipient_count: get_public_keys(rules_path, file)
-            .map(|k| k.len())
-            .unwrap_or(0),
-        armored: should_armor(rules_path, file).unwrap_or(false),
-    })
+    }
 }
 
 /// List secrets from the rules file
 ///
 /// # Arguments
 /// * `rules_path` - Path to the Nix rules file
-/// * `show_status` - Show status of each secret
-/// * `detailed` - Show detailed information about each secret (implies show_status)
+/// * `show_status` - Show status of each secret (ok/missing/cannot decrypt with available identities)
+/// * `secrets` - Secrets to list (if empty, lists all)
 /// * `identities` - Identity files for decryption verification
 /// * `no_system_identities` - If true, don't use default system identities
 pub fn list_secrets(
     rules_path: &str,
     show_status: bool,
-    detailed: bool,
+    secrets: &[String],
     identities: &[String],
     no_system_identities: bool,
 ) -> Result<()> {
     let all_files = get_all_files(rules_path)?;
+    let files = filter_files(&all_files, secrets);
+    validate_secrets_exist(&files, secrets)?;
 
-    if all_files.is_empty() {
+    if files.is_empty() {
         log!("No secrets defined in {}", rules_path);
         return Ok(());
     }
 
     // Simple list mode: just output secret names (one per line)
-    if !show_status && !detailed {
-        let mut names: Vec<_> = all_files
+    if !show_status {
+        let mut names: Vec<_> = files
             .iter()
             .map(|f| SecretName::new(f).normalized().to_string())
             .collect();
@@ -141,20 +125,20 @@ pub fn list_secrets(
         return Ok(());
     }
 
-    // Status/detailed mode: collect full info and print with status
-    let mut secrets: Vec<SecretInfo> = all_files
+    // Status mode: collect full info and print with status
+    let mut secret_infos: Vec<SecretInfo> = files
         .iter()
-        .map(|file| get_secret_info(rules_path, file, identities, no_system_identities))
-        .collect::<Result<Vec<_>>>()?;
-    secrets.sort_by(|a, b| a.name.cmp(&b.name));
+        .map(|file| get_secret_info(file, identities, no_system_identities))
+        .collect();
+    secret_infos.sort_by(|a, b| a.name.cmp(&b.name));
 
-    let (ok, missing, errors) = print_secrets_with_status(&secrets, detailed);
+    let (ok, missing, errors) = print_secrets_with_status(&secret_infos);
 
     if !is_quiet() {
         eprintln!(
             "Total: {} {} ({} ok, {} missing, {} errors)",
-            secrets.len(),
-            pluralize_secret(secrets.len()),
+            secret_infos.len(),
+            pluralize_secret(secret_infos.len()),
             ok,
             missing,
             errors
@@ -165,37 +149,11 @@ pub fn list_secrets(
 }
 
 /// Print secrets with status to stdout and return (ok_count, missing_count, error_count)
-fn print_secrets_with_status(secrets: &[SecretInfo], detailed: bool) -> (usize, usize, usize) {
-    let width = secrets.iter().map(|s| s.name.len()).max().unwrap_or(0);
-
-    if detailed {
-        println!(
-            "{:<width$}  {:^8}  {:^9}  {:^6}  {:^7}  {:^5}",
-            "SECRET", "STATUS", "GENERATOR", "PUBKEY", "RECIPS", "ARMOR"
-        );
-        println!(
-            "{:-<width$}  {:-^8}  {:-^9}  {:-^6}  {:-^7}  {:-^5}",
-            "", "", "", "", "", ""
-        );
-    }
-
-    let yes_no = |b: bool| if b { "yes" } else { "no" };
+fn print_secrets_with_status(secrets: &[SecretInfo]) -> (usize, usize, usize) {
     let mut counts = (0, 0, 0);
 
     for s in secrets {
-        if detailed {
-            println!(
-                "{:<width$}  {:^8}  {:^9}  {:^6}  {:^7}  {:^5}",
-                s.name,
-                s.status.code(),
-                yes_no(s.has_generator),
-                yes_no(s.has_public_key_file),
-                s.recipient_count,
-                yes_no(s.armored)
-            );
-        } else {
-            println!("{}\t{}", s.status.code(), s.name);
-        }
+        println!("{}\t{}", s.status.code(), s.name);
         counts = s.status.update_counts(counts);
     }
 
@@ -303,7 +261,7 @@ mod tests {
     #[test]
     fn test_list_empty_rules() {
         let temp_file = create_rules_file("{ }");
-        let result = list_secrets(temp_file.path().to_str().unwrap(), false, false, &[], false);
+        let result = list_secrets(temp_file.path().to_str().unwrap(), false, &[], &[], false);
         assert!(result.is_ok());
     }
 
@@ -316,31 +274,13 @@ mod tests {
             path, TEST_PUBKEY, path, TEST_PUBKEY
         );
         let temp_rules = create_rules_file(&rules);
-        let result = list_secrets(
-            temp_rules.path().to_str().unwrap(),
-            false,
-            false,
-            &[],
-            false,
-        );
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_list_detailed() {
-        let temp_dir = tempdir().unwrap();
-        let rules = single_secret_rules(
-            &format!("{}/detailed.age", temp_dir.path().to_str().unwrap()),
-            "armor = true;",
-        );
-        let temp_rules = create_rules_file(&rules);
-        let result = list_secrets(temp_rules.path().to_str().unwrap(), false, true, &[], false);
+        let result = list_secrets(temp_rules.path().to_str().unwrap(), false, &[], &[], false);
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_list_nonexistent_rules_file() {
-        let result = list_secrets("/nonexistent/path/secrets.nix", false, false, &[], false);
+        let result = list_secrets("/nonexistent/path/secrets.nix", false, &[], &[], false);
         assert!(result.is_err());
         let err_msg = result.unwrap_err().to_string();
         assert!(
@@ -353,76 +293,8 @@ mod tests {
     #[test]
     fn test_list_invalid_nix_syntax() {
         let temp_file = create_rules_file("{ invalid nix syntax !!!");
-        let result = list_secrets(temp_file.path().to_str().unwrap(), false, false, &[], false);
+        let result = list_secrets(temp_file.path().to_str().unwrap(), false, &[], &[], false);
         assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_list_with_generator() {
-        let temp_dir = tempdir().unwrap();
-        let rules = single_secret_rules(
-            &format!("{}/generated.age", temp_dir.path().to_str().unwrap()),
-            r#"generator = { }: "test-secret";"#,
-        );
-        let temp_rules = create_rules_file(&rules);
-
-        let result = list_secrets(temp_rules.path().to_str().unwrap(), false, true, &[], false);
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_list_with_multiple_recipients() {
-        let temp_dir = tempdir().unwrap();
-        let path = temp_dir.path().to_str().unwrap();
-        let rules = format!(
-            r#"{{ "{}/multi.age" = {{ publicKeys = [ "{}" "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH" ]; }}; }}"#,
-            path, TEST_PUBKEY
-        );
-        let temp_rules = create_rules_file(&rules);
-        let result = list_secrets(temp_rules.path().to_str().unwrap(), false, true, &[], false);
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_list_with_armor_true() {
-        let temp_dir = tempdir().unwrap();
-        let rules = single_secret_rules(
-            &format!("{}/armored.age", temp_dir.path().to_str().unwrap()),
-            "armor = true;",
-        );
-        let temp_rules = create_rules_file(&rules);
-        let result = list_secrets(temp_rules.path().to_str().unwrap(), false, true, &[], false);
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_list_with_armor_false() {
-        let temp_dir = tempdir().unwrap();
-        let rules = single_secret_rules(
-            &format!("{}/not-armored.age", temp_dir.path().to_str().unwrap()),
-            "armor = false;",
-        );
-        let temp_rules = create_rules_file(&rules);
-        let result = list_secrets(temp_rules.path().to_str().unwrap(), false, true, &[], false);
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_list_with_pub_file_present() {
-        let temp_dir = tempdir().unwrap();
-        let path = temp_dir.path().to_str().unwrap();
-        let rules = single_secret_rules(&format!("{}/with-pub.age", path), "");
-        let temp_rules = create_rules_file(&rules);
-
-        // Create the .pub file
-        fs::write(
-            temp_dir.path().join("with-pub.age.pub"),
-            "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPublic",
-        )
-        .unwrap();
-
-        let result = list_secrets(temp_rules.path().to_str().unwrap(), false, true, &[], false);
-        assert!(result.is_ok());
     }
 
     #[test]
@@ -440,13 +312,7 @@ mod tests {
             .join(" ");
         let rules = format!("{{ {} }}", entries);
         let temp_rules = create_rules_file(&rules);
-        let result = list_secrets(
-            temp_rules.path().to_str().unwrap(),
-            false,
-            false,
-            &[],
-            false,
-        );
+        let result = list_secrets(temp_rules.path().to_str().unwrap(), false, &[], &[], false);
         assert!(result.is_ok());
     }
 
@@ -459,13 +325,7 @@ mod tests {
         );
         let temp_rules = create_rules_file(&rules);
         // Don't create the file - it's missing
-        let result = list_secrets(
-            temp_rules.path().to_str().unwrap(),
-            false,
-            false,
-            &[],
-            false,
-        );
+        let result = list_secrets(temp_rules.path().to_str().unwrap(), false, &[], &[], false);
         assert!(result.is_ok()); // List succeeds but shows missing status
     }
 
@@ -480,13 +340,7 @@ mod tests {
         fs::write(&secret_path, "not-valid-age-format").unwrap();
 
         // List should succeed but show cannot decrypt status
-        let result = list_secrets(
-            temp_rules.path().to_str().unwrap(),
-            false,
-            false,
-            &[],
-            false,
-        );
+        let result = list_secrets(temp_rules.path().to_str().unwrap(), false, &[], &[], false);
         assert!(result.is_ok());
     }
 
@@ -499,8 +353,55 @@ mod tests {
             path, TEST_PUBKEY
         );
         let temp_rules = create_rules_file(&rules);
-        let result = list_secrets(temp_rules.path().to_str().unwrap(), true, false, &[], false);
+        let result = list_secrets(temp_rules.path().to_str().unwrap(), true, &[], &[], false);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_list_specific_secrets() {
+        let temp_dir = tempdir().unwrap();
+        let path = temp_dir.path().to_str().unwrap();
+        let rules = format!(
+            r#"{{ "{}/s1.age" = {{ publicKeys = [ "{}" ]; }}; "{}/s2.age" = {{ publicKeys = [ "{}" ]; }}; "{}/s3.age" = {{ publicKeys = [ "{}" ]; }}; }}"#,
+            path, TEST_PUBKEY, path, TEST_PUBKEY, path, TEST_PUBKEY
+        );
+        let temp_rules = create_rules_file(&rules);
+        let secrets = vec!["s1".to_string(), "s2".to_string()];
+        let result = list_secrets(
+            temp_rules.path().to_str().unwrap(),
+            false,
+            &secrets,
+            &[],
+            false,
+        );
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_list_nonexistent_secret_filter() {
+        let temp_dir = tempdir().unwrap();
+        let rules = single_secret_rules(
+            &format!("{}/existing.age", temp_dir.path().to_str().unwrap()),
+            "",
+        );
+        let temp_rules = create_rules_file(&rules);
+
+        // Try to list a secret that doesn't exist in rules
+        let secrets = vec!["nonexistent".to_string()];
+        let result = list_secrets(
+            temp_rules.path().to_str().unwrap(),
+            false,
+            &secrets,
+            &[],
+            false,
+        );
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("No matching secrets")
+        );
     }
 
     // ===========================================

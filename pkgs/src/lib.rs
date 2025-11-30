@@ -125,14 +125,14 @@ where
             args.dry_run,
         )
         .with_context(|| format!("Failed to edit {file}")),
-        Some(cli::Command::Encrypt { file, force }) => {
-            editor::encrypt_file(&rules, &file, force, args.dry_run)
+        Some(cli::Command::Encrypt { file, input, force }) => {
+            editor::encrypt_file(&rules, &file, input.as_deref(), force, args.dry_run)
                 .with_context(|| format!("Failed to encrypt {file}"))
         }
-        Some(cli::Command::List { status, detailed }) => editor::list_secrets(
+        Some(cli::Command::List { status, secrets }) => editor::list_secrets(
             &rules,
             status,
-            detailed,
+            &secrets,
             &args.identity,
             args.no_system_identities,
         )

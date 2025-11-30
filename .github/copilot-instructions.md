@@ -32,3 +32,11 @@ Run the full test suite after all other checks pass (this takes ~2 minutes):
 ```bash
 nix flake check
 ```
+
+## Documentation
+
+After `nix flake check` passes, update/adjust the following documentation if CLI changes were made:
+- Main readme (`readme.adoc`)
+- CLI manpage (`pkgs/readme.adoc`)
+- Clap help messages (in `pkgs/src/cli.rs`)
+- Modules readme (`modules/readme.adoc`)
