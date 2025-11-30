@@ -14,12 +14,17 @@ use snix_eval::Value;
 use std::env::current_dir;
 use std::path::Path;
 
+/// Check if a string looks like an actual public key (not a secret reference)
+fn is_actual_public_key(key_str: &str) -> bool {
+    key_str.starts_with("ssh-") || key_str.starts_with("age1") || key_str.starts_with("sk-")
+}
+
 /// Resolve a potential secret reference to a public key
 /// If the key_str looks like a public key (starts with ssh-, age1, etc.), return it as-is
 /// If it looks like a secret name, try to read the corresponding .pub file
 pub(crate) fn resolve_public_key(rules_dir: &Path, key_str: &str) -> Result<String> {
     // Check if this looks like an actual public key
-    if key_str.starts_with("ssh-") || key_str.starts_with("age1") || key_str.starts_with("sk-") {
+    if is_actual_public_key(key_str) {
         return Ok(key_str.to_string());
     }
 
@@ -73,6 +78,64 @@ pub fn get_public_keys(rules_path: &str, file: &str) -> Result<Vec<String>> {
         .collect();
 
     resolved_keys
+}
+
+/// Get the raw public keys for a file from the rules (without resolving secret references)
+/// This returns the strings as they appear in the rules file.
+fn get_raw_public_keys(rules_path: &str, file: &str) -> Result<Vec<String>> {
+    let nix_expr = format!(
+        "(let rules = import {rules_path}; keys = rules.\"{file}\".publicKeys; in builtins.deepSeq keys keys)"
+    );
+
+    let current_dir = current_dir()?;
+    let output = eval_nix_expression(nix_expr.as_str(), &current_dir)?;
+
+    value_to_string_array(output)
+}
+
+/// Get the secret references from a secret's publicKeys array.
+/// Returns a list of secret basenames that are referenced as recipients.
+/// Only returns references that look like secret names (not actual public keys).
+pub fn get_public_key_references(
+    rules_path: &str,
+    file: &str,
+    all_files: &[String],
+) -> Vec<String> {
+    let raw_keys = match get_raw_public_keys(rules_path, file) {
+        Ok(keys) => keys,
+        Err(_) => return vec![],
+    };
+
+    let mut refs = Vec::new();
+    for key in raw_keys {
+        // Skip actual public keys
+        if is_actual_public_key(&key) {
+            continue;
+        }
+
+        // This looks like a secret reference
+        // Normalize the reference to a basename (remove .age suffix if present)
+        let secret_ref = key.strip_suffix(".age").unwrap_or(&key);
+
+        // Check if this matches any secret in all_files
+        let basename = std::path::Path::new(secret_ref)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or(secret_ref);
+
+        for f in all_files {
+            let f_basename = std::path::Path::new(f.strip_suffix(".age").unwrap_or(f))
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or(f);
+
+            if f_basename == basename && !refs.contains(&basename.to_string()) {
+                refs.push(basename.to_string());
+            }
+        }
+    }
+
+    refs
 }
 
 /// Check if a file should be armored (ASCII-armored output)
@@ -243,10 +306,14 @@ pub fn get_all_files(rules_path: &str) -> Result<Vec<String>> {
     Ok(keys)
 }
 
-/// Get the dependencies of a secret (other secrets referenced in its generator)
-/// Returns the list of secret names that this secret depends on by reading
-/// the `dependencies` attribute from the secret's configuration.
-/// If dependencies is not explicitly specified, automatically detects them.
+/// Get the dependencies of a secret (other secrets referenced in its generator or publicKeys)
+/// Returns the list of secret names that this secret depends on.
+///
+/// Dependencies are determined in the following order:
+/// 1. If `dependencies` attribute is explicitly specified, use it exclusively
+/// 2. Otherwise, automatically detect dependencies from:
+///    - Generator function parameters (secrets, publics)
+///    - Secret references in publicKeys array (e.g., "deploy-key" instead of actual public key)
 pub fn get_secret_dependencies(rules_path: &str, file: &str) -> Result<Vec<String>> {
     // First check if dependencies are explicitly specified
     let nix_expr = format!(
@@ -267,7 +334,7 @@ pub fn get_secret_dependencies(rules_path: &str, file: &str) -> Result<Vec<Strin
         return Ok(explicit_deps);
     }
 
-    // Otherwise, try to auto-detect dependencies
+    // Otherwise, try to auto-detect dependencies from generator and publicKeys
     auto_detect_dependencies(rules_path, file)
 }
 
@@ -315,32 +382,38 @@ fn extract_deps_from_error(error: &str, all_files: &[String]) -> Vec<String> {
         .collect()
 }
 
-/// Automatically detect dependencies by analyzing what the generator references
+/// Automatically detect dependencies by analyzing:
+/// 1. What the generator references (secrets.X, publics.X)
+/// 2. Secret references in publicKeys array
 fn auto_detect_dependencies(rules_path: &str, file: &str) -> Result<Vec<String>> {
     let all_files = get_all_files(rules_path)?;
     let current_dir = current_dir()?;
 
+    let mut deps = Vec::new();
+
+    // First, collect dependencies from publicKeys references
+    let pub_key_refs = get_public_key_references(rules_path, file, &all_files);
+    deps.extend(pub_key_refs);
+
+    // Then, try to detect generator dependencies
     // Try calling generator with empty params
     let nix_expr = build_generator_test_expr(rules_path, file, "{ }");
-    match eval_nix_expression(&nix_expr, &current_dir) {
-        Ok(_) => return Ok(vec![]),
-        Err(e) if !e.to_string().contains("'secrets'") && !e.to_string().contains("'publics'") => {
-            return Ok(vec![]);
-        }
-        Err(_) => {}
-    }
+    let generator_needs_params = match eval_nix_expression(&nix_expr, &current_dir) {
+        Ok(_) => false,
+        Err(e) => e.to_string().contains("'secrets'") || e.to_string().contains("'publics'"),
+    };
 
-    // Try with different param combinations to detect specific dependencies
-    let mut deps = Vec::new();
-    for params in [
-        "{ secrets = {}; publics = {}; }",
-        "{ secrets = {}; }",
-        "{ publics = {}; }",
-    ] {
-        let nix_expr = build_generator_test_expr(rules_path, file, params);
-        match eval_nix_expression(&nix_expr, &current_dir) {
-            Ok(_) => return Ok(vec![]),
-            Err(e) => deps.extend(extract_deps_from_error(&e.to_string(), &all_files)),
+    if generator_needs_params {
+        // Try with different param combinations to detect specific dependencies
+        for params in [
+            "{ secrets = {}; publics = {}; }",
+            "{ secrets = {}; }",
+            "{ publics = {}; }",
+        ] {
+            let nix_expr = build_generator_test_expr(rules_path, file, params);
+            if let Err(e) = eval_nix_expression(&nix_expr, &current_dir) {
+                deps.extend(extract_deps_from_error(&e.to_string(), &all_files));
+            }
         }
     }
 
