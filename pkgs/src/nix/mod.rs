@@ -15,8 +15,25 @@ use std::env::current_dir;
 use std::path::Path;
 
 /// Check if a string looks like an actual public key (not a secret reference)
+/// SSH keys have format: "ssh-TYPE BASE64DATA" or "sk-ssh-... ..."
+/// Age keys start with "age1" and are Bech32 encoded (no spaces)
 fn is_actual_public_key(key_str: &str) -> bool {
-    key_str.starts_with("ssh-") || key_str.starts_with("age1") || key_str.starts_with("sk-")
+    // Age public keys: start with "age1" and contain no spaces
+    if key_str.starts_with("age1") && !key_str.contains(' ') {
+        return true;
+    }
+
+    // SSH public keys: must have a space (format: "ssh-type base64data [comment]")
+    // Also handle sk- prefixed keys (security key)
+    if (key_str.starts_with("ssh-")
+        || key_str.starts_with("sk-ssh-")
+        || key_str.starts_with("sk-ecdsa-"))
+        && key_str.contains(' ')
+    {
+        return true;
+    }
+
+    false
 }
 
 /// Resolve a potential secret reference to a public key
@@ -390,7 +407,23 @@ fn auto_detect_dependencies(rules_path: &str, file: &str) -> Result<Vec<String>>
     let current_dir = current_dir()?;
 
     // First, collect dependencies from publicKeys references
-    let pub_key_refs = get_public_key_references(rules_path, file, &all_files);
+    let mut pub_key_refs = get_public_key_references(rules_path, file, &all_files);
+
+    // Remove self-references from publicKeys refs
+    let file_normalized = if file.ends_with(".age") {
+        file.to_string()
+    } else {
+        format!("{}.age", file)
+    };
+    let file_basename = std::path::Path::new(
+        file_normalized
+            .strip_suffix(".age")
+            .unwrap_or(&file_normalized),
+    )
+    .file_name()
+    .and_then(|n| n.to_str())
+    .unwrap_or(&file_normalized);
+    pub_key_refs.retain(|d| d != file_basename);
 
     // Try calling generator with empty params
     let nix_expr = build_generator_test_expr(rules_path, file, "{ }");
@@ -424,12 +457,7 @@ fn auto_detect_dependencies(rules_path: &str, file: &str) -> Result<Vec<String>>
     // Clean up: sort, dedupe, remove self-references
     deps.sort();
     deps.dedup();
-    let file_normalized = if file.ends_with(".age") {
-        file.to_string()
-    } else {
-        format!("{}.age", file)
-    };
-    deps.retain(|d| format!("{}.age", d) != file_normalized);
+    deps.retain(|d| d != file_basename);
     Ok(deps)
 }
 
@@ -2542,7 +2570,8 @@ mod tests {
         "#;
         std::fs::write(&rules_path, rules_content)?;
 
-        let result = get_secret_dependencies(rules_path.to_str().unwrap(), "multi-recipient-secret.age")?;
+        let result =
+            get_secret_dependencies(rules_path.to_str().unwrap(), "multi-recipient-secret.age")?;
 
         // Should detect all three secret references as dependencies
         assert_eq!(result.len(), 3);
