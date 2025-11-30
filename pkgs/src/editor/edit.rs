@@ -375,13 +375,10 @@ pub fn write_public_file(
     };
 
     if content.is_empty() {
-        return Err(anyhow!(
-            "{}",
-            match input {
-                Some(path) => format!("Input file is empty: {}", path),
-                None => "No input provided on stdin".to_string(),
-            }
-        ));
+        return Err(match input {
+            Some(path) => anyhow!("Input file is empty: {}", path),
+            None => anyhow!("No input provided on stdin"),
+        });
     }
 
     log!("Writing to: {}", pub_file);
