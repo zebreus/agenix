@@ -91,28 +91,18 @@ fn get_secret_info(
     identities: &[String],
     no_system_identities: bool,
 ) -> Result<SecretInfo> {
-    let status = get_secret_status(file, identities, no_system_identities);
-    let recipient_count = get_public_keys(rules_path, file)
-        .map(|k| k.len())
-        .unwrap_or(0);
-    let armored = should_armor(rules_path, file).unwrap_or(false);
-    let has_generator = generate_secret_with_public(rules_path, file)
-        .map(|g| g.is_some())
-        .unwrap_or(false);
-
-    // Check for .pub file
-    let pub_file = format!("{}.pub", file);
-    let has_public_key_file = Path::new(&pub_file).exists();
-
-    let name = SecretName::new(file);
-
     Ok(SecretInfo {
-        name: name.normalized().to_string(),
-        status,
-        has_generator,
-        has_public_key_file,
-        recipient_count,
-        armored,
+        name: SecretName::new(file).normalized().to_string(),
+        status: get_secret_status(file, identities, no_system_identities),
+        has_generator: generate_secret_with_public(rules_path, file)
+            .ok()
+            .flatten()
+            .is_some(),
+        has_public_key_file: Path::new(&format!("{}.pub", file)).exists(),
+        recipient_count: get_public_keys(rules_path, file)
+            .map(|k| k.len())
+            .unwrap_or(0),
+        armored: should_armor(rules_path, file).unwrap_or(false),
     })
 }
 
@@ -234,14 +224,11 @@ pub fn check_secrets(
     let existing: Vec<_> = files.iter().filter(|f| Path::new(f).exists()).collect();
 
     if existing.is_empty() {
-        log!(
-            "{}",
-            if files.is_empty() {
-                format!("No secrets defined in {}", rules_path)
-            } else {
-                "No existing secret files to check".to_string()
-            }
-        );
+        if files.is_empty() {
+            log!("No secrets defined in {}", rules_path);
+        } else {
+            log!("No existing secret files to check");
+        }
         return Ok(());
     }
 
