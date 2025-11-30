@@ -249,11 +249,10 @@ pub fn encrypt_file(
 
     if content.is_empty() {
         return Err(anyhow!(
-            "No input provided{}",
-            if input.is_some() {
-                " in input file"
-            } else {
-                " on stdin"
+            "{}",
+            match input {
+                Some(path) => format!("Input file is empty: {}", path),
+                None => "No input provided on stdin".to_string(),
             }
         ));
     }
