@@ -533,7 +533,7 @@ out for simplicity in `age`.
 
 # Overriding age binary {#overriding-age-binary}
 
-The agenix CLI uses `age` by default as its age implemenation, you
+The agenix CLI uses `age` by default as its age implementation, you
 can use the `rage` implementation with Flakes like this:
 
 ```nix
@@ -597,4 +597,4 @@ After it starts, enter `run_tests()` to run the tests.
 
 # Acknowledgements {#acknowledgements}
 
-This project is based off of [sops-nix](https://github.com/Mic92/sops-nix) created Mic92. Thank you to Mic92 for inspiration and advice.
+This project is based off of [sops-nix](https://github.com/Mic92/sops-nix) created by Mic92. Thank you to Mic92 for inspiration and advice.
