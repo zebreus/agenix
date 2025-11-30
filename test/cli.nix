@@ -52,6 +52,7 @@ let
     "test_rules_path.sh"
     "test_verbose_quiet.sh"
     "test_edit_stdin_tty.sh"
+    "test_missing_rules_hint.sh"
   ];
 
   # Get all test_*.sh files in the scripts directory
