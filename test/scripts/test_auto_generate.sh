@@ -36,7 +36,7 @@ cat > "auto-generate-secrets.nix" << 'EOF'
 EOF
 
 # Run generate command
-agenix generate --rules "$TMPDIR/auto-generate-test/auto-generate-secrets.nix"
+agenix generate --secrets-nix "$TMPDIR/auto-generate-test/auto-generate-secrets.nix"
 
 # Check that SSH key files were created with .pub files
 if [ -f "server-ed25519.age" ] && [ -f "server-ed25519.age.pub" ]; then
@@ -110,7 +110,7 @@ fi
 
 # Verify we can decrypt the auto-generated secrets
 # Use TEST_USER_KEY environment variable provided by the test runner
-decrypted_ssh=$(agenix decrypt server-ed25519.age --rules "$TMPDIR/auto-generate-test/auto-generate-secrets.nix" -i "$TEST_USER_KEY" --no-system-identities)
+decrypted_ssh=$(agenix decrypt server-ed25519.age --secrets-nix "$TMPDIR/auto-generate-test/auto-generate-secrets.nix" -i "$TEST_USER_KEY" --no-system-identities)
 if echo "$decrypted_ssh" | grep -q "BEGIN PRIVATE KEY"; then
   echo "✓ Auto-generated SSH key decrypts correctly"
 else
@@ -118,7 +118,7 @@ else
   exit 1
 fi
 
-decrypted_x25519=$(agenix decrypt identity-x25519.age --rules "$TMPDIR/auto-generate-test/auto-generate-secrets.nix" -i "$TEST_USER_KEY" --no-system-identities)
+decrypted_x25519=$(agenix decrypt identity-x25519.age --secrets-nix "$TMPDIR/auto-generate-test/auto-generate-secrets.nix" -i "$TEST_USER_KEY" --no-system-identities)
 if echo "$decrypted_x25519" | grep -q "^AGE-SECRET-KEY-"; then
   echo "✓ Auto-generated x25519 key decrypts correctly"
 else
@@ -126,7 +126,7 @@ else
   exit 1
 fi
 
-decrypted_password=$(agenix decrypt database-password.age --rules "$TMPDIR/auto-generate-test/auto-generate-secrets.nix" -i "$TEST_USER_KEY" --no-system-identities)
+decrypted_password=$(agenix decrypt database-password.age --secrets-nix "$TMPDIR/auto-generate-test/auto-generate-secrets.nix" -i "$TEST_USER_KEY" --no-system-identities)
 password_len=${#decrypted_password}
 if [ "$password_len" = "32" ]; then
   echo "✓ Auto-generated password has correct length (32 chars)"

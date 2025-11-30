@@ -31,7 +31,7 @@ cat > "generate-public-secrets.nix" << 'EOF'
 EOF
 
 # Run generate command
-agenix generate --rules "$TMPDIR/generate-public-test/generate-public-secrets.nix"
+agenix generate --secrets-nix "$TMPDIR/generate-public-test/generate-public-secrets.nix"
 
 # Test 1: String-only generator should create .age file but no .pub file
 if [ -f "string-only.age" ]; then
@@ -113,7 +113,7 @@ fi
 
 # Verify we can decrypt the secrets
 # Use TEST_USER_KEY environment variable provided by the test runner
-decrypted_string=$(agenix decrypt string-only.age --rules "$TMPDIR/generate-public-test/generate-public-secrets.nix" -i "$TEST_USER_KEY" --no-system-identities)
+decrypted_string=$(agenix decrypt string-only.age --secrets-nix "$TMPDIR/generate-public-test/generate-public-secrets.nix" -i "$TEST_USER_KEY" --no-system-identities)
 if [ "$decrypted_string" = "just-a-secret-string" ]; then
   echo "✓ String-only secret decrypts correctly"
 else
@@ -121,7 +121,7 @@ else
   exit 1
 fi
 
-decrypted_with_pub=$(agenix decrypt with-public.age --rules "$TMPDIR/generate-public-test/generate-public-secrets.nix" -i "$TEST_USER_KEY" --no-system-identities)
+decrypted_with_pub=$(agenix decrypt with-public.age --secrets-nix "$TMPDIR/generate-public-test/generate-public-secrets.nix" -i "$TEST_USER_KEY" --no-system-identities)
 if [ "$decrypted_with_pub" = "my-secret-value" ]; then
   echo "✓ Secret with public output decrypts correctly"
 else

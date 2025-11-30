@@ -73,7 +73,7 @@ cat > "$TEMP_RULES" << EOF
   };
 }
 EOF
-custom_output=$(agenix list -r "$TEMP_RULES" 2>&1)
+custom_output=$(agenix list --secrets-nix "$TEMP_RULES" 2>&1)
 if echo "$custom_output" | grep -q "custom-secret"; then
   echo "✓ List works with custom rules file"
 else
@@ -83,7 +83,7 @@ fi
 
 # Test 8: List --status shows MISSING status for nonexistent file
 echo "--- Test 8: Missing file status ---"
-custom_status=$(agenix list --status -r "$TEMP_RULES" 2>&1)
+custom_status=$(agenix list --status --secrets-nix "$TEMP_RULES" 2>&1)
 if echo "$custom_status" | grep -q "MISSING"; then
   echo "✓ List --status shows MISSING status for nonexistent file"
 else
@@ -93,7 +93,7 @@ fi
 
 # Test 9: List nonexistent rules file fails with helpful error
 echo "--- Test 9: Nonexistent rules file ---"
-if ! agenix list -r "/nonexistent/path/rules.nix" 2>/dev/null; then
+if ! agenix list --secrets-nix "/nonexistent/path/rules.nix" 2>/dev/null; then
   echo "✓ List fails on nonexistent rules file"
 else
   echo "✗ List should fail on nonexistent rules file"
@@ -104,7 +104,7 @@ fi
 echo "--- Test 10: Invalid nix syntax ---"
 INVALID_RULES="$TMPDIR/invalid-rules.nix"
 echo "{ invalid nix syntax !!!" > "$INVALID_RULES"
-if agenix list -r "$INVALID_RULES" 2>/dev/null; then
+if agenix list --secrets-nix "$INVALID_RULES" 2>/dev/null; then
   echo "✗ List should fail on invalid nix syntax"
   exit 1
 else
@@ -122,7 +122,7 @@ cat > "$ARMOR_RULES" << EOF
   };
 }
 EOF
-armor_output=$(agenix list -r "$ARMOR_RULES" --detailed 2>&1)
+armor_output=$(agenix list --secrets-nix "$ARMOR_RULES" --detailed 2>&1)
 if echo "$armor_output" | grep -q "ARMOR"; then
   echo "✓ Detailed list shows ARMOR column"
 else
@@ -172,7 +172,7 @@ fi
 echo "--- Test 16: Empty rules file ---"
 EMPTY_RULES="$TMPDIR/empty-rules.nix"
 echo "{ }" > "$EMPTY_RULES"
-empty_output=$(agenix list -r "$EMPTY_RULES" 2>&1)
+empty_output=$(agenix list --secrets-nix "$EMPTY_RULES" 2>&1)
 if echo "$empty_output" | grep -q "No secrets defined"; then
   echo "✓ List shows message for empty rules"
 else
@@ -192,7 +192,7 @@ cat > "$CORRUPT_RULES" << EOF
 }
 EOF
 echo "not-valid-age-content" > "$CORRUPT_SECRET"
-corrupt_output=$(agenix list --status -r "$CORRUPT_RULES" 2>&1)
+corrupt_output=$(agenix list --status --secrets-nix "$CORRUPT_RULES" 2>&1)
 if echo "$corrupt_output" | grep -q "ERROR"; then
   echo "✓ List --status shows ERROR status for corrupted file"
 else

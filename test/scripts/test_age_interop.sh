@@ -6,7 +6,7 @@ source "$(dirname "$0")/common_setup.sh"
 echo "=== Test 10: Encrypt with age CLI, decrypt with agenix ==="
 # Test interoperability: encrypt with age CLI, decrypt with agenix
 echo "age-interop-test" > "$TMPDIR/test-message.txt"
-age -r "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH" \
+age --secrets-nix "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH" \
     -o "$TMPDIR/interop-secret.age" \
     "$TMPDIR/test-message.txt"
 
@@ -19,7 +19,7 @@ EOF
 
 cd "$TMPDIR"
 # Use TEST_USER_KEY environment variable provided by the test runner
-decrypted=$(agenix decrypt interop-secret.age --rules "$TMPDIR/interop-secrets.nix" -i "$TEST_USER_KEY" --no-system-identities)
+decrypted=$(agenix decrypt interop-secret.age --secrets-nix "$TMPDIR/interop-secrets.nix" -i "$TEST_USER_KEY" --no-system-identities)
 if [ "$decrypted" = "age-interop-test" ]; then
   echo "✓ Age CLI -> agenix interop works"
 else
