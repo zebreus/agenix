@@ -1,0 +1,246 @@
+= AGENIX(1)
+:doctype: manpage
+:manmanual: Agenix Manual
+:mansource: agenix {revnumber}
+:man-linkstyle: pass:[blue R < >]
+:revnumber: 0.1.0
+
+== NAME
+
+agenix - edit and rekey age secret files
+
+== SYNOPSIS
+
+*agenix* [_GLOBAL-OPTIONS_] _COMMAND_ [_COMMAND-OPTIONS_] [_ARGUMENTS_]
+
+== DESCRIPTION
+
+*agenix* is a command-line tool for managing secrets encrypted with age. It uses a Nix expression (typically `secrets.nix`) to define which public keys can decrypt each secret.
+
+Secrets are encrypted using SSH keys or age keys, making it easy to use existing SSH infrastructure for secret management in NixOS configurations.
+
+== COMMANDS
+
+*edit*, *e* _FILE_::
+  Edit a secret file using *$EDITOR*. Creates a new file if it doesn't exist. The file is decrypted to a temporary location, opened in the editor, then re-encrypted when saved.
+  +
+  Options:::
+    *-e*, *--editor* _COMMAND_::::
+      Editor command to use. Defaults to *$EDITOR*, or *vi* if unset.
+    *-f*, *--force*::::
+      Open an empty editor if decryption fails. Useful for recreating a secret when you no longer have access to decrypt it.
+
+*encrypt*, *c* _FILE_::
+  Encrypt content from standard input to a secret file. The file must be defined in the rules file.
+  +
+  Options:::
+    *-f*, *--force*::::
+      Overwrite an existing secret file.
+
+*decrypt*, *d* _FILE_::
+  Decrypt a secret file to standard output or a file.
+  +
+  Options:::
+    *-o*, *--output* _FILE_::::
+      Write decrypted output to a file instead of standard output.
+
+*rekey*, *r* [_SECRET_]...::
+  Re-encrypt secrets with updated recipients from the rules file. If no secrets are specified, rekeys all secrets defined in the rules file.
+  +
+  Options:::
+    *-p*, *--partial*::::
+      Continue rekeying even if some secrets cannot be decrypted. Useful when you only have access to a subset of secrets.
+
+*generate*, *g* [_SECRET_]...::
+  Generate secrets using generator functions defined in the rules file. If no secrets are specified, generates all secrets that have generators.
+  +
+  Options:::
+    *-f*, *--force*::::
+      Overwrite existing secret files.
+    *--no-dependencies*::::
+      Do not automatically generate dependencies of specified secrets.
+
+*list*, *l*::
+  List secrets defined in the rules file.
+  +
+  Options:::
+    *-s*, *--status*::::
+      Show status of each secret (ok, missing, or cannot decrypt).
+    *-d*, *--detailed*::::
+      Show detailed information about each secret including public keys.
+
+*check*, *v* [_SECRET_]...::
+  Verify that secrets can be decrypted without outputting their content. Returns success if all specified secrets (or all secrets if none specified) can be decrypted.
+
+*completions* _SHELL_::
+  Generate shell completions. Supported shells: *bash*, *zsh*, *fish*, *elvish*, *powershell*.
+
+== GLOBAL OPTIONS
+
+These options can be used with any command.
+
+*-r*, *--rules* _FILE_::
+  Path to the Nix rules file defining secrets and their recipients. Default: `./secrets.nix`. Can also be set via the *RULES* environment variable.
+
+*-i*, *--identity* _KEY_::
+  Identity (private key) to use when decrypting. Can be specified multiple times. Identities are tried in order: explicitly specified first, then default system identities (*~/.ssh/id_ed25519*, *~/.ssh/id_rsa*).
+
+*--no-system-identities*::
+  Do not use default system identities. Only use identities specified with *-i*.
+
+*-n*, *--dry-run*::
+  Show what would be done without making changes.
+
+*-v*, *--verbose*::
+  Show detailed information about operations.
+
+*-q*, *--quiet*::
+  Suppress non-essential output.
+
+*-h*, *--help*::
+  Print help information.
+
+*-V*, *--version*::
+  Print version information.
+
+== ENVIRONMENT
+
+*EDITOR*::
+  Editor to use when editing secrets. Default: *vi*.
+
+*RULES*::
+  Path to the Nix rules file. Default: `./secrets.nix`.
+
+== FILES
+
+*secrets.nix*::
+  The default rules file defining secrets and their recipients. See *agenix(5)* or the project documentation for the format.
+
+*~/.ssh/id_ed25519*, *~/.ssh/id_rsa*::
+  Default identity files used for decryption.
+
+== EXAMPLES
+
+Edit or create a secret:
+
+  *agenix edit secret.age*
+
+Encrypt from standard input:
+
+  *echo "my-password" | agenix encrypt secret.age*
+
+  *cat plaintext.txt | agenix encrypt --force secret.age*
+
+Decrypt to standard output:
+
+  *agenix decrypt secret.age*
+
+Decrypt to a file:
+
+  *agenix decrypt secret.age -o plaintext.txt*
+
+Re-encrypt all secrets after changing recipients:
+
+  *agenix rekey*
+
+Re-encrypt specific secrets:
+
+  *agenix rekey secret1.age secret2.age*
+
+Generate all secrets with generators:
+
+  *agenix generate*
+
+Preview what would be generated:
+
+  *agenix generate --dry-run*
+
+Generate specific secret and its dependencies:
+
+  *agenix generate my-key.age*
+
+List all defined secrets:
+
+  *agenix list*
+
+List secrets with status:
+
+  *agenix list --status*
+
+Verify secrets can be decrypted:
+
+  *agenix check*
+
+Use a custom rules file:
+
+  *agenix -r /path/to/secrets.nix edit secret.age*
+
+Use a specific identity:
+
+  *agenix -i ~/.ssh/other_key decrypt secret.age*
+
+Generate shell completions:
+
+  *agenix completions bash > ~/.local/share/bash-completion/completions/agenix*
+
+  *agenix completions zsh > ~/.zfunc/_agenix*
+
+  *agenix completions fish > ~/.config/fish/completions/agenix.fish*
+
+== EXIT STATUS
+
+*0*::
+  Success.
+
+*1*::
+  General error (e.g., file not found, decryption failed).
+
+*2*::
+  Command-line usage error.
+
+== NOTES
+
+=== Non-Interactive Mode
+
+When standard input is not a terminal (e.g., when piping), the *edit* command reads content from standard input instead of opening an editor. This allows scripted secret creation:
+
+  *echo "secret-value" | agenix edit secret.age*
+
+=== Rekeying
+
+When you change the recipients in `secrets.nix`, you must rekey your secrets:
+
+  *agenix rekey*
+
+Due to randomness in age's encryption, files always change when rekeyed, even if recipients remain the same.
+
+=== Generator Dependencies
+
+When generating secrets with dependencies, agenix automatically determines the correct generation order. If a dependency already has a `.pub` file, it will be used instead of regenerating the dependency.
+
+=== Public Key References
+
+In `secrets.nix`, you can reference another secret's public key by name:
+
+[source,nix]
+----
+{
+  "deploy-key.age" = {
+    publicKeys = [ user1 ];
+    generator = builtins.sshKey;
+  };
+  "config.age" = {
+    publicKeys = [ user1 "deploy-key" ];  # References deploy-key.age.pub
+  };
+}
+----
+
+== SEE ALSO
+
+*age(1)*, *ssh-keygen(1)*
+
+Project documentation: https://github.com/zebreus/agenix
+
+== AUTHORS
+
+Based on the original agenix by Ryan Mulligan and contributors.

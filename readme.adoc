@@ -1,0 +1,410 @@
+= agenix
+:toc:
+:toclevels: 2
+:sectnums:
+
+https://github.com/FiloSottile/age[age]-encrypted secrets for NixOS and Home Manager.
+
+**agenix** is a command-line tool for managing secrets encrypted with your existing SSH keys. This project also includes NixOS and Home Manager modules for adding encrypted secrets to the Nix store and decrypting them at system activation.
+
+CAUTION: This project is experimental. The primary goal is to explore AI-assisted coding. Use at your own risk.
+
+== Features
+
+* Encrypt secrets using SSH keys (system host keys or user keys)
+* Deploy encrypted secrets through the Nix store with `nixos-rebuild`
+* Automatic decryption to `/run/agenix/` at system activation
+* Generate secrets using built-in generators (SSH keys, passwords, UUIDs, age keys)
+* Reference generated public keys in other secrets
+
+== Quick Start
+
+. Define recipients in `secrets/secrets.nix`:
++
+[source,nix]
+----
+let
+  user = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5...";
+  host = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5...";
+in {
+  "db-password.age".publicKeys = [ user host ];
+}
+----
+
+. Create the secret:
++
+[source,shell]
+----
+cd secrets && agenix edit db-password.age
+----
+
+. Use in your NixOS configuration:
++
+[source,nix]
+----
+{
+  age.secrets.db-password.file = ./secrets/db-password.age;
+  services.grafana.database.passwordFile = config.age.secrets.db-password.path;
+}
+----
+
+== Installation
+
+=== Flakes (Recommended)
+
+Add agenix to your `flake.nix`:
+
+[source,nix]
+----
+{
+  inputs.agenix.url = "github:zebreus/agenix";
+
+  outputs = { nixpkgs, agenix, ... }: {
+    nixosConfigurations.myhost = nixpkgs.lib.nixosSystem {
+      system = "x86_64-linux";
+      modules = [
+        agenix.nixosModules.default
+        {
+          environment.systemPackages = [ agenix.packages.x86_64-linux.default ];
+        }
+      ];
+    };
+  };
+}
+----
+
+For Home Manager:
+
+[source,nix]
+----
+{
+  inputs.agenix.url = "github:zebreus/agenix";
+
+  outputs = { nixpkgs, home-manager, agenix, ... }: {
+    homeConfigurations.myuser = home-manager.lib.homeManagerConfiguration {
+      modules = [
+        agenix.homeManagerModules.default
+        {
+          home.packages = [ agenix.packages.x86_64-linux.default ];
+        }
+      ];
+    };
+  };
+}
+----
+
+Run without installing:
+
+[source,shell]
+----
+nix run github:zebreus/agenix -- --help
+----
+
+=== niv
+
+[source,shell]
+----
+niv add zebreus/agenix
+----
+
+[source,nix]
+----
+{
+  imports = [ "${(import ./nix/sources.nix).agenix}/modules/age.nix" ];
+  environment.systemPackages = [
+    (pkgs.callPackage "${(import ./nix/sources.nix).agenix}/pkgs/agenix.nix" {})
+  ];
+}
+----
+
+=== nix-channel
+
+[source,shell]
+----
+sudo nix-channel --add https://github.com/zebreus/agenix/archive/main.tar.gz agenix
+sudo nix-channel --update
+----
+
+[source,nix]
+----
+{
+  imports = [ <agenix/modules/age.nix> ];
+  environment.systemPackages = [ (pkgs.callPackage <agenix/pkgs/agenix.nix> {}) ];
+}
+----
+
+=== fetchTarball
+
+[source,nix]
+----
+{
+  imports = [ "${builtins.fetchTarball "https://github.com/zebreus/agenix/archive/main.tar.gz"}/modules/age.nix" ];
+  environment.systemPackages = [
+    (pkgs.callPackage "${builtins.fetchTarball "https://github.com/zebreus/agenix/archive/main.tar.gz"}/pkgs/agenix.nix" {})
+  ];
+}
+----
+
+== Documentation
+
+* **link:pkgs/readme.adoc[CLI Reference]** – Command-line interface and manpage
+* **link:modules/readme.adoc[Module Reference]** – NixOS and Home Manager module options
+
+== secrets.nix Reference
+
+The `secrets.nix` file defines which public keys can decrypt each secret. It is a Nix expression that evaluates to an attribute set where each key is a secret filename and each value is a secret configuration.
+
+=== Basic Structure
+
+[source,nix]
+----
+let
+  # Define public keys for users and systems
+  user1 = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5...";
+  user2 = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5...";
+  system1 = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5...";
+in {
+  "secret.age".publicKeys = [ user1 system1 ];
+  "other-secret.age".publicKeys = [ user1 user2 system1 ];
+}
+----
+
+=== Secret Configuration Options
+
+Each secret in `secrets.nix` can have the following attributes:
+
+==== publicKeys (required)
+
+List of public keys that can decrypt this secret. Supports:
+
+* SSH keys: `ssh-ed25519 AAAA...` or `ssh-rsa AAAA...`
+* Age keys: `age1...`
+* References to other secrets' public keys: `"secret-name"` or `"secret-name.age"`
+
+[source,nix]
+----
+{
+  "secret.age".publicKeys = [
+    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5..."
+    "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p"
+    "other-secret"  # References other-secret.age.pub
+  ];
+}
+----
+
+==== armor (optional)
+
+When `true`, the encrypted file uses ASCII-armored format instead of binary.
+
+[source,nix]
+----
+{
+  "secret.age" = {
+    publicKeys = [ "ssh-ed25519 AAAA..." ];
+    armor = true;  # Default: false
+  };
+}
+----
+
+==== generator (optional)
+
+A function that generates the secret value. If the secret file does not exist, running `agenix generate` will create it using this function.
+
+Generators can return:
+
+* A string – creates only the `.age` file
+* An attrset with `secret` and `public` – creates both `.age` and `.pub` files
+
+[source,nix]
+----
+{
+  # Simple generator returning a string
+  "api-token.age" = {
+    publicKeys = [ "..." ];
+    generator = { }: builtins.randomString 32;
+  };
+
+  # Generator with public output (e.g., for SSH keys)
+  "ssh-key.age" = {
+    publicKeys = [ "..." ];
+    generator = builtins.sshKey;  # Returns { secret, public }
+  };
+
+  # Custom generator with public output
+  "my-secret.age" = {
+    publicKeys = [ "..." ];
+    generator = { }: {
+      secret = "the-secret-value";
+      public = "public-metadata";
+    };
+  };
+}
+----
+
+==== dependencies (optional)
+
+List of other secrets whose values can be accessed in the generator function. Dependencies are automatically generated first.
+
+[source,nix]
+----
+{
+  "base-secret.age" = {
+    publicKeys = [ "..." ];
+    generator = builtins.sshKey;
+  };
+
+  "derived-secret.age" = {
+    publicKeys = [ "..." ];
+    dependencies = [ "base-secret" ];
+    generator = { publics }: "Key: ${publics."base-secret"}";
+  };
+}
+----
+
+Generator functions can accept:
+
+* `{ }` – no parameters
+* `{ publics }` – public content of dependencies
+* `{ secrets }` – secret content of dependencies (only during generation)
+* `{ secrets, publics }` – both
+
+=== Built-in Generators
+
+The CLI provides these generator functions:
+
+[cols="1,2"]
+|===
+|Function |Description
+
+|`builtins.randomString <length>`
+|Random alphanumeric string
+
+|`builtins.randomHex <length>`
+|Random hexadecimal string (lowercase)
+
+|`builtins.randomBase64 <bytes>`
+|Random base64 string from N bytes
+
+|`builtins.passwordSafe <length>`
+|Random password (alphanumeric + `-_+=.`)
+
+|`builtins.uuid` or `builtins.uuid {}`
+|Random UUIDv4
+
+|`builtins.sshKey` or `builtins.sshKey {}`
+|SSH Ed25519 keypair (returns `{secret, public}`)
+
+|`builtins.rsaKey` or `builtins.rsaKey {}`
+|SSH RSA keypair; options: `keySize` (2048, 3072, 4096)
+
+|`builtins.ageKey` or `builtins.ageKey {}`
+|age x25519 keypair (returns `{secret, public}`)
+
+|`builtins.blake2b <string>`
+|BLAKE2b-512 hash (128 hex chars)
+
+|`builtins.blake2s <string>`
+|BLAKE2s-256 hash (64 hex chars)
+
+|`builtins.keccak <string>`
+|SHA3-256 hash (64 hex chars)
+|===
+
+=== Automatic Generator Selection
+
+When no `generator` is specified, agenix automatically selects a generator based on the filename:
+
+[cols="1,1,1"]
+|===
+|File ending |Generator |Output
+
+|`*ed25519.age`
+|`builtins.sshKey`
+|SSH keypair with `.pub`
+
+|`*ssh.age`
+|`builtins.sshKey`
+|SSH keypair with `.pub`
+
+|`*ssh_key.age`
+|`builtins.sshKey`
+|SSH keypair with `.pub`
+
+|`*x25519.age`
+|`builtins.ageKey`
+|age keypair with `.pub`
+
+|`*password.age`
+|`builtins.randomString 32`
+|32-char password
+
+|`*passphrase.age`
+|`builtins.randomString 32`
+|32-char password
+|===
+
+=== Complete Example
+
+[source,nix]
+----
+let
+  user1 = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH";
+  system1 = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPJDyIr/FSz1cJdcoW69R+NrWzwGK/+3gJpqD1t8L2zE";
+in {
+  # Simple secret
+  "database-password.age".publicKeys = [ user1 system1 ];
+
+  # Armored output
+  "api-key.age" = {
+    publicKeys = [ user1 ];
+    armor = true;
+  };
+
+  # Generated SSH key with automatic .pub file
+  "deploy-key.age" = {
+    publicKeys = [ user1 system1 ];
+    generator = builtins.sshKey;
+  };
+
+  # Secret that references the deploy key's public key
+  "authorized-keys.age" = {
+    publicKeys = [ user1 system1 "deploy-key" ];
+  };
+
+  # Secret using dependency
+  "ssh-config.age" = {
+    publicKeys = [ user1 system1 ];
+    dependencies = [ "deploy-key" ];
+    generator = { publics }:
+      ''
+        Host myserver
+          IdentityFile /etc/ssh/deploy_key
+          # Public: ${publics."deploy-key"}
+      '';
+  };
+
+  # Auto-generated from filename
+  "backup-ssh.age".publicKeys = [ user1 system1 ];
+  "service-password.age".publicKeys = [ user1 system1 ];
+}
+----
+
+== Threat Model
+
+IMPORTANT: This project has not been audited by a security professional.
+
+Secrets are encrypted with age, which does not provide authentication. Anyone with write access to encrypted files can modify them. While configuration changes are easier to review than binary secrets, this is a limitation of age's design.
+
+=== Security Considerations
+
+* **Do not use `builtins.readFile`** on secret paths – this would copy cleartext to the Nix store
+* **Password-protected SSH keys** require entering the password for each secret operation
+* **Private keys** are never copied to the Nix store; only the path is stored
+
+== Acknowledgements
+
+Based on https://github.com/Mic92/sops-nix[sops-nix] by Mic92.
+
+== Related Projects
+
+* https://github.com/ryantm/agenix[ryantm/agenix] – The original agenix project with a minimal, stable implementation
