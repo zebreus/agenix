@@ -138,40 +138,36 @@ pub fn list_secrets(
         return Ok(());
     }
 
-    // Collect and sort secret names
-    let mut secret_names: Vec<String> = all_files
-        .iter()
-        .map(|f| SecretName::new(f).normalized().to_string())
-        .collect();
-    secret_names.sort();
-
-    // If showing status or detailed view, we need full info
-    if show_status || detailed {
-        // Collect and sort secrets with full info
-        let mut secrets: Vec<SecretInfo> = all_files
+    // Simple list mode: just output secret names (one per line)
+    if !show_status && !detailed {
+        let mut names: Vec<_> = all_files
             .iter()
-            .map(|file| get_secret_info(rules_path, file, identities, no_system_identities))
-            .collect::<Result<Vec<_>>>()?;
-        secrets.sort_by(|a, b| a.name.cmp(&b.name));
-
-        // Print secrets list with status to stdout
-        let (ok_count, missing_count, error_count) = print_secrets_with_status(&secrets, detailed);
-
-        // Print summary to stderr (suppressed in quiet mode)
-        if !is_quiet() {
-            eprintln!(
-                "Total: {} secrets ({} ok, {} missing, {} errors)",
-                secrets.len(),
-                ok_count,
-                missing_count,
-                error_count
-            );
-        }
-    } else {
-        // Simple list: just output secret names (one per line)
-        for name in &secret_names {
+            .map(|f| SecretName::new(f).normalized().to_string())
+            .collect();
+        names.sort();
+        for name in names {
             println!("{}", name);
         }
+        return Ok(());
+    }
+
+    // Status/detailed mode: collect full info and print with status
+    let mut secrets: Vec<SecretInfo> = all_files
+        .iter()
+        .map(|file| get_secret_info(rules_path, file, identities, no_system_identities))
+        .collect::<Result<Vec<_>>>()?;
+    secrets.sort_by(|a, b| a.name.cmp(&b.name));
+
+    let (ok, missing, errors) = print_secrets_with_status(&secrets, detailed);
+
+    if !is_quiet() {
+        eprintln!(
+            "Total: {} secrets ({} ok, {} missing, {} errors)",
+            secrets.len(),
+            ok,
+            missing,
+            errors
+        );
     }
 
     Ok(())
@@ -179,49 +175,40 @@ pub fn list_secrets(
 
 /// Print secrets with status to stdout and return (ok_count, missing_count, error_count)
 fn print_secrets_with_status(secrets: &[SecretInfo], detailed: bool) -> (usize, usize, usize) {
-    let max_name_len = secrets.iter().map(|s| s.name.len()).max().unwrap_or(0);
-    let yes_no = |b: bool| if b { "yes" } else { "no" };
+    let width = secrets.iter().map(|s| s.name.len()).max().unwrap_or(0);
 
     if detailed {
         println!(
             "{:<width$}  {:^8}  {:^9}  {:^6}  {:^7}  {:^5}",
-            "SECRET",
-            "STATUS",
-            "GENERATOR",
-            "PUBKEY",
-            "RECIPS",
-            "ARMOR",
-            width = max_name_len
+            "SECRET", "STATUS", "GENERATOR", "PUBKEY", "RECIPS", "ARMOR"
         );
         println!(
             "{:-<width$}  {:-^8}  {:-^9}  {:-^6}  {:-^7}  {:-^5}",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            width = max_name_len
+            "", "", "", "", "", ""
         );
     }
 
-    secrets.iter().fold((0, 0, 0), |counts, secret| {
+    let yes_no = |b: bool| if b { "yes" } else { "no" };
+    let mut counts = (0, 0, 0);
+
+    for s in secrets {
         if detailed {
             println!(
                 "{:<width$}  {:^8}  {:^9}  {:^6}  {:^7}  {:^5}",
-                secret.name,
-                secret.status.code(),
-                yes_no(secret.has_generator),
-                yes_no(secret.has_public_key_file),
-                secret.recipient_count,
-                yes_no(secret.armored),
-                width = max_name_len
+                s.name,
+                s.status.code(),
+                yes_no(s.has_generator),
+                yes_no(s.has_public_key_file),
+                s.recipient_count,
+                yes_no(s.armored)
             );
         } else {
-            println!("{}\t{}", secret.status.code(), secret.name);
+            println!("{}\t{}", s.status.code(), s.name);
         }
-        secret.status.update_counts(counts)
-    })
+        counts = s.status.update_counts(counts);
+    }
+
+    counts
 }
 
 /// Check that secrets can be decrypted
@@ -242,59 +229,46 @@ pub fn check_secrets(
 ) -> Result<()> {
     let all_files = get_all_files(rules_path)?;
     let files = filter_files(&all_files, secrets);
-
     validate_secrets_exist(&files, secrets)?;
 
-    // Filter to only existing files
-    let existing_files: Vec<_> = files.iter().filter(|f| Path::new(f).exists()).collect();
+    let existing: Vec<_> = files.iter().filter(|f| Path::new(f).exists()).collect();
 
-    if existing_files.is_empty() {
-        let msg = if files.is_empty() {
-            format!("No secrets defined in {}", rules_path)
-        } else {
-            "No existing secret files to check".to_string()
-        };
-        log!("{}", msg);
+    if existing.is_empty() {
+        log!(
+            "{}",
+            if files.is_empty() {
+                format!("No secrets defined in {}", rules_path)
+            } else {
+                "No existing secret files to check".to_string()
+            }
+        );
         return Ok(());
     }
 
-    log!("Checking {} secrets...", existing_files.len());
+    log!("Checking {} secrets...", existing.len());
 
-    // Check each file and collect results
-    let results: Vec<_> = existing_files
-        .iter()
-        .map(|file| {
-            let name = SecretName::new(file);
-            let result = crypto::can_decrypt(file, identities, no_system_identities);
-            (name.normalized().to_string(), result)
-        })
-        .collect();
-
-    // Print results and count failures
-    let failed: Vec<_> = results
-        .iter()
-        .filter_map(|(name, result)| match result {
-            Ok(()) => {
-                log!("OK: {}", name);
-                None
-            }
+    let mut failed = 0;
+    for file in &existing {
+        let name = SecretName::new(file).normalized().to_string();
+        match crypto::can_decrypt(file, identities, no_system_identities) {
+            Ok(()) => log!("OK: {}", name),
             Err(e) => {
                 log!("ERROR: {}: {}", name, e);
-                Some(name.clone())
+                failed += 1;
             }
-        })
-        .collect();
+        }
+    }
 
     log!("");
 
-    if failed.is_empty() {
-        log!("All {} secrets verified successfully.", results.len());
+    if failed == 0 {
+        log!("All {} secrets verified successfully.", existing.len());
         Ok(())
     } else {
         Err(anyhow::anyhow!(
             "Verification failed: {} of {} secrets could not be decrypted",
-            failed.len(),
-            results.len()
+            failed,
+            existing.len()
         ))
     }
 }
@@ -769,5 +743,80 @@ mod tests {
         let debug_str = format!("{:?}", status);
         assert!(debug_str.contains("CannotDecrypt"));
         assert!(debug_str.contains("error msg"));
+    }
+
+    // ===========================================
+    // STATUS CODE TESTS
+    // ===========================================
+
+    #[test]
+    fn test_status_code_ok() {
+        assert_eq!(SecretStatus::Ok.code(), "OK");
+    }
+
+    #[test]
+    fn test_status_code_missing() {
+        assert_eq!(SecretStatus::Missing.code(), "MISSING");
+    }
+
+    #[test]
+    fn test_status_code_error() {
+        assert_eq!(
+            SecretStatus::CannotDecrypt("any error".to_string()).code(),
+            "ERROR"
+        );
+    }
+
+    #[test]
+    fn test_status_update_counts_ok() {
+        let (ok, missing, err) = SecretStatus::Ok.update_counts((0, 0, 0));
+        assert_eq!((ok, missing, err), (1, 0, 0));
+    }
+
+    #[test]
+    fn test_status_update_counts_missing() {
+        let (ok, missing, err) = SecretStatus::Missing.update_counts((0, 0, 0));
+        assert_eq!((ok, missing, err), (0, 1, 0));
+    }
+
+    #[test]
+    fn test_status_update_counts_error() {
+        let (ok, missing, err) =
+            SecretStatus::CannotDecrypt("err".to_string()).update_counts((0, 0, 0));
+        assert_eq!((ok, missing, err), (0, 0, 1));
+    }
+
+    #[test]
+    fn test_status_update_counts_cumulative() {
+        let counts = (5, 3, 2);
+        let (ok, missing, err) = SecretStatus::Ok.update_counts(counts);
+        assert_eq!((ok, missing, err), (6, 3, 2));
+
+        let (ok, missing, err) = SecretStatus::Missing.update_counts(counts);
+        assert_eq!((ok, missing, err), (5, 4, 2));
+
+        let (ok, missing, err) =
+            SecretStatus::CannotDecrypt("err".to_string()).update_counts(counts);
+        assert_eq!((ok, missing, err), (5, 3, 3));
+    }
+
+    // ===========================================
+    // SECRET INFO TESTS
+    // ===========================================
+
+    #[test]
+    fn test_get_secret_status_missing_file() {
+        let status = get_secret_status("/nonexistent/file.age", &[], false);
+        assert_eq!(status, SecretStatus::Missing);
+    }
+
+    #[test]
+    fn test_get_secret_status_invalid_file() {
+        let temp_dir = tempdir().unwrap();
+        let path = temp_dir.path().join("invalid.age");
+        fs::write(&path, "not-valid-age-content").unwrap();
+
+        let status = get_secret_status(path.to_str().unwrap(), &[], false);
+        assert!(matches!(status, SecretStatus::CannotDecrypt(_)));
     }
 }
