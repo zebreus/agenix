@@ -13,11 +13,11 @@ agenix - edit and rekey age secret files
 
 *agenix* [_GLOBAL-OPTIONS_] _COMMAND_ [_COMMAND-OPTIONS_] [_ARGUMENTS_]
 
-*agenix* [*-i* _IDENTITY_]... *edit* [*-e* _EDITOR_] [*-f*] _SECRET_
+*agenix* [*-i* _IDENTITY_]... *edit* [*-e* _EDITOR_] [*-f*] [*-p*] _SECRET_
 
-*agenix* *encrypt* [*--input* _FILE_] [*-f*] _SECRET_
+*agenix* *encrypt* [*--input* _FILE_] [*-f*] [*-p*] _SECRET_
 
-*agenix* [*-i* _IDENTITY_]... *decrypt* [*-o* _FILE_] _SECRET_
+*agenix* [*-i* _IDENTITY_]... *decrypt* [*-o* _FILE_] [*-p*] _SECRET_
 
 *agenix* [*-i* _IDENTITY_]... *rekey* [*-p*] [_SECRET_]...
 
@@ -72,7 +72,9 @@ These options can be used with any command.
     *-e*, *--editor* _COMMAND_::::
       Editor command to use. Defaults to *$EDITOR*, or *vi* if unset.
     *-f*, *--force*::::
-      Open an empty editor if decryption fails with the available identities. Useful for recreating a secret when you no longer have access to decrypt it.
+      Open an empty editor if decryption fails with the available identities. Useful for recreating a secret when you no longer have access to decrypt it. When used with *--public*, creates a new public file if it doesn't exist.
+    *-p*, *--public*::::
+      Edit the public file (`.pub`) associated with the secret instead of the encrypted secret itself. Useful for manually setting public key content.
 
 *encrypt*, *c* _SECRET_::
   Encrypt content from standard input (or a file) to a secret file. The secret must be defined in `secrets.nix`.
@@ -82,6 +84,8 @@ These options can be used with any command.
       Read content from a file instead of standard input.
     *-f*, *--force*::::
       Overwrite an existing secret file.
+    *-p*, *--public*::::
+      Write to the public file (`.pub`) associated with the secret instead of encrypting to the secret. Content is written directly without encryption.
 
 *decrypt*, *d* _SECRET_::
   Decrypt a secret file to standard output or a file. Fails if the secret cannot be decrypted with the available identities.
@@ -89,6 +93,8 @@ These options can be used with any command.
   Command options:::
     *-o*, *--output* _FILE_::::
       Write decrypted output to a file instead of standard output.
+    *-p*, *--public*::::
+      Read the public file (`.pub`) associated with the secret instead of decrypting the secret. Outputs the content directly without any decryption.
 
 *rekey*, *r* [_SECRET_]...::
   Re-encrypt secrets with updated recipients from `secrets.nix`. If no secrets are specified, rekeys all secrets. Without *--partial*, fails without modifying any files if any requested secret cannot be decrypted with the available identities.
@@ -425,6 +431,18 @@ Use a custom secrets.nix:
 Use a specific identity:
 
   *agenix -i ~/.ssh/other_key decrypt secret.age*
+
+Read a public key file:
+
+  *agenix decrypt --public deploy-key.age*
+
+Write a public key file:
+
+  *echo "ssh-ed25519 AAAA..." | agenix encrypt --public deploy-key.age*
+
+Edit a public key file:
+
+  *agenix edit --public deploy-key.age*
 
 == SEE ALSO
 
