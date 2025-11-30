@@ -392,7 +392,8 @@ pub fn write_public_file(
         return Ok(());
     }
 
-    fs::write(&pub_file, content).with_context(|| format!("Failed to write public file: {}", pub_file))
+    fs::write(&pub_file, content)
+        .with_context(|| format!("Failed to write public file: {}", pub_file))
 }
 
 /// Edit the public file associated with a secret using an editor.
@@ -498,7 +499,8 @@ pub fn edit_public_file(
 
     // Copy content from temp file to pub file
     let content = fs::read_to_string(&temp_file).context("Failed to read edited content")?;
-    fs::write(&pub_file, content).with_context(|| format!("Failed to write public file: {}", pub_file))
+    fs::write(&pub_file, content)
+        .with_context(|| format!("Failed to write public file: {}", pub_file))
 }
 
 #[cfg(test)]
