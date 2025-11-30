@@ -127,3 +127,7 @@ See [CONTRIBUTING](doc/contributing.md). Run tests with `nix flake check`.
 ## Acknowledgements
 
 Based on [sops-nix](https://github.com/Mic92/sops-nix) by Mic92.
+
+## AI Disclosure
+
+This repository was developed with significant use of AI assistance (GitHub Copilot). The Rust port was initially drafted by Copilot, then manually refined. Many tests were AI-generated, and most subsequent changes were made via Copilot-assisted PRs. For full transparency, see the [pull request history](https://github.com/zebreus/agenix/pulls?q=is%3Apr).
