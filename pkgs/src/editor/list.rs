@@ -9,7 +9,7 @@ use std::path::Path;
 use crate::crypto;
 use crate::log;
 use crate::nix::{generate_secret_with_public, get_all_files, get_public_keys, should_armor};
-use crate::output::is_quiet;
+use crate::output::{is_quiet, pluralize_secret};
 
 use super::filter_files;
 use super::secret_name::SecretName;
@@ -152,8 +152,9 @@ pub fn list_secrets(
 
     if !is_quiet() {
         eprintln!(
-            "Total: {} secrets ({} ok, {} missing, {} errors)",
+            "Total: {} {} ({} ok, {} missing, {} errors)",
             secrets.len(),
+            pluralize_secret(secrets.len()),
             ok,
             missing,
             errors
@@ -232,7 +233,11 @@ pub fn check_secrets(
         return Ok(());
     }
 
-    log!("Checking {} secrets...", existing.len());
+    log!(
+        "Checking {} {}...",
+        existing.len(),
+        pluralize_secret(existing.len())
+    );
 
     let mut failed = 0;
     for file in &existing {
@@ -249,13 +254,18 @@ pub fn check_secrets(
     log!("");
 
     if failed == 0 {
-        log!("All {} secrets verified successfully.", existing.len());
+        log!(
+            "All {} {} verified successfully.",
+            existing.len(),
+            pluralize_secret(existing.len())
+        );
         Ok(())
     } else {
         Err(anyhow::anyhow!(
-            "Verification failed: {} of {} secrets could not be decrypted",
+            "Verification failed: {} of {} {} could not be decrypted",
             failed,
-            existing.len()
+            existing.len(),
+            pluralize_secret(existing.len())
         ))
     }
 }

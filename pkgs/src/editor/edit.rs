@@ -172,13 +172,6 @@ pub fn edit_file(
                 return Err(anyhow!("No input provided on stdin"));
             }
 
-            // Check for whitespace-only content which is likely an error
-            if stdin_content.trim().is_empty() {
-                return Err(anyhow!(
-                    "Stdin contains only whitespace. If this is intentional, use 'agenix edit -e \"cat\"' with explicit input."
-                ));
-            }
-
             fs::write(&cleartext_file, stdin_content).context("Failed to write stdin content")?;
             false
         }

@@ -92,6 +92,19 @@ macro_rules! log {
     };
 }
 
+/// Helper for correct pluralization of "secret(s)".
+///
+/// Returns "secret" for count == 1, "secrets" otherwise.
+///
+/// # Example
+/// ```ignore
+/// println!("Found {} {}", count, pluralize_secret(count));
+/// // "Found 1 secret" or "Found 3 secrets"
+/// ```
+pub fn pluralize_secret(count: usize) -> &'static str {
+    if count == 1 { "secret" } else { "secrets" }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -137,5 +150,22 @@ mod tests {
         assert!(is_verbose());
         assert!(is_quiet());
         reset_flags();
+    }
+
+    #[test]
+    fn test_pluralize_secret_zero() {
+        assert_eq!(pluralize_secret(0), "secrets");
+    }
+
+    #[test]
+    fn test_pluralize_secret_one() {
+        assert_eq!(pluralize_secret(1), "secret");
+    }
+
+    #[test]
+    fn test_pluralize_secret_many() {
+        assert_eq!(pluralize_secret(2), "secrets");
+        assert_eq!(pluralize_secret(10), "secrets");
+        assert_eq!(pluralize_secret(100), "secrets");
     }
 }
