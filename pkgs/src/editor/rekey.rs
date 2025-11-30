@@ -7,6 +7,7 @@ use std::path::Path;
 
 use crate::log;
 use crate::nix::get_all_files;
+use crate::output::pluralize_secret;
 
 use super::edit::edit_file;
 
@@ -61,16 +62,18 @@ fn handle_undecryptable_files(undecryptable: &[(String, String)], partial: bool)
 
     if !partial {
         return Err(anyhow!(
-            "Cannot rekey: the following {} secret(s) cannot be decrypted with the available identities:\n{}\n\nNo secrets were modified.\n\nHint: Use --partial to rekey only the secrets that can be decrypted.",
+            "Cannot rekey: the following {} {} cannot be decrypted with the available identities:\n{}\n\nNo secrets were modified.\n\nHint: Use --partial to rekey only the secrets that can be decrypted.",
             undecryptable.len(),
+            pluralize_secret(undecryptable.len()),
             file_list.join("\n")
         ));
     }
 
     // Partial mode: warn about skipped files
     log!(
-        "Warning: Skipping {} undecryptable secret(s):\n{}",
+        "Warning: Skipping {} undecryptable {}:\n{}",
         undecryptable.len(),
+        pluralize_secret(undecryptable.len()),
         file_list.join("\n")
     );
 
@@ -82,8 +85,9 @@ fn report_rekey_results(failed_files: &[(String, String)], success_count: usize)
     if !failed_files.is_empty() {
         log!("");
         log!(
-            "Warning: Failed to rekey {} secret(s) during processing:",
-            failed_files.len()
+            "Warning: Failed to rekey {} {} during processing:",
+            failed_files.len(),
+            pluralize_secret(failed_files.len())
         );
         for (file, err) in failed_files {
             log!("  - {}: {}", file, err);
@@ -91,7 +95,11 @@ fn report_rekey_results(failed_files: &[(String, String)], success_count: usize)
     }
 
     if success_count > 0 {
-        log!("Successfully rekeyed {} secrets.", success_count);
+        log!(
+            "Successfully rekeyed {} {}.",
+            success_count,
+            pluralize_secret(success_count)
+        );
     }
 }
 
@@ -135,8 +143,9 @@ pub fn rekey_files(
 
     // Pre-flight check: verify which files can be decrypted
     log!(
-        "Checking decryption for {} secrets...",
-        existing_files.len()
+        "Checking decryption for {} {}...",
+        existing_files.len(),
+        pluralize_secret(existing_files.len())
     );
 
     let preflight = preflight_check(&existing_files, identities, no_system_identities);
@@ -154,8 +163,9 @@ pub fn rekey_files(
     }
 
     log!(
-        "Proceeding to rekey {} secrets...",
-        preflight.decryptable.len()
+        "Proceeding to rekey {} {}...",
+        preflight.decryptable.len(),
+        pluralize_secret(preflight.decryptable.len())
     );
 
     // Process all decryptable files

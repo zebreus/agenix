@@ -11,7 +11,8 @@ use std::io::{self, Write};
 #[command(
     version = env!("CARGO_PKG_VERSION"),
     about = "edit and rekey age secret files",
-    after_help = concat!("agenix version: ", env!("CARGO_PKG_VERSION"))
+    after_help = concat!("agenix version: ", env!("CARGO_PKG_VERSION")),
+    arg_required_else_help = true
 )]
 pub struct Args {
     /// Path to Nix rules file (can also be set via RULES env var)
@@ -531,9 +532,23 @@ mod tests {
     }
 
     #[test]
-    fn test_no_subcommand() {
-        let args = Args::try_parse_from(["agenix"]).unwrap();
+    fn test_no_subcommand_shows_help() {
+        // With arg_required_else_help, running with no arguments should error
+        let result = Args::try_parse_from(["agenix"]);
+        assert!(result.is_err(), "No subcommand should trigger help display");
+    }
+
+    #[test]
+    fn test_global_flags_alone_still_need_subcommand() {
+        // Global flags like -v still work but the command is None
+        // When run via actual binary, arg_required_else_help shows help and exits
+        // With try_parse_from, it returns Ok but with command = None
+        let result = Args::try_parse_from(["agenix", "-v"]);
+        // This parses successfully but with no command
+        assert!(result.is_ok());
+        let args = result.unwrap();
         assert!(args.command.is_none());
+        assert!(args.verbose);
     }
 
     #[test]

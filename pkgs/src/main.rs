@@ -6,19 +6,8 @@ fn main() -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    #[test]
-    fn test_run_no_args_shows_help() {
-        let args = vec!["agenix".to_string()];
-        let result = agenix::run(args);
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_run_with_verbose() {
-        let args = vec!["agenix".to_string(), "-v".to_string()];
-        let result = agenix::run(args);
-        assert!(result.is_ok());
-    }
+    // Note: Tests for no-arg behavior are in cli.rs (test_no_subcommand_shows_help)
+    // because running through agenix::run() causes clap to exit the process.
 
     #[test]
     fn test_handle_edit_nonexistent_file() {
