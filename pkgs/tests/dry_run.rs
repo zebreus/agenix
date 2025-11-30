@@ -9,7 +9,7 @@ use std::io::Write;
 use std::process::Command;
 use tempfile::{NamedTempFile, tempdir};
 
-/// Create a temporary rules file with the given content.
+/// Create a temporary secrets.nix with the given content.
 fn create_rules_file(content: &str) -> NamedTempFile {
     let mut temp_file = NamedTempFile::new().unwrap();
     temp_file.write_all(content.as_bytes()).unwrap();
@@ -46,7 +46,7 @@ fn test_generate_dry_run_does_not_create_files() {
         .args([
             "generate",
             "--dry-run",
-            "--rules",
+            "--secrets-nix",
             temp_rules.path().to_str().unwrap(),
         ])
         .output()
@@ -78,7 +78,7 @@ fn test_generate_dry_run_produces_same_output_as_normal() {
         .args([
             "generate",
             "--dry-run",
-            "--rules",
+            "--secrets-nix",
             temp_rules.path().to_str().unwrap(),
         ])
         .output()
@@ -117,7 +117,7 @@ fn test_generate_dry_run_with_public_key_output() {
         .args([
             "generate",
             "--dry-run",
-            "--rules",
+            "--secrets-nix",
             temp_rules.path().to_str().unwrap(),
         ])
         .output()
@@ -173,7 +173,7 @@ fn test_rekey_dry_run_does_not_modify_files() {
             "rekey",
             "--dry-run",
             "--partial",
-            "--rules",
+            "--secrets-nix",
             temp_rules.path().to_str().unwrap(),
         ])
         .output()
@@ -206,7 +206,7 @@ fn test_rekey_dry_run_produces_output() {
         .args([
             "rekey",
             "--dry-run",
-            "--rules",
+            "--secrets-nix",
             temp_rules.path().to_str().unwrap(),
         ])
         .output()
@@ -243,7 +243,7 @@ fn test_encrypt_dry_run_does_not_create_file() {
         .args([
             "encrypt",
             "--dry-run",
-            "--rules",
+            "--secrets-nix",
             temp_rules.path().to_str().unwrap(),
             &secret_path,
         ])
@@ -289,7 +289,7 @@ fn test_encrypt_dry_run_produces_output() {
         .args([
             "encrypt",
             "--dry-run",
-            "--rules",
+            "--secrets-nix",
             temp_rules.path().to_str().unwrap(),
             &secret_path,
         ])
@@ -335,7 +335,7 @@ fn test_generate_dry_run_short_flag() {
         .args([
             "generate",
             "-n",
-            "--rules",
+            "--secrets-nix",
             temp_rules.path().to_str().unwrap(),
         ])
         .output()
@@ -367,7 +367,7 @@ fn test_rekey_dry_run_short_flag() {
         .args([
             "rekey",
             "-n",
-            "--rules",
+            "--secrets-nix",
             temp_rules.path().to_str().unwrap(),
         ])
         .output()
@@ -393,7 +393,7 @@ fn test_encrypt_dry_run_short_flag() {
         .args([
             "encrypt",
             "-n",
-            "--rules",
+            "--secrets-nix",
             temp_rules.path().to_str().unwrap(),
             &secret_path,
         ])
@@ -443,7 +443,7 @@ fn test_edit_dry_run_does_not_create_file() {
         .args([
             "edit",
             "--dry-run",
-            "--rules",
+            "--secrets-nix",
             temp_rules.path().to_str().unwrap(),
             &secret_path,
         ])
@@ -495,7 +495,7 @@ fn test_edit_dry_run_does_not_modify_existing_file() {
             "edit",
             "--dry-run",
             "--force", // Force to allow starting with empty content since we can't decrypt
-            "--rules",
+            "--secrets-nix",
             temp_rules.path().to_str().unwrap(),
             &secret_path,
         ])
@@ -543,7 +543,7 @@ fn test_edit_dry_run_produces_output() {
         .args([
             "edit",
             "--dry-run",
-            "--rules",
+            "--secrets-nix",
             temp_rules.path().to_str().unwrap(),
             &secret_path,
         ])
@@ -591,7 +591,7 @@ fn test_edit_dry_run_short_flag() {
         .args([
             "edit",
             "-n",
-            "--rules",
+            "--secrets-nix",
             temp_rules.path().to_str().unwrap(),
             &secret_path,
         ])

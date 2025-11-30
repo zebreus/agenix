@@ -24,13 +24,13 @@ pub mod secret_name;
 use anyhow::{Result, anyhow};
 use secret_name::SecretName;
 
-/// Validate that requested secrets exist in the rules file.
+/// Validate that requested secrets exist in secrets.nix.
 ///
 /// Returns an error if secrets are specified but none match.
 pub(crate) fn validate_secrets_exist(filtered_files: &[String], secrets: &[String]) -> Result<()> {
     if filtered_files.is_empty() && !secrets.is_empty() {
         return Err(anyhow!(
-            "No matching secrets found in rules file for: {}",
+            "No matching secrets found in secrets.nix for: {}",
             secrets.join(", ")
         ));
     }

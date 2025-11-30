@@ -342,7 +342,7 @@ mod tests {
         let args = vec![
             "agenix".to_string(),
             "generate".to_string(),
-            "--rules".to_string(),
+            "--secrets-nix".to_string(),
             "./nonexistent_rules.nix".to_string(),
         ];
         let result = crate::run(args);
@@ -382,7 +382,7 @@ mod tests {
         let args = vec![
             "agenix".to_string(),
             "generate".to_string(),
-            "--rules".to_string(),
+            "--secrets-nix".to_string(),
             temp_rules_abs.path().to_str().unwrap().to_string(),
         ];
         let result = crate::run(args);
@@ -462,7 +462,7 @@ mod tests {
         let args = vec![
             "agenix".to_string(),
             "generate".to_string(),
-            "--rules".to_string(),
+            "--secrets-nix".to_string(),
             temp_rules.path().to_str().unwrap().to_string(),
         ];
         let result = crate::run(args);
@@ -508,7 +508,7 @@ mod tests {
         let args = vec![
             "agenix".to_string(),
             "generate".to_string(),
-            "--rules".to_string(),
+            "--secrets-nix".to_string(),
             temp_rules.path().to_str().unwrap().to_string(),
         ];
         let result = crate::run(args);
@@ -568,7 +568,7 @@ mod tests {
         let args = vec![
             "agenix".to_string(),
             "generate".to_string(),
-            "--rules".to_string(),
+            "--secrets-nix".to_string(),
             temp_rules.path().to_str().unwrap().to_string(),
         ];
         let result = crate::run(args);
@@ -621,7 +621,7 @@ mod tests {
         let args = vec![
             "agenix".to_string(),
             "generate".to_string(),
-            "--rules".to_string(),
+            "--secrets-nix".to_string(),
             temp_rules.path().to_str().unwrap().to_string(),
         ];
         let result = crate::run(args);
@@ -688,7 +688,7 @@ mod tests {
         let args = vec![
             "agenix".to_string(),
             "generate".to_string(),
-            "--rules".to_string(),
+            "--secrets-nix".to_string(),
             temp_rules.path().to_str().unwrap().to_string(),
         ];
         let result = crate::run(args);
@@ -756,7 +756,7 @@ mod tests {
         let args = vec![
             "agenix".to_string(),
             "generate".to_string(),
-            "--rules".to_string(),
+            "--secrets-nix".to_string(),
             temp_rules.path().to_str().unwrap().to_string(),
         ];
         let result = crate::run(args);
@@ -809,7 +809,7 @@ mod tests {
         let args = vec![
             "agenix".to_string(),
             "generate".to_string(),
-            "--rules".to_string(),
+            "--secrets-nix".to_string(),
             temp_rules.path().to_str().unwrap().to_string(),
         ];
         let result = crate::run(args);
@@ -862,7 +862,7 @@ mod tests {
         let args = vec![
             "agenix".to_string(),
             "generate".to_string(),
-            "--rules".to_string(),
+            "--secrets-nix".to_string(),
             temp_rules.path().to_str().unwrap().to_string(),
         ];
         let result = crate::run(args);
@@ -906,7 +906,7 @@ mod tests {
         let args = vec![
             "agenix".to_string(),
             "generate".to_string(),
-            "--rules".to_string(),
+            "--secrets-nix".to_string(),
             temp_rules.path().to_str().unwrap().to_string(),
         ];
         let result = crate::run(args);
@@ -949,7 +949,7 @@ mod tests {
         let args = vec![
             "agenix".to_string(),
             "generate".to_string(),
-            "--rules".to_string(),
+            "--secrets-nix".to_string(),
             temp_rules.path().to_str().unwrap().to_string(),
         ];
         let result = crate::run(args);
@@ -991,7 +991,7 @@ mod tests {
         let args = vec![
             "agenix".to_string(),
             "generate".to_string(),
-            "--rules".to_string(),
+            "--secrets-nix".to_string(),
             temp_rules.path().to_str().unwrap().to_string(),
         ];
         let result = crate::run(args);
@@ -1039,7 +1039,7 @@ mod tests {
             "agenix".to_string(),
             "generate".to_string(),
             "--force".to_string(),
-            "--rules".to_string(),
+            "--secrets-nix".to_string(),
             temp_rules.path().to_str().unwrap().to_string(),
         ];
         let result = crate::run(args);
@@ -1080,7 +1080,7 @@ mod tests {
             "agenix".to_string(),
             "generate".to_string(),
             "--dry-run".to_string(),
-            "--rules".to_string(),
+            "--secrets-nix".to_string(),
             temp_rules.path().to_str().unwrap().to_string(),
         ];
         let result = crate::run(args);
@@ -1125,7 +1125,7 @@ mod tests {
             "generate".to_string(),
             "--force".to_string(),
             "--dry-run".to_string(),
-            "--rules".to_string(),
+            "--secrets-nix".to_string(),
             temp_rules.path().to_str().unwrap().to_string(),
         ];
         let result = crate::run(args);
@@ -1173,7 +1173,7 @@ mod tests {
             "agenix".to_string(),
             "generate".to_string(),
             "--dry-run".to_string(),
-            "--rules".to_string(),
+            "--secrets-nix".to_string(),
             temp_rules.path().to_str().unwrap().to_string(),
         ];
         let result = crate::run(args);
@@ -1220,7 +1220,7 @@ mod tests {
             "agenix".to_string(),
             "generate".to_string(),
             "-f".to_string(),
-            "--rules".to_string(),
+            "--secrets-nix".to_string(),
             temp_rules.path().to_str().unwrap().to_string(),
         ];
         let result = crate::run(args);
@@ -1260,7 +1260,7 @@ mod tests {
             "agenix".to_string(),
             "generate".to_string(),
             "-n".to_string(),
-            "--rules".to_string(),
+            "--secrets-nix".to_string(),
             temp_rules.path().to_str().unwrap().to_string(),
         ];
         let result = crate::run(args);
@@ -1310,7 +1310,7 @@ mod tests {
         let args = vec![
             "agenix".to_string(),
             "generate".to_string(),
-            "--rules".to_string(),
+            "--secrets-nix".to_string(),
             temp_rules.path().to_str().unwrap().to_string(),
             "secret1".to_string(),
         ];
@@ -1368,7 +1368,7 @@ mod tests {
         let args = vec![
             "agenix".to_string(),
             "generate".to_string(),
-            "--rules".to_string(),
+            "--secrets-nix".to_string(),
             temp_rules.path().to_str().unwrap().to_string(),
             "secret1".to_string(),
             "secret3".to_string(),
@@ -1422,7 +1422,7 @@ mod tests {
         let args = vec![
             "agenix".to_string(),
             "generate".to_string(),
-            "--rules".to_string(),
+            "--secrets-nix".to_string(),
             temp_rules.path().to_str().unwrap().to_string(),
             "secret1.age".to_string(),
         ];
@@ -1465,7 +1465,7 @@ mod tests {
         let args = vec![
             "agenix".to_string(),
             "generate".to_string(),
-            "--rules".to_string(),
+            "--secrets-nix".to_string(),
             temp_rules.path().to_str().unwrap().to_string(),
             "nonexistent".to_string(),
         ];
@@ -1513,7 +1513,7 @@ mod tests {
         let args = vec![
             "agenix".to_string(),
             "generate".to_string(),
-            "--rules".to_string(),
+            "--secrets-nix".to_string(),
             temp_rules.path().to_str().unwrap().to_string(),
             "derived".to_string(),
         ];
@@ -1571,7 +1571,7 @@ mod tests {
             "agenix".to_string(),
             "generate".to_string(),
             "--no-dependencies".to_string(),
-            "--rules".to_string(),
+            "--secrets-nix".to_string(),
             temp_rules.path().to_str().unwrap().to_string(),
             "derived".to_string(),
         ];
@@ -1624,7 +1624,7 @@ mod tests {
         let args = vec![
             "agenix".to_string(),
             "generate".to_string(),
-            "--rules".to_string(),
+            "--secrets-nix".to_string(),
             temp_rules.path().to_str().unwrap().to_string(),
             "c".to_string(),
         ];
@@ -1683,7 +1683,7 @@ mod tests {
         let args = vec![
             "agenix".to_string(),
             "generate".to_string(),
-            "--rules".to_string(),
+            "--secrets-nix".to_string(),
             temp_rules.path().to_str().unwrap().to_string(),
         ];
         let result = crate::run(args);
@@ -1743,7 +1743,7 @@ mod tests {
             "agenix".to_string(),
             "generate".to_string(),
             "--no-dependencies".to_string(),
-            "--rules".to_string(),
+            "--secrets-nix".to_string(),
             temp_rules.path().to_str().unwrap().to_string(),
             "derived".to_string(),
         ];
@@ -1796,7 +1796,7 @@ mod tests {
             "agenix".to_string(),
             "generate".to_string(),
             "--no-dependencies".to_string(),
-            "--rules".to_string(),
+            "--secrets-nix".to_string(),
             temp_rules.path().to_str().unwrap().to_string(),
             "derived".to_string(),
         ];
@@ -1846,7 +1846,7 @@ mod tests {
             "agenix".to_string(),
             "generate".to_string(),
             "--no-dependencies".to_string(),
-            "--rules".to_string(),
+            "--secrets-nix".to_string(),
             temp_rules.path().to_str().unwrap().to_string(),
             "derived".to_string(),
         ];
@@ -1912,7 +1912,7 @@ mod tests {
             "agenix".to_string(),
             "generate".to_string(),
             "--no-dependencies".to_string(),
-            "--rules".to_string(),
+            "--secrets-nix".to_string(),
             temp_rules.path().to_str().unwrap().to_string(),
             "c".to_string(),
         ];
@@ -1980,7 +1980,7 @@ mod tests {
         let args = vec![
             "agenix".to_string(),
             "generate".to_string(),
-            "--rules".to_string(),
+            "--secrets-nix".to_string(),
             temp_rules.path().to_str().unwrap().to_string(),
             "derived1".to_string(),
             "derived2".to_string(),
@@ -2043,7 +2043,7 @@ mod tests {
             "agenix".to_string(),
             "generate".to_string(),
             "--no-dependencies".to_string(),
-            "--rules".to_string(),
+            "--secrets-nix".to_string(),
             temp_rules.path().to_str().unwrap().to_string(),
         ];
         let result = crate::run(args);
@@ -2114,7 +2114,7 @@ mod tests {
         let args_implicit = vec![
             "agenix".to_string(),
             "generate".to_string(),
-            "--rules".to_string(),
+            "--secrets-nix".to_string(),
             temp_rules1.path().to_str().unwrap().to_string(),
         ];
         let result_implicit = crate::run(args_implicit);
@@ -2127,7 +2127,7 @@ mod tests {
         let args_explicit = vec![
             "agenix".to_string(),
             "generate".to_string(),
-            "--rules".to_string(),
+            "--secrets-nix".to_string(),
             temp_rules2.path().to_str().unwrap().to_string(),
             "secret1".to_string(),
             "secret2".to_string(),
@@ -2208,7 +2208,7 @@ mod tests {
         let args_implicit = vec![
             "agenix".to_string(),
             "generate".to_string(),
-            "--rules".to_string(),
+            "--secrets-nix".to_string(),
             temp_rules1.path().to_str().unwrap().to_string(),
         ];
         let result_implicit = crate::run(args_implicit);
@@ -2221,7 +2221,7 @@ mod tests {
         let args_explicit = vec![
             "agenix".to_string(),
             "generate".to_string(),
-            "--rules".to_string(),
+            "--secrets-nix".to_string(),
             temp_rules2.path().to_str().unwrap().to_string(),
             "base".to_string(),
             "derived".to_string(),
@@ -2283,7 +2283,7 @@ mod tests {
         let args_only_nonexistent = vec![
             "agenix".to_string(),
             "generate".to_string(),
-            "--rules".to_string(),
+            "--secrets-nix".to_string(),
             temp_rules.path().to_str().unwrap().to_string(),
             "nonexistent".to_string(),
         ];
@@ -2353,7 +2353,7 @@ mod tests {
             "agenix".to_string(),
             "generate".to_string(),
             "--no-dependencies".to_string(),
-            "--rules".to_string(),
+            "--secrets-nix".to_string(),
             temp_rules1.path().to_str().unwrap().to_string(),
         ];
         let result_implicit = crate::run(args_implicit);
@@ -2367,7 +2367,7 @@ mod tests {
             "agenix".to_string(),
             "generate".to_string(),
             "--no-dependencies".to_string(),
-            "--rules".to_string(),
+            "--secrets-nix".to_string(),
             temp_rules2.path().to_str().unwrap().to_string(),
             "base".to_string(),
             "derived".to_string(),

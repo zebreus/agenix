@@ -39,8 +39,8 @@ Secrets are encrypted using SSH keys or age keys, making it easy to use existing
 
 These options can be used with any command.
 
-*-r*, *--rules* _FILE_::
-  Path to the Nix rules file defining secrets and their recipients. Default: `./secrets.nix`. Can also be set via the *RULES* environment variable.
+*--secrets-nix* _FILE_::
+  Path to `secrets.nix` defining secrets and their recipients. Default: `./secrets.nix`. Can also be set via the *SECRETS_NIX* environment variable.
 
 *-i*, *--identity* _KEY_::
   Identities to use when decrypting. Can be specified multiple times. Identities are tried in order: explicitly specified first, then default system identities (*~/.ssh/id_ed25519*, *~/.ssh/id_rsa*).
@@ -66,7 +66,7 @@ These options can be used with any command.
 == COMMANDS
 
 *edit*, *e* _SECRET_::
-  Edit a secret file using *$EDITOR*. Creates a new file if it doesn't exist. The file is decrypted to a temporary location, opened in the editor, then re-encrypted when saved. If decryption fails with the available identities, use *--force* to start with empty content.
+  Edit or create a secret file interactively using *$EDITOR*. Creates a new file if it doesn't exist. The file is decrypted to a temporary location, opened in the editor, then re-encrypted when saved. If decryption fails with the available identities, use *--force* to start with empty content.
   +
   Command options:::
     *-e*, *--editor* _COMMAND_::::
@@ -75,7 +75,7 @@ These options can be used with any command.
       Open an empty editor if decryption fails with the available identities. Useful for recreating a secret when you no longer have access to decrypt it.
 
 *encrypt*, *c* _SECRET_::
-  Encrypt content from standard input (or a file) to a secret file. The secret must be defined in the rules file.
+  Encrypt content from standard input (or a file) to a secret file. The secret must be defined in `secrets.nix`.
   +
   Command options:::
     *--input* _FILE_::::
@@ -91,14 +91,14 @@ These options can be used with any command.
       Write decrypted output to a file instead of standard output.
 
 *rekey*, *r* [_SECRET_]...::
-  Re-encrypt secrets with updated recipients from the rules file. If no secrets are specified, rekeys all secrets. Without *--partial*, fails without modifying any files if any requested secret cannot be decrypted with the available identities.
+  Re-encrypt secrets with updated recipients from `secrets.nix`. If no secrets are specified, rekeys all secrets. Without *--partial*, fails without modifying any files if any requested secret cannot be decrypted with the available identities.
   +
   Command options:::
     *-p*, *--partial*::::
       Skip secrets that cannot be decrypted instead of failing. Only decryptable secrets are rekeyed.
 
 *generate*, *g* [_SECRET_]...::
-  Generate secrets using generator functions defined in the rules file. If no secrets are specified, generates all secrets that have generators.
+  Generate secrets using generator functions defined in `secrets.nix`. If no secrets are specified, generates all secrets that have generators.
   +
   Command options:::
     *-f*, *--force*::::
@@ -107,7 +107,7 @@ These options can be used with any command.
       Do not automatically generate dependencies of specified secrets.
 
 *list*, *l* [_SECRET_]...::
-  List secrets defined in the rules file. If secrets are specified, lists only those secrets.
+  List secrets defined in `secrets.nix`. If secrets are specified, lists only those secrets.
   +
   Command options:::
     *-s*, *--status*::::
@@ -135,13 +135,13 @@ These options can be used with any command.
 *EDITOR*::
   Editor to use when editing secrets. Default: *vi*.
 
-*RULES*::
-  Path to the Nix rules file. Default: `./secrets.nix`.
+*SECRETS_NIX*::
+  Path to `secrets.nix`. Default: `./secrets.nix`.
 
 == FILES
 
 *secrets.nix*::
-  The default rules file defining secrets and their recipients. See *Rules file format* in the *NOTES* section.
+  The default configuration file defining secrets and their recipients. See *secrets.nix format* in the *NOTES* section.
 
 *~/.ssh/id_ed25519*, *~/.ssh/id_rsa*::
   Default identity files used for decryption.
@@ -162,9 +162,9 @@ When you change the recipients in `secrets.nix`, you must rekey your secrets:
 
 Due to randomness in age's encryption, files always change when rekeyed, even if recipients remain the same.
 
-=== Rules file format
+=== secrets.nix format
 
-The rules file (typically `secrets.nix`) is a Nix expression that evaluates to an attribute set. Each key is a secret filename (usually ending in `.age`) and each value is a secret configuration.
+The `secrets.nix` file is a Nix expression that evaluates to an attribute set. Each key is a secret filename (usually ending in `.age`) and each value is a secret configuration.
 
 ==== Basic structure
 
@@ -202,7 +202,7 @@ Instead of a literal public key, you can reference another secret's `.pub` file 
 {
   "deploy-key.age" = {
     publicKeys = [ user1 ];
-    generator = builtins.sshKey;
+    generator = builtins.sshKey {};
   };
   "config.age".publicKeys = [ user1 "deploy-key" ];
 }
@@ -257,16 +257,16 @@ The following functions are provided by agenix and available as `builtins.*`:
 *builtins.passwordSafe* _LENGTH_::
   Random password using alphanumeric characters plus `-_+=.`.
 
-*builtins.uuid*, *builtins.uuid {}*::
+*builtins.uuid {}*::
   Random UUIDv4 string.
 
-*builtins.sshKey*, *builtins.sshKey {}*::
+*builtins.sshKey {}*::
   SSH Ed25519 keypair. Returns `{ secret, public }`.
 
-*builtins.rsaKey*, *builtins.rsaKey {}*, *builtins.rsaKey { keySize = N; }*::
+*builtins.rsaKey {}*, *builtins.rsaKey { keySize = N; }*::
   SSH RSA keypair. Optional `keySize`: 2048, 3072, or 4096 (default: 4096). Returns `{ secret, public }`.
 
-*builtins.ageKey*, *builtins.ageKey {}*::
+*builtins.ageKey {}*::
   age x25519 keypair. Returns `{ secret, public }`.
 
 *builtins.blake2b* _STRING_::
@@ -287,10 +287,10 @@ When no explicit `generator` is specified, agenix selects one based on the filen
 |Filename Pattern |Generator
 
 |`*ed25519.age`, `*ssh.age`, `*ssh_key.age`
-|`builtins.sshKey` (SSH Ed25519 keypair)
+|`builtins.sshKey {}` (SSH Ed25519 keypair)
 
 |`*x25519.age`
-|`builtins.ageKey` (age keypair)
+|`builtins.ageKey {}` (age keypair)
 
 |`*password.age`, `*passphrase.age`
 |`builtins.randomString 32`
@@ -305,7 +305,7 @@ Simple password:
 {
   "api-token.age" = {
     publicKeys = [ user1 ];
-    generator = { }: builtins.randomString 32;
+    generator = builtins.randomString 32;
   };
 }
 ----
@@ -317,7 +317,7 @@ SSH keypair with public key output:
 {
   "deploy-key.age" = {
     publicKeys = [ user1 ];
-    generator = builtins.sshKey;
+    generator = builtins.sshKey {};
   };
 }
 ----
@@ -329,7 +329,7 @@ Derived secret using dependency:
 {
   "ca-key.age" = {
     publicKeys = [ user1 ];
-    generator = builtins.sshKey;
+    generator = builtins.sshKey {};
   };
   "host-cert.age" = {
     publicKeys = [ user1 ];
@@ -339,17 +339,32 @@ Derived secret using dependency:
 }
 ----
 
+Implicit dependency via public key reference:
+
+[source,nix]
+----
+{
+  "deploy-key.age" = {
+    publicKeys = [ user1 ];
+    generator = builtins.sshKey {};
+  };
+  # Referencing "deploy-key" in publicKeys creates an implicit dependency
+  # The deploy-key.age.pub file is read and its public key is used as a recipient
+  "app-config.age" = {
+    publicKeys = [ user1 "deploy-key" ];
+  };
+}
+----
+
 == EXAMPLES
 
-Edit or create a secret:
+Edit or create a secret interactively:
 
   *agenix edit secret.age*
 
 Encrypt from standard input:
 
   *echo "my-password" | agenix encrypt secret.age*
-
-  *cat plaintext.txt | agenix encrypt --force secret.age*
 
 Encrypt from a file:
 
@@ -403,22 +418,14 @@ Verify secrets can be decrypted:
 
   *agenix check*
 
-Use a custom rules file:
+Use a custom secrets.nix:
 
-  *agenix -r /path/to/secrets.nix edit secret.age*
+  *agenix --secrets-nix /path/to/secrets.nix edit secret.age*
 
 Use a specific identity:
 
   *agenix -i ~/.ssh/other_key decrypt secret.age*
 
-Generate shell completions:
-
-  *agenix completions bash > ~/.local/share/bash-completion/completions/agenix*
-
-  *agenix completions zsh > ~/.zfunc/_agenix*
-
-  *agenix completions fish > ~/.config/fish/completions/agenix.fish*
-
 == SEE ALSO
 
-*age*(1), *ssh-keygen*(1)
+*ssh-keygen*(1)

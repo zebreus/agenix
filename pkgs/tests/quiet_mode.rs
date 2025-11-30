@@ -8,7 +8,7 @@ use std::io::Write;
 use std::process::Command;
 use tempfile::{NamedTempFile, tempdir};
 
-/// Create a temporary rules file with the given content.
+/// Create a temporary secrets.nix with the given content.
 fn create_rules_file(content: &str) -> NamedTempFile {
     let mut temp_file = NamedTempFile::new().unwrap();
     writeln!(temp_file, "{}", content).unwrap();
@@ -41,7 +41,12 @@ fn test_list_quiet_outputs_secrets_but_no_summary() {
     let temp_rules = create_rules_file(&rules);
 
     let output = Command::new(agenix_bin())
-        .args(["-q", "list", "--rules", temp_rules.path().to_str().unwrap()])
+        .args([
+            "-q",
+            "list",
+            "--secrets-nix",
+            temp_rules.path().to_str().unwrap(),
+        ])
         .output()
         .expect("Failed to execute agenix");
 
@@ -80,7 +85,7 @@ fn test_list_normal_produces_output() {
     let temp_rules = create_rules_file(&rules);
 
     let output = Command::new(agenix_bin())
-        .args(["list", "--rules", temp_rules.path().to_str().unwrap()])
+        .args(["list", "--secrets-nix", temp_rules.path().to_str().unwrap()])
         .output()
         .expect("Failed to execute agenix");
 
@@ -109,7 +114,7 @@ fn test_list_status_produces_status_output() {
         .args([
             "list",
             "--status",
-            "--rules",
+            "--secrets-nix",
             temp_rules.path().to_str().unwrap(),
         ])
         .output()
@@ -151,7 +156,7 @@ fn test_check_quiet_produces_no_output_on_success() {
         .args([
             "-q",
             "check",
-            "--rules",
+            "--secrets-nix",
             temp_rules.path().to_str().unwrap(),
         ])
         .output()
@@ -178,7 +183,11 @@ fn test_check_normal_produces_output() {
     let temp_rules = create_rules_file(&rules);
 
     let output = Command::new(agenix_bin())
-        .args(["check", "--rules", temp_rules.path().to_str().unwrap()])
+        .args([
+            "check",
+            "--secrets-nix",
+            temp_rules.path().to_str().unwrap(),
+        ])
         .output()
         .expect("Failed to execute agenix");
 
@@ -213,7 +222,7 @@ fn test_generate_quiet_produces_no_output_on_skip() {
         .args([
             "-q",
             "generate",
-            "--rules",
+            "--secrets-nix",
             temp_rules.path().to_str().unwrap(),
         ])
         .output()
@@ -243,7 +252,7 @@ fn test_generate_dry_run_quiet_produces_no_output() {
             "-q",
             "--dry-run",
             "generate",
-            "--rules",
+            "--secrets-nix",
             temp_rules.path().to_str().unwrap(),
         ])
         .output()
@@ -273,7 +282,11 @@ fn test_generate_normal_produces_output() {
     let temp_rules = create_rules_file(&rules);
 
     let output = Command::new(agenix_bin())
-        .args(["generate", "--rules", temp_rules.path().to_str().unwrap()])
+        .args([
+            "generate",
+            "--secrets-nix",
+            temp_rules.path().to_str().unwrap(),
+        ])
         .output()
         .expect("Failed to execute agenix");
 
@@ -306,7 +319,7 @@ fn test_rekey_quiet_produces_no_output_on_no_files() {
         .args([
             "-q",
             "rekey",
-            "--rules",
+            "--secrets-nix",
             temp_rules.path().to_str().unwrap(),
         ])
         .output()
@@ -353,7 +366,7 @@ fn test_decrypt_quiet_still_outputs_content() {
             "-q",
             "decrypt",
             &secret_path,
-            "--rules",
+            "--secrets-nix",
             temp_rules.path().to_str().unwrap(),
         ])
         .output()

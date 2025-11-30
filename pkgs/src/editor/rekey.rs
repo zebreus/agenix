@@ -301,7 +301,7 @@ publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" 
         let args = vec![
             "agenix".to_string(),
             "rekey".to_string(),
-            "--rules".to_string(),
+            "--secrets-nix".to_string(),
             temp_rules.path().to_str().unwrap().to_string(),
         ];
 
@@ -341,7 +341,7 @@ publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" 
             "agenix".to_string(),
             "rekey".to_string(),
             "--partial".to_string(),
-            "--rules".to_string(),
+            "--secrets-nix".to_string(),
             temp_rules.path().to_str().unwrap().to_string(),
         ];
 
@@ -387,7 +387,7 @@ publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" 
         let args = vec![
             "agenix".to_string(),
             "rekey".to_string(),
-            "--rules".to_string(),
+            "--secrets-nix".to_string(),
             temp_rules.path().to_str().unwrap().to_string(),
         ];
 
@@ -440,7 +440,7 @@ publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" 
         let args = vec![
             "agenix".to_string(),
             "rekey".to_string(),
-            "--rules".to_string(),
+            "--secrets-nix".to_string(),
             temp_rules.path().to_str().unwrap().to_string(),
         ];
 
@@ -505,7 +505,7 @@ publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" 
         let args = vec![
             "agenix".to_string(),
             "rekey".to_string(),
-            "--rules".to_string(),
+            "--secrets-nix".to_string(),
             temp_rules.path().to_str().unwrap().to_string(),
         ];
 
@@ -565,7 +565,7 @@ publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" 
             "agenix".to_string(),
             "rekey".to_string(),
             "--partial".to_string(),
-            "--rules".to_string(),
+            "--secrets-nix".to_string(),
             temp_rules.path().to_str().unwrap().to_string(),
         ];
 
@@ -610,7 +610,7 @@ publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" 
         let args = vec![
             "agenix".to_string(),
             "rekey".to_string(),
-            "--rules".to_string(),
+            "--secrets-nix".to_string(),
             temp_rules.path().to_str().unwrap().to_string(),
         ];
 
@@ -666,7 +666,7 @@ publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" 
         let args = vec![
             "agenix".to_string(),
             "rekey".to_string(),
-            "--rules".to_string(),
+            "--secrets-nix".to_string(),
             temp_rules.path().to_str().unwrap().to_string(),
             "secret1".to_string(),
             "secret2".to_string(),
@@ -720,7 +720,7 @@ publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" 
         let args_implicit_all = vec![
             "agenix".to_string(),
             "rekey".to_string(),
-            "--rules".to_string(),
+            "--secrets-nix".to_string(),
             temp_rules.path().to_str().unwrap().to_string(),
         ];
 
@@ -731,7 +731,7 @@ publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" 
         let args_explicit_all = vec![
             "agenix".to_string(),
             "rekey".to_string(),
-            "--rules".to_string(),
+            "--secrets-nix".to_string(),
             temp_rules.path().to_str().unwrap().to_string(),
             "secret1".to_string(),
             "secret2".to_string(),
@@ -805,7 +805,7 @@ publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" 
             "agenix".to_string(),
             "rekey".to_string(),
             "--partial".to_string(),
-            "--rules".to_string(),
+            "--secrets-nix".to_string(),
             temp_rules.path().to_str().unwrap().to_string(),
         ];
 
@@ -823,7 +823,7 @@ publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" 
             "agenix".to_string(),
             "rekey".to_string(),
             "--partial".to_string(),
-            "--rules".to_string(),
+            "--secrets-nix".to_string(),
             temp_rules.path().to_str().unwrap().to_string(),
             "secret1".to_string(),
             "secret2".to_string(),
@@ -870,7 +870,7 @@ publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" 
         let args = vec![
             "agenix".to_string(),
             "rekey".to_string(),
-            "--rules".to_string(),
+            "--secrets-nix".to_string(),
             temp_rules.path().to_str().unwrap().to_string(),
             "nonexistent".to_string(),
         ];

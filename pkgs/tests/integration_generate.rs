@@ -4,19 +4,19 @@ fn test_generate_cli_subcommand_parsing() {
     let args = vec![
         "agenix".to_string(),
         "generate".to_string(),
-        "--rules".to_string(),
+        "--secrets-nix".to_string(),
         "./nonexistent.nix".to_string(),
     ];
 
     let result = agenix::run(args);
-    // Should error because the rules file doesn't exist, but the subcommand should be parsed correctly
+    // Should error because the secrets.nix doesn't exist, but the subcommand should be parsed correctly
     assert!(result.is_err());
 
     // Also test short alias
     let args = vec![
         "agenix".to_string(),
         "g".to_string(),
-        "--rules".to_string(),
+        "--secrets-nix".to_string(),
         "./nonexistent.nix".to_string(),
     ];
 

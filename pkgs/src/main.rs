@@ -15,7 +15,7 @@ mod tests {
             "agenix".to_string(),
             "edit".to_string(),
             "nonexistent.age".to_string(),
-            "--rules".to_string(),
+            "--secrets-nix".to_string(),
             "./test_secrets.nix".to_string(),
             "--editor".to_string(),
             "vi".to_string(),
@@ -30,7 +30,7 @@ mod tests {
             "agenix".to_string(),
             "decrypt".to_string(),
             "nonexistent.age".to_string(),
-            "--rules".to_string(),
+            "--secrets-nix".to_string(),
             "./test_secrets.nix".to_string(),
         ];
         let result = agenix::run(args);
@@ -38,11 +38,11 @@ mod tests {
     }
 
     #[test]
-    fn test_handle_rekey_nonexistent_rules() {
+    fn test_handle_rekey_nonexistent_secrets_nix() {
         let args = vec![
             "agenix".to_string(),
             "rekey".to_string(),
-            "--rules".to_string(),
+            "--secrets-nix".to_string(),
             "./test_secrets.nix".to_string(),
         ];
         let result = agenix::run(args);
@@ -50,11 +50,11 @@ mod tests {
     }
 
     #[test]
-    fn test_handle_generate_nonexistent_rules() {
+    fn test_handle_generate_nonexistent_secrets_nix() {
         let args = vec![
             "agenix".to_string(),
             "generate".to_string(),
-            "--rules".to_string(),
+            "--secrets-nix".to_string(),
             "./test_secrets.nix".to_string(),
         ];
         let result = agenix::run(args);
@@ -65,7 +65,7 @@ mod tests {
     fn test_handle_generate_flag_parsing() {
         let args = vec!["agenix".to_string(), "generate".to_string()];
         let result = agenix::run(args);
-        // Should error due to nonexistent default rules file, but subcommand should be parsed correctly
+        // Should error due to nonexistent default secrets.nix, but subcommand should be parsed correctly
         assert!(result.is_err());
 
         // Test short alias
