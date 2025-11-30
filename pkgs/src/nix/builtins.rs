@@ -5,6 +5,23 @@
 //! - UUIDs: `uuid`
 //! - Keypairs: `sshKey` (Ed25519), `rsaKey` (RSA), `ageKey` (x25519)
 //! - Hash functions: `blake2b`, `blake2s`, `keccak`
+//!
+//! # Calling Conventions
+//!
+//! The key generation builtins (`uuid`, `sshKey`, `ageKey`) require an argument
+//! but ignore its value. This is a limitation of the Nix language which doesn't
+//! support zero-argument functions. You can use any of these calling conventions:
+//!
+//! ```nix
+//! builtins.uuid {}      # Using an empty attribute set
+//! builtins.uuid null    # Using null
+//! builtins.uuid 0       # Using zero
+//! builtins.sshKey {}    # Returns { secret = "..."; public = "..."; }
+//! builtins.ageKey {}    # Returns { secret = "..."; public = "..."; }
+//! ```
+//!
+//! Note: `rsaKey` uses its argument for the `keySize` option, so it must be called
+//! with an attribute set: `builtins.rsaKey { keySize = 4096; }`
 
 use snix_eval::builtin_macros;
 
@@ -154,6 +171,9 @@ pub mod impure_builtins {
     }
 
     /// Generates a random UUIDv4 string.
+    ///
+    /// The argument is required but ignored. You can use any value:
+    /// `builtins.uuid {}`, `builtins.uuid null`, or `builtins.uuid 0`
     #[builtin("uuid")]
     async fn builtin_uuid(co: GenCo, var: Value) -> Result<Value, ErrorKind> {
         let _ = (co, var);
@@ -185,6 +205,12 @@ pub mod impure_builtins {
     }
 
     /// Generates an SSH Ed25519 keypair.
+    ///
+    /// Returns an attribute set with `secret` (PEM-encoded private key) and
+    /// `public` (SSH public key format) keys.
+    ///
+    /// The argument is required but ignored. You can use any value:
+    /// `builtins.sshKey {}`, `builtins.sshKey null`, or `builtins.sshKey 0`
     #[builtin("sshKey")]
     async fn builtin_ssh_key(co: GenCo, var: Value) -> Result<Value, ErrorKind> {
         use crate::nix::keypair::generate_ed25519_keypair;
@@ -195,6 +221,12 @@ pub mod impure_builtins {
     }
 
     /// Generates an age x25519 keypair.
+    ///
+    /// Returns an attribute set with `secret` (age secret key) and
+    /// `public` (age public key) keys.
+    ///
+    /// The argument is required but ignored. You can use any value:
+    /// `builtins.ageKey {}`, `builtins.ageKey null`, or `builtins.ageKey 0`
     #[builtin("ageKey")]
     async fn builtin_age_key(co: GenCo, var: Value) -> Result<Value, ErrorKind> {
         use crate::nix::keypair::generate_age_x25519_keypair;
@@ -318,6 +350,49 @@ mod tests {
     }
 
     #[test]
+    fn test_multiple_ssh_keys_in_single_evaluation() -> Result<()> {
+        // Test that multiple calls to builtins.sshKey {} within a single evaluation
+        // generate different keys by using deepSeq to force evaluation
+        let nix_expr = r#"
+            let
+              key1 = builtins.sshKey {};
+              key2 = builtins.sshKey {};
+              pub1 = key1.public;
+              pub2 = key2.public;
+            in builtins.deepSeq [pub1 pub2] { inherit pub1 pub2; }
+        "#;
+        let current_dir = current_dir()?;
+        let output = eval_nix_expression(nix_expr, &current_dir)?;
+
+        // Parse the output
+        if let Value::Attrs(attrs) = output {
+            let pub1 = attrs
+                .select(snix_eval::NixString::from("pub1".as_bytes()).as_ref())
+                .ok_or_else(|| anyhow::anyhow!("pub1 not found"))?;
+            let pub2 = attrs
+                .select(snix_eval::NixString::from("pub2".as_bytes()).as_ref())
+                .ok_or_else(|| anyhow::anyhow!("pub2 not found"))?;
+
+            let pub1_str = value_to_string(pub1.clone())?;
+            let pub2_str = value_to_string(pub2.clone())?;
+
+            // Keys should be different
+            assert_ne!(
+                pub1_str, pub2_str,
+                "Public keys should be different in single evaluation"
+            );
+
+            // Both should be valid SSH keys
+            assert!(pub1_str.starts_with("ssh-ed25519 "));
+            assert!(pub2_str.starts_with("ssh-ed25519 "));
+        } else {
+            anyhow::bail!("Expected attribute set, got: {:?}", output);
+        }
+
+        Ok(())
+    }
+
+    #[test]
     fn test_age_key_builtin() -> Result<()> {
         // Test the ageKey builtin function
         let nix_expr = "(builtins.ageKey {}).secret";
@@ -373,6 +448,69 @@ mod tests {
         assert!(public2.starts_with("age1"));
         assert!(private1.starts_with("AGE-SECRET-KEY-1"));
         assert!(private2.starts_with("AGE-SECRET-KEY-1"));
+
+        Ok(())
+    }
+
+    // Tests for alternative calling conventions (argument is ignored)
+    #[test]
+    fn test_uuid_with_null_argument() -> Result<()> {
+        let nix_expr = "builtins.uuid null";
+        let current_dir = current_dir()?;
+        let output = eval_nix_expression(nix_expr, &current_dir)?;
+
+        let uuid = value_to_string(output)?;
+
+        // Verify UUID format
+        assert_eq!(uuid.len(), 36);
+        assert_eq!(uuid.chars().filter(|&c| c == '-').count(), 4);
+        assert_eq!(uuid.chars().nth(14), Some('4'));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_uuid_with_integer_argument() -> Result<()> {
+        let nix_expr = "builtins.uuid 0";
+        let current_dir = current_dir()?;
+        let output = eval_nix_expression(nix_expr, &current_dir)?;
+
+        let uuid = value_to_string(output)?;
+
+        // Verify UUID format
+        assert_eq!(uuid.len(), 36);
+        assert_eq!(uuid.chars().filter(|&c| c == '-').count(), 4);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_ssh_key_with_null_argument() -> Result<()> {
+        let nix_expr = "(builtins.sshKey null).public";
+        let current_dir = current_dir()?;
+        let output = eval_nix_expression(nix_expr, &current_dir)?;
+
+        let public_key = value_to_string(output)?;
+
+        // Verify it's an SSH public key
+        assert!(public_key.starts_with("ssh-ed25519 "));
+        assert!(!public_key.contains('\n'));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_age_key_with_null_argument() -> Result<()> {
+        let nix_expr = "(builtins.ageKey null).public";
+        let current_dir = current_dir()?;
+        let output = eval_nix_expression(nix_expr, &current_dir)?;
+
+        let public_key = value_to_string(output)?;
+
+        // Verify it's an age public key
+        assert!(public_key.starts_with("age1"));
+        assert!(!public_key.contains('\n'));
+        assert_eq!(public_key.len(), 62);
 
         Ok(())
     }
