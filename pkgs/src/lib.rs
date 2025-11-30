@@ -4,9 +4,24 @@ mod editor;
 mod nix;
 pub mod output;
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, anyhow};
 use clap::Parser;
 use std::path::Path;
+
+/// Check if the rules file exists and provide a helpful error message if not.
+///
+/// This gives users a clear hint about what to do when the default `secrets.nix`
+/// doesn't exist in the current directory.
+fn check_rules_file_exists(rules_path: &str) -> Result<()> {
+    let path = Path::new(rules_path);
+    if !path.exists() {
+        return Err(anyhow!(
+            "Rules file not found: {}\nHint: cd to a directory with secrets.nix, or use -r to specify the path",
+            rules_path
+        ));
+    }
+    Ok(())
+}
 
 /// Normalize a rules path for use in Nix expressions.
 ///
@@ -65,6 +80,22 @@ where
     }
     if args.dry_run {
         verbose!("Dry-run mode enabled");
+    }
+
+    // Check if rules file exists for commands that need it
+    let needs_rules_file = matches!(
+        args.command,
+        Some(cli::Command::Rekey { .. })
+            | Some(cli::Command::Generate { .. })
+            | Some(cli::Command::Decrypt { .. })
+            | Some(cli::Command::Edit { .. })
+            | Some(cli::Command::Encrypt { .. })
+            | Some(cli::Command::List { .. })
+            | Some(cli::Command::Check { .. })
+    );
+
+    if needs_rules_file {
+        check_rules_file_exists(&rules)?;
     }
 
     match args.command {
@@ -155,5 +186,45 @@ mod tests {
             normalize_rules_path("/home/user/secrets.nix"),
             "/home/user/secrets.nix"
         );
+    }
+
+    #[test]
+    fn test_check_rules_file_exists_missing() {
+        let result = check_rules_file_exists("/nonexistent/path/secrets.nix");
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("Rules file not found"),
+            "Error should mention rules file not found: {}",
+            err_msg
+        );
+        assert!(
+            err_msg.contains("Hint:"),
+            "Error should contain a hint: {}",
+            err_msg
+        );
+        assert!(
+            err_msg.contains("cd to a directory with secrets.nix"),
+            "Hint should suggest changing directory: {}",
+            err_msg
+        );
+        assert!(
+            err_msg.contains("-r"),
+            "Hint should mention -r flag: {}",
+            err_msg
+        );
+    }
+
+    #[test]
+    fn test_check_rules_file_exists_present() {
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+
+        let mut temp_file = NamedTempFile::new().unwrap();
+        writeln!(temp_file, "{{}}").unwrap();
+        temp_file.flush().unwrap();
+
+        let result = check_rules_file_exists(temp_file.path().to_str().unwrap());
+        assert!(result.is_ok());
     }
 }
