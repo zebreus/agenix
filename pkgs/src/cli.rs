@@ -120,10 +120,14 @@ pub enum Command {
         secrets: Vec<String>,
     },
 
-    /// List secrets defined in the rules file with their status
+    /// List secrets defined in the rules file
     #[command(visible_alias = "l")]
     List {
-        /// Show detailed information about each secret
+        /// Show status of each secret (ok/missing/cannot decrypt)
+        #[arg(short, long)]
+        status: bool,
+
+        /// Show detailed information about each secret (implies --status)
         #[arg(short, long)]
         detailed: bool,
     },
@@ -969,7 +973,8 @@ mod tests {
     fn test_list_subcommand() {
         let args = Args::try_parse_from(["agenix", "list"]).unwrap();
         assert!(matches!(args.command, Some(Command::List { .. })));
-        if let Some(Command::List { detailed }) = args.command {
+        if let Some(Command::List { status, detailed }) = args.command {
+            assert!(!status);
             assert!(!detailed);
         }
     }
@@ -981,9 +986,32 @@ mod tests {
     }
 
     #[test]
+    fn test_list_status_flag() {
+        let args = Args::try_parse_from(["agenix", "list", "--status"]).unwrap();
+        if let Some(Command::List { status, detailed }) = args.command {
+            assert!(status);
+            assert!(!detailed);
+        } else {
+            panic!("Expected List command");
+        }
+    }
+
+    #[test]
+    fn test_list_status_short_flag() {
+        let args = Args::try_parse_from(["agenix", "list", "-s"]).unwrap();
+        if let Some(Command::List { status, detailed }) = args.command {
+            assert!(status);
+            assert!(!detailed);
+        } else {
+            panic!("Expected List command");
+        }
+    }
+
+    #[test]
     fn test_list_detailed_flag() {
         let args = Args::try_parse_from(["agenix", "list", "--detailed"]).unwrap();
-        if let Some(Command::List { detailed }) = args.command {
+        if let Some(Command::List { status, detailed }) = args.command {
+            assert!(!status);
             assert!(detailed);
         } else {
             panic!("Expected List command");
@@ -993,7 +1021,8 @@ mod tests {
     #[test]
     fn test_list_detailed_short_flag() {
         let args = Args::try_parse_from(["agenix", "list", "-d"]).unwrap();
-        if let Some(Command::List { detailed }) = args.command {
+        if let Some(Command::List { status, detailed }) = args.command {
+            assert!(!status);
             assert!(detailed);
         } else {
             panic!("Expected List command");
@@ -1012,7 +1041,8 @@ mod tests {
         let args =
             Args::try_parse_from(["agenix", "-i", "/path/to/key", "list", "--detailed"]).unwrap();
         assert_eq!(args.identity, vec!["/path/to/key".to_string()]);
-        if let Some(Command::List { detailed }) = args.command {
+        if let Some(Command::List { status, detailed }) = args.command {
+            assert!(!status);
             assert!(detailed);
         } else {
             panic!("Expected List command");
@@ -1044,7 +1074,19 @@ mod tests {
     fn test_list_detailed_and_verbose() {
         let args = Args::try_parse_from(["agenix", "list", "-d", "-v"]).unwrap();
         assert!(args.verbose);
-        if let Some(Command::List { detailed }) = args.command {
+        if let Some(Command::List { status, detailed }) = args.command {
+            assert!(!status);
+            assert!(detailed);
+        } else {
+            panic!("Expected List command");
+        }
+    }
+
+    #[test]
+    fn test_list_status_and_detailed() {
+        let args = Args::try_parse_from(["agenix", "list", "-s", "-d"]).unwrap();
+        if let Some(Command::List { status, detailed }) = args.command {
+            assert!(status);
             assert!(detailed);
         } else {
             panic!("Expected List command");
@@ -1062,6 +1104,7 @@ mod tests {
             "/key",
             "--no-system-identities",
             "list",
+            "--status",
             "--detailed",
         ])
         .unwrap();
@@ -1069,7 +1112,8 @@ mod tests {
         assert_eq!(args.rules, "/rules.nix");
         assert_eq!(args.identity, vec!["/key".to_string()]);
         assert!(args.no_system_identities);
-        if let Some(Command::List { detailed }) = args.command {
+        if let Some(Command::List { status, detailed }) = args.command {
+            assert!(status);
             assert!(detailed);
         } else {
             panic!("Expected List command");

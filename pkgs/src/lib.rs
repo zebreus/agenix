@@ -129,10 +129,14 @@ where
             editor::encrypt_file(&rules, &file, force, args.dry_run)
                 .with_context(|| format!("Failed to encrypt {file}"))
         }
-        Some(cli::Command::List { detailed }) => {
-            editor::list_secrets(&rules, detailed, &args.identity, args.no_system_identities)
-                .context("Failed to list secrets")
-        }
+        Some(cli::Command::List { status, detailed }) => editor::list_secrets(
+            &rules,
+            status,
+            detailed,
+            &args.identity,
+            args.no_system_identities,
+        )
+        .context("Failed to list secrets"),
         Some(cli::Command::Check { secrets }) => {
             editor::check_secrets(&rules, &secrets, &args.identity, args.no_system_identities)
                 .context("Failed to check secrets")
