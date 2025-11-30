@@ -10,6 +10,8 @@ use crate::nix::get_all_files;
 use crate::output::pluralize_secret;
 
 use super::edit::edit_file;
+use super::filter_files;
+use super::validate_secrets_exist;
 
 /// Result of the pre-flight decryption check.
 pub struct PreflightResult {
@@ -102,9 +104,6 @@ fn report_rekey_results(failed_files: &[(String, String)], success_count: usize)
         );
     }
 }
-
-use super::filter_files;
-use super::validate_secrets_exist;
 
 /// Rekey files in the rules (no-op editor used to avoid launching an editor).
 ///
