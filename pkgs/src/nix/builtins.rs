@@ -464,6 +464,8 @@ mod tests {
         // Verify UUID format
         assert_eq!(uuid.len(), 36);
         assert_eq!(uuid.chars().filter(|&c| c == '-').count(), 4);
+        // Position 14 (0-indexed) is where the version digit appears in UUIDv4 format:
+        // xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx
         assert_eq!(uuid.chars().nth(14), Some('4'));
 
         Ok(())
@@ -510,6 +512,8 @@ mod tests {
         // Verify it's an age public key
         assert!(public_key.starts_with("age1"));
         assert!(!public_key.contains('\n'));
+        // age public keys are Bech32-encoded and always 62 characters long
+        // (62 = "age1" prefix (4) + 58 Bech32-encoded characters)
         assert_eq!(public_key.len(), 62);
 
         Ok(())
