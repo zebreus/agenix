@@ -109,31 +109,56 @@ where
             &secrets,
         )
         .context("Failed to generate secrets"),
-        Some(cli::Command::Decrypt { file, output }) => editor::decrypt_file(
-            &secrets_nix,
-            &file,
-            output.as_deref(),
-            &args.identity,
-            args.no_system_identities,
-        )
-        .with_context(|| format!("Failed to decrypt {file}")),
+        Some(cli::Command::Decrypt { file, output, public }) => {
+            if public {
+                editor::read_public_file(&secrets_nix, &file, output.as_deref())
+                    .with_context(|| format!("Failed to read public file for {file}"))
+            } else {
+                editor::decrypt_file(
+                    &secrets_nix,
+                    &file,
+                    output.as_deref(),
+                    &args.identity,
+                    args.no_system_identities,
+                )
+                .with_context(|| format!("Failed to decrypt {file}"))
+            }
+        }
         Some(cli::Command::Edit {
             file,
             editor,
             force,
-        }) => editor::edit_file(
-            &secrets_nix,
-            &file,
-            editor.as_deref(),
-            &args.identity,
-            args.no_system_identities,
+            public,
+        }) => {
+            if public {
+                editor::edit_public_file(&secrets_nix, &file, editor.as_deref(), force, args.dry_run)
+                    .with_context(|| format!("Failed to edit public file for {file}"))
+            } else {
+                editor::edit_file(
+                    &secrets_nix,
+                    &file,
+                    editor.as_deref(),
+                    &args.identity,
+                    args.no_system_identities,
+                    force,
+                    args.dry_run,
+                )
+                .with_context(|| format!("Failed to edit {file}"))
+            }
+        }
+        Some(cli::Command::Encrypt {
+            file,
+            input,
             force,
-            args.dry_run,
-        )
-        .with_context(|| format!("Failed to edit {file}")),
-        Some(cli::Command::Encrypt { file, input, force }) => {
-            editor::encrypt_file(&secrets_nix, &file, input.as_deref(), force, args.dry_run)
-                .with_context(|| format!("Failed to encrypt {file}"))
+            public,
+        }) => {
+            if public {
+                editor::write_public_file(&secrets_nix, &file, input.as_deref(), force, args.dry_run)
+                    .with_context(|| format!("Failed to write public file for {file}"))
+            } else {
+                editor::encrypt_file(&secrets_nix, &file, input.as_deref(), force, args.dry_run)
+                    .with_context(|| format!("Failed to encrypt {file}"))
+            }
         }
         Some(cli::Command::List { status, secrets }) => editor::list_secrets(
             &secrets_nix,

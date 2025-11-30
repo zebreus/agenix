@@ -66,6 +66,10 @@ pub enum Command {
         /// Open empty editor if decryption fails (useful for recreating secrets)
         #[arg(short, long)]
         force: bool,
+
+        /// Edit the public file (.pub) associated with the secret instead of the secret itself
+        #[arg(short, long)]
+        public: bool,
     },
 
     /// Encrypt content from stdin (or a file) to a secret file
@@ -82,6 +86,10 @@ pub enum Command {
         /// Overwrite existing secret file
         #[arg(short, long)]
         force: bool,
+
+        /// Set the public file (.pub) associated with the secret instead of encrypting to the secret
+        #[arg(short, long)]
+        public: bool,
     },
 
     /// Decrypt a secret file to stdout or a file
@@ -94,6 +102,10 @@ pub enum Command {
         /// Output file (defaults to stdout)
         #[arg(short, long, value_name = "FILE")]
         output: Option<String>,
+
+        /// Read the public file (.pub) associated with the secret instead of decrypting the secret
+        #[arg(short, long)]
+        public: bool,
     },
 
     /// Re-encrypt secrets with updated recipients
