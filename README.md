@@ -2,12 +2,14 @@
 
 [age](https://github.com/FiloSottile/age)-encrypted secrets for NixOS.
 
+> **⚠️ Experimental:** This project is experimental. The primary goal is to explore the current state of AI-assisted coding (and to see if [snix](https://github.com/snix-nix/snix) is ready), not to provide stable software. Use at your own risk.
+
 ## Features
 
 - **SSH-based encryption** – Use existing SSH keys (system or user) to encrypt secrets
 - **Nix store integration** – Encrypted secrets deploy with `nixos-rebuild`
 - **Automatic decryption** – Secrets are decrypted to `/run/agenix/` at system activation
-- **Minimal** – Easy to audit
+- **Maximalist** – Prioritizes user-friendliness and features over minimalism
 
 ## Quick Example
 
@@ -128,6 +130,10 @@ See [CONTRIBUTING](doc/contributing.md). Run tests with `nix flake check`.
 
 Based on [sops-nix](https://github.com/Mic92/sops-nix) by Mic92.
 
+## Related Projects
+
+- **[ryantm/agenix](https://github.com/ryantm/agenix)** – The original agenix project. Provides a minimal, easy-to-audit implementation. If you prefer stability and simplicity over features, use that instead.
+
 ## AI Disclosure
 
-This repository was developed with significant use of AI assistance (GitHub Copilot). The Rust port was initially drafted by Copilot, then manually refined. Many tests were AI-generated, and most subsequent changes were made via Copilot-assisted PRs. For full transparency, see the [pull request history](https://github.com/zebreus/agenix/pulls?q=is%3Apr).
+This repository was largely slop-coded with GitHub Copilot. The Rust port was initially drafted by Copilot, then manually cleaned up. Many tests were AI-generated, and most subsequent changes were made via Copilot-assisted PRs. For full transparency, see the [pull request history](https://github.com/zebreus/agenix/pulls?q=is%3Apr).
