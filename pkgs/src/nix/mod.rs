@@ -389,33 +389,37 @@ fn auto_detect_dependencies(rules_path: &str, file: &str) -> Result<Vec<String>>
     let all_files = get_all_files(rules_path)?;
     let current_dir = current_dir()?;
 
-    let mut deps = Vec::new();
-
     // First, collect dependencies from publicKeys references
     let pub_key_refs = get_public_key_references(rules_path, file, &all_files);
-    deps.extend(pub_key_refs);
 
-    // Then, try to detect generator dependencies
     // Try calling generator with empty params
     let nix_expr = build_generator_test_expr(rules_path, file, "{ }");
-    let generator_needs_params = match eval_nix_expression(&nix_expr, &current_dir) {
-        Ok(_) => false,
-        Err(e) => e.to_string().contains("'secrets'") || e.to_string().contains("'publics'"),
-    };
+    match eval_nix_expression(&nix_expr, &current_dir) {
+        Ok(_) => return Ok(pub_key_refs), // Generator doesn't need deps, return only publicKeys refs
+        Err(e) if !e.to_string().contains("'secrets'") && !e.to_string().contains("'publics'") => {
+            return Ok(pub_key_refs); // Generator error not about params, return only publicKeys refs
+        }
+        Err(_) => {} // Generator needs secrets/publics params, continue detection
+    }
 
-    if generator_needs_params {
-        // Try with different param combinations to detect specific dependencies
-        for params in [
-            "{ secrets = {}; publics = {}; }",
-            "{ secrets = {}; }",
-            "{ publics = {}; }",
-        ] {
-            let nix_expr = build_generator_test_expr(rules_path, file, params);
-            if let Err(e) = eval_nix_expression(&nix_expr, &current_dir) {
-                deps.extend(extract_deps_from_error(&e.to_string(), &all_files));
-            }
+    // Try with different param combinations to detect specific dependencies
+    // Note: We accumulate deps from errors, but if generator succeeds, we discard
+    // the error-based deps and return only publicKeys refs (matching original behavior)
+    let mut deps = Vec::new();
+    for params in [
+        "{ secrets = {}; publics = {}; }",
+        "{ secrets = {}; }",
+        "{ publics = {}; }",
+    ] {
+        let nix_expr = build_generator_test_expr(rules_path, file, params);
+        match eval_nix_expression(&nix_expr, &current_dir) {
+            Ok(_) => return Ok(pub_key_refs), // Generator succeeded - return only publicKeys refs
+            Err(e) => deps.extend(extract_deps_from_error(&e.to_string(), &all_files)),
         }
     }
+
+    // Generator couldn't succeed with any params - use detected error-based deps + publicKeys refs
+    deps.extend(pub_key_refs);
 
     // Clean up: sort, dedupe, remove self-references
     deps.sort();
@@ -2477,6 +2481,213 @@ mod tests {
         let result = get_secret_dependencies(temp_file.path().to_str().unwrap(), "derived.age")?;
 
         // Conditional access won't be detected because it doesn't cause an error
+        assert_eq!(result.len(), 0);
+        Ok(())
+    }
+
+    // Tests for publicKey-based implicit dependencies
+    #[test]
+    fn test_public_key_reference_creates_implicit_dependency() -> Result<()> {
+        // When a secret references another secret in publicKeys, it should create an implicit dependency
+        let temp_dir = TempDir::new()?;
+        let rules_path = temp_dir.path().join("secrets.nix");
+
+        let rules_content = r#"
+        {
+          "ssh-key.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+            generator = builtins.sshKey;
+          };
+          "app-secret.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" "ssh-key" ];
+            generator = { }: "app-secret-content";
+          };
+        }
+        "#;
+        std::fs::write(&rules_path, rules_content)?;
+
+        let result = get_secret_dependencies(rules_path.to_str().unwrap(), "app-secret.age")?;
+
+        // Should detect "ssh-key" as an implicit dependency from publicKeys
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0], "ssh-key");
+        Ok(())
+    }
+
+    #[test]
+    fn test_multiple_public_key_references_create_multiple_dependencies() -> Result<()> {
+        // Multiple secret references in publicKeys should all become dependencies
+        let temp_dir = TempDir::new()?;
+        let rules_path = temp_dir.path().join("secrets.nix");
+
+        let rules_content = r#"
+        {
+          "deploy-key.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+            generator = builtins.sshKey;
+          };
+          "backup-key.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+            generator = builtins.sshKey;
+          };
+          "server-key.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+            generator = builtins.sshKey;
+          };
+          "multi-recipient-secret.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" "deploy-key" "backup-key" "server-key" ];
+            generator = { }: "secret-content";
+          };
+        }
+        "#;
+        std::fs::write(&rules_path, rules_content)?;
+
+        let result = get_secret_dependencies(rules_path.to_str().unwrap(), "multi-recipient-secret.age")?;
+
+        // Should detect all three secret references as dependencies
+        assert_eq!(result.len(), 3);
+        assert!(result.contains(&"deploy-key".to_string()));
+        assert!(result.contains(&"backup-key".to_string()));
+        assert!(result.contains(&"server-key".to_string()));
+        Ok(())
+    }
+
+    #[test]
+    fn test_public_key_reference_with_age_suffix() -> Result<()> {
+        // References with .age suffix should also work
+        let temp_dir = TempDir::new()?;
+        let rules_path = temp_dir.path().join("secrets.nix");
+
+        let rules_content = r#"
+        {
+          "base-key.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+            generator = builtins.sshKey;
+          };
+          "derived.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" "base-key.age" ];
+            generator = { }: "derived-content";
+          };
+        }
+        "#;
+        std::fs::write(&rules_path, rules_content)?;
+
+        let result = get_secret_dependencies(rules_path.to_str().unwrap(), "derived.age")?;
+
+        // Should detect "base-key" (normalized from "base-key.age")
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0], "base-key");
+        Ok(())
+    }
+
+    #[test]
+    fn test_explicit_dependencies_override_public_key_detection() -> Result<()> {
+        // When explicit dependencies are specified, publicKey-based detection is not used
+        let temp_dir = TempDir::new()?;
+        let rules_path = temp_dir.path().join("secrets.nix");
+
+        let rules_content = r#"
+        {
+          "key-a.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+            generator = builtins.sshKey;
+          };
+          "key-b.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+            generator = builtins.sshKey;
+          };
+          "explicit-deps.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" "key-a" ];
+            dependencies = [ "key-b" ];
+            generator = { publics }: publics."key-b";
+          };
+        }
+        "#;
+        std::fs::write(&rules_path, rules_content)?;
+
+        let result = get_secret_dependencies(rules_path.to_str().unwrap(), "explicit-deps.age")?;
+
+        // Should only have the explicit dependency "key-b", not "key-a" from publicKeys
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0], "key-b");
+        Ok(())
+    }
+
+    #[test]
+    fn test_mixed_public_keys_and_references() -> Result<()> {
+        // Mix of actual public keys and secret references should correctly identify only the references
+        let temp_dir = TempDir::new()?;
+        let rules_path = temp_dir.path().join("secrets.nix");
+
+        let rules_content = r#"
+        {
+          "ssh-host-key.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+            generator = builtins.sshKey;
+          };
+          "app-config.age" = {
+            publicKeys = [ 
+              "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p"
+              "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqiXi9DyVJGcL8pE4+bKqe3FP8"
+              "ssh-host-key"
+              "sk-ssh-ed25519@openssh.com AAAAGnNrLXNzaC1lZDI1NTE5QG9wZW5zc2guY29tAAAAIExample"
+            ];
+            generator = { }: "config-content";
+          };
+        }
+        "#;
+        std::fs::write(&rules_path, rules_content)?;
+
+        let result = get_secret_dependencies(rules_path.to_str().unwrap(), "app-config.age")?;
+
+        // Should only detect "ssh-host-key" as dependency, not the actual public keys
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0], "ssh-host-key");
+        Ok(())
+    }
+
+    #[test]
+    fn test_public_key_reference_to_nonexistent_secret_ignored() -> Result<()> {
+        // References to secrets that don't exist in rules should be ignored
+        let temp_dir = TempDir::new()?;
+        let rules_path = temp_dir.path().join("secrets.nix");
+
+        let rules_content = r#"
+        {
+          "secret.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" "nonexistent-key" ];
+            generator = { }: "content";
+          };
+        }
+        "#;
+        std::fs::write(&rules_path, rules_content)?;
+
+        let result = get_secret_dependencies(rules_path.to_str().unwrap(), "secret.age")?;
+
+        // "nonexistent-key" should not be detected because it's not a valid secret in rules
+        assert_eq!(result.len(), 0);
+        Ok(())
+    }
+
+    #[test]
+    fn test_public_key_reference_no_self_dependency() -> Result<()> {
+        // A secret should not be detected as its own dependency
+        let temp_dir = TempDir::new()?;
+        let rules_path = temp_dir.path().join("secrets.nix");
+
+        let rules_content = r#"
+        {
+          "self-ref.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" "self-ref" ];
+            generator = { }: "content";
+          };
+        }
+        "#;
+        std::fs::write(&rules_path, rules_content)?;
+
+        let result = get_secret_dependencies(rules_path.to_str().unwrap(), "self-ref.age")?;
+
+        // Should not include self as dependency
         assert_eq!(result.len(), 0);
         Ok(())
     }
