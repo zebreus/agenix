@@ -338,11 +338,16 @@ doc/reference/ (lookup)
 
 === Questions for Maintainer
 
-1. Is the pkgs directory staying as-is or being renamed to cli later?
+1. Is the pkgs directory staying as-is or being renamed to CLI later?
+   - _Affects whether component-coupled docs make sense (Design B)_
 2. Should the main documentation format be AsciiDoc (for manpage compatibility)?
+   - _AsciiDoc enables automatic manpage generation; Markdown is more widely known_
 3. How important is keeping documentation close to the code vs centralized?
+   - _Determines whether Design A/D (centralized) or Design B (component-coupled) is preferred_
 4. Should the README.md remain minimal or become more comprehensive?
+   - _Affects how much content lives in README vs doc/ directory_
 5. Is generated documentation from module definitions desired for the future?
+   - _If yes, we need to plan for integration with nixdoc or similar tools_
 
 ---
 
@@ -363,13 +368,22 @@ Regardless of which design is chosen, the following improvements apply:
     # Optional: ASCII-armored output (default: false)
     armor = true;
     
-    # Optional: generator function
-    generator = { }: "generated-value";
-    # OR with public output:
-    generator = { }: { secret = "private"; public = "public"; };
+    # Optional: generator function that returns a string
+    generator = { }: builtins.randomString 32;
     
-    # Optional: dependencies for generator
+    # Optional: generator with public output (returns attrset)
+    # The empty { } parameter set allows for future extension (e.g., { secrets, publics })
+    generator = { }: {
+      secret = builtins.sshKey { }.secret;  # Private key
+      public = builtins.sshKey { }.public;  # Public key (written to .pub file)
+    };
+    
+    # Optional: generator using built-in key generator
+    generator = builtins.sshKey;  # Short form for SSH Ed25519 keypair
+    
+    # Optional: dependencies for generator (access other secrets' values)
     dependencies = [ "other-secret" ];
+    generator = { publics }: "Key: ${publics."other-secret"}";
   };
 }
 ----
