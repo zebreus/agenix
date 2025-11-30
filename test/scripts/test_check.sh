@@ -171,12 +171,12 @@ else
   exit 1
 fi
 
-# Test 14: Check shows checkmark for valid secrets
-echo "--- Test 14: Checkmark for valid secrets ---"
-if echo "$check_output" | grep -q "✓"; then
-  echo "✓ Check shows checkmark for valid secrets"
+# Test 14: Check shows OK for valid secrets
+echo "--- Test 14: OK for valid secrets ---"
+if echo "$check_output" | grep -q "OK"; then
+  echo "OK: Check shows OK for valid secrets"
 else
-  echo "✗ Check failed to show checkmark"
+  echo "ERROR: Check failed to show OK"
   exit 1
 fi
 

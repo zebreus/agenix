@@ -86,10 +86,48 @@ fn test_list_normal_produces_output() {
 
     assert!(output.status.success(), "list should succeed");
     let stdout = String::from_utf8_lossy(&output.stdout);
+    // In normal mode (without --status), just secret names are output
     assert!(
-        stdout.contains("Total:") || stdout.contains("secrets"),
-        "normal mode should produce output, got: {:?}",
+        stdout.contains("s1") && stdout.contains("s2"),
+        "normal mode should output secret names, got: {:?}",
         stdout
+    );
+}
+
+#[test]
+fn test_list_status_produces_status_output() {
+    let temp_dir = tempdir().unwrap();
+    let path = temp_dir.path().to_str().unwrap();
+
+    let rules = format!(
+        r#"{{ "{}/s1.age" = {{ publicKeys = [ "{}" ]; }}; "{}/s2.age" = {{ publicKeys = [ "{}" ]; }}; }}"#,
+        path, TEST_PUBKEY, path, TEST_PUBKEY
+    );
+    let temp_rules = create_rules_file(&rules);
+
+    let output = Command::new(agenix_bin())
+        .args([
+            "list",
+            "--status",
+            "--rules",
+            temp_rules.path().to_str().unwrap(),
+        ])
+        .output()
+        .expect("Failed to execute agenix");
+
+    assert!(output.status.success(), "list --status should succeed");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    // In status mode, should show status codes and summary
+    assert!(
+        stdout.contains("MISSING") || stdout.contains("ERROR") || stdout.contains("OK"),
+        "status mode should show status codes, got: {:?}",
+        stdout
+    );
+    assert!(
+        stderr.contains("Total:"),
+        "status mode should show summary, got stderr: {:?}",
+        stderr
     );
 }
 
