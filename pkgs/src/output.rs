@@ -98,7 +98,7 @@ macro_rules! log {
 ///
 /// # Example
 /// ```ignore
-/// println!("Found {} {}", count, pluralize_secret(count));
+/// log!("Found {} {}", count, pluralize_secret(count));
 /// // "Found 1 secret" or "Found 3 secrets"
 /// ```
 pub fn pluralize_secret(count: usize) -> &'static str {
