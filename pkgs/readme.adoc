@@ -114,10 +114,187 @@ These options can be used with any command.
 == FILES
 
 *secrets.nix*::
-  The default rules file defining secrets and their recipients. See *agenix(5)* or the project documentation for the format.
+  The default rules file defining secrets and their recipients. See *RULES FILE FORMAT* below.
 
 *~/.ssh/id_ed25519*, *~/.ssh/id_rsa*::
   Default identity files used for decryption.
+
+== RULES FILE FORMAT
+
+The rules file (typically `secrets.nix`) is a Nix expression that evaluates to an attribute set. Each key is a secret filename (usually ending in `.age`) and each value is a secret configuration.
+
+=== Basic Structure
+
+[source,nix]
+----
+let
+  user1 = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5...";
+  system1 = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5...";
+in {
+  "secret.age".publicKeys = [ user1 system1 ];
+  "other.age".publicKeys = [ user1 ];
+}
+----
+
+=== Secret Attributes
+
+*publicKeys* (required)::
+  List of public keys that can decrypt this secret. Supports SSH keys (`ssh-ed25519`, `ssh-rsa`), age keys (`age1...`), and references to other secrets' public keys by name.
+
+*armor* (optional)::
+  When `true`, use ASCII-armored format instead of binary. Default: `false`.
+
+*generator* (optional)::
+  A function to generate the secret value. See *GENERATOR FUNCTIONS*.
+
+*dependencies* (optional)::
+  List of other secret names whose values can be accessed in the generator function.
+
+=== Public Key References
+
+Instead of a literal public key, you can reference another secret's `.pub` file by name:
+
+[source,nix]
+----
+{
+  "deploy-key.age" = {
+    publicKeys = [ user1 ];
+    generator = builtins.sshKey;
+  };
+  "config.age".publicKeys = [ user1 "deploy-key" ];
+}
+----
+
+When encrypting `config.age`, agenix reads `deploy-key.age.pub` and uses that public key.
+
+== GENERATOR FUNCTIONS
+
+Generator functions create secret values automatically when running *agenix generate*.
+
+=== Function Signature
+
+Generators are Nix functions that accept an attribute set and return either:
+
+* A string (creates only the `.age` file)
+* An attrset `{ secret, public }` (creates both `.age` and `.pub` files)
+
+The function argument can contain:
+
+*{ }*::
+  No parameters needed.
+
+*{ publics }*::
+  Attribute set of public content from dependencies (from `.pub` files).
+
+*{ secrets }*::
+  Attribute set of decrypted secret content from dependencies (only available during generation).
+
+*{ secrets, publics }*::
+  Both of the above.
+
+=== Evaluation
+
+Generators are evaluated by the agenix CLI at generation time, not by Nix itself. The CLI provides additional builtins that are not available in standard Nix.
+
+Dependencies are resolved automatically: if secret A depends on secret B, B is generated first. If B already has a `.pub` file, that file is used without regenerating B.
+
+=== Built-in Generator Functions
+
+The following functions are provided by agenix and available as `builtins.*`:
+
+*builtins.randomString* _LENGTH_::
+  Random alphanumeric string of the specified length.
+
+*builtins.randomHex* _LENGTH_::
+  Random hexadecimal string (lowercase) of the specified length.
+
+*builtins.randomBase64* _BYTES_::
+  Random base64-encoded string from the specified number of random bytes.
+
+*builtins.passwordSafe* _LENGTH_::
+  Random password using alphanumeric characters plus `-_+=.`.
+
+*builtins.uuid*, *builtins.uuid {}*::
+  Random UUIDv4 string.
+
+*builtins.sshKey*, *builtins.sshKey {}*::
+  SSH Ed25519 keypair. Returns `{ secret, public }`.
+
+*builtins.rsaKey*, *builtins.rsaKey {}*, *builtins.rsaKey { keySize = N; }*::
+  SSH RSA keypair. Optional `keySize`: 2048, 3072, or 4096 (default: 4096). Returns `{ secret, public }`.
+
+*builtins.ageKey*, *builtins.ageKey {}*::
+  age x25519 keypair. Returns `{ secret, public }`.
+
+*builtins.blake2b* _STRING_::
+  BLAKE2b-512 hash of the string (128 hex characters).
+
+*builtins.blake2s* _STRING_::
+  BLAKE2s-256 hash of the string (64 hex characters).
+
+*builtins.keccak* _STRING_::
+  SHA3-256 (Keccak) hash of the string (64 hex characters).
+
+=== Automatic Generator Selection
+
+When no explicit `generator` is specified, agenix selects one based on the filename:
+
+[cols="1,2"]
+|===
+|Filename Pattern |Generator
+
+|`*ed25519.age`, `*ssh.age`, `*ssh_key.age`
+|`builtins.sshKey` (SSH Ed25519 keypair)
+
+|`*x25519.age`
+|`builtins.ageKey` (age keypair)
+
+|`*password.age`, `*passphrase.age`
+|`builtins.randomString 32`
+|===
+
+=== Generator Examples
+
+Simple password:
+
+[source,nix]
+----
+{
+  "api-token.age" = {
+    publicKeys = [ user1 ];
+    generator = { }: builtins.randomString 32;
+  };
+}
+----
+
+SSH keypair with public key output:
+
+[source,nix]
+----
+{
+  "deploy-key.age" = {
+    publicKeys = [ user1 ];
+    generator = builtins.sshKey;
+  };
+}
+----
+
+Derived secret using dependency:
+
+[source,nix]
+----
+{
+  "ca-key.age" = {
+    publicKeys = [ user1 ];
+    generator = builtins.sshKey;
+  };
+  "host-cert.age" = {
+    publicKeys = [ user1 ];
+    dependencies = [ "ca-key" ];
+    generator = { publics }: "signed by: ${publics."ca-key"}";
+  };
+}
+----
 
 == EXAMPLES
 
@@ -213,27 +390,6 @@ When you change the recipients in `secrets.nix`, you must rekey your secrets:
   *agenix rekey*
 
 Due to randomness in age's encryption, files always change when rekeyed, even if recipients remain the same.
-
-=== Generator Dependencies
-
-When generating secrets with dependencies, agenix automatically determines the correct generation order. If a dependency already has a `.pub` file, it will be used instead of regenerating the dependency.
-
-=== Public Key References
-
-In `secrets.nix`, you can reference another secret's public key by name:
-
-[source,nix]
-----
-{
-  "deploy-key.age" = {
-    publicKeys = [ user1 ];
-    generator = builtins.sshKey;
-  };
-  "config.age" = {
-    publicKeys = [ user1 "deploy-key" ];  # References deploy-key.age.pub
-  };
-}
-----
 
 == SEE ALSO
 
