@@ -205,8 +205,9 @@ fn build_generator_nix_expression(rules_path: &str, file: &str, attempt_arg: &st
             then (_: builtins.randomString 32)
             else null;
           secretsContext = {attempt_arg};
+          callGenerator = gen: if builtins.isFunction gen then gen secretsContext else gen;
           result = if builtins.hasAttr "generator" rules."{file}"
-                   then rules."{file}".generator secretsContext
+                   then callGenerator rules."{file}".generator
                    else if auto != null then auto secretsContext else null;
         in builtins.deepSeq result result)"#,
     )
@@ -361,8 +362,9 @@ fn build_generator_test_expr(rules_path: &str, file: &str, params: &str) -> Stri
         r#"(let 
           rules = import {rules_path};
           hasGenerator = builtins.hasAttr "generator" rules."{file}";
+          gen = rules."{file}".generator;
           result = if hasGenerator 
-                   then rules."{file}".generator {params}
+                   then (if builtins.isFunction gen then gen {params} else gen)
                    else null;
         in builtins.deepSeq result result)"#,
     )
@@ -2001,6 +2003,202 @@ mod tests {
         assert_eq!(output.secret, "custom-fixed-value");
         assert!(output.public.is_none());
 
+        Ok(())
+    }
+
+    // Tests for direct expression generators (non-function generators)
+    // These test that `generator = "value"` works in addition to `generator = {}: "value"`
+
+    #[test]
+    fn test_direct_expression_generator_string() -> Result<()> {
+        // Test that `generator = "string"` works (direct string expression)
+        let rules_content = r#"
+        {
+          "direct-string.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+            generator = "direct-secret-value";
+          };
+        }
+        "#;
+        let temp_file = create_test_rules_file(rules_content)?;
+
+        let result =
+            generate_secret_with_public(temp_file.path().to_str().unwrap(), "direct-string.age")?;
+
+        assert!(result.is_some());
+        let output = result.unwrap();
+        assert_eq!(output.secret, "direct-secret-value");
+        assert!(output.public.is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn test_direct_expression_generator_attrset() -> Result<()> {
+        // Test that `generator = { secret = ...; public = ...; }` works (direct attrset expression)
+        let rules_content = r#"
+        {
+          "direct-attrset.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+            generator = { secret = "my-direct-secret"; public = "my-direct-public"; };
+          };
+        }
+        "#;
+        let temp_file = create_test_rules_file(rules_content)?;
+
+        let result =
+            generate_secret_with_public(temp_file.path().to_str().unwrap(), "direct-attrset.age")?;
+
+        assert!(result.is_some());
+        let output = result.unwrap();
+        assert_eq!(output.secret, "my-direct-secret");
+        assert_eq!(output.public, Some("my-direct-public".to_string()));
+        Ok(())
+    }
+
+    #[test]
+    fn test_direct_expression_generator_ssh_key_call() -> Result<()> {
+        // Test that `generator = builtins.sshKey {}` works (pre-evaluated builtin call)
+        let rules_content = r#"
+        {
+          "direct-ssh-call.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+            generator = builtins.sshKey {};
+          };
+        }
+        "#;
+        let temp_file = create_test_rules_file(rules_content)?;
+
+        let result =
+            generate_secret_with_public(temp_file.path().to_str().unwrap(), "direct-ssh-call.age")?;
+
+        assert!(result.is_some());
+        let output = result.unwrap();
+
+        // Should have generated an SSH keypair
+        assert!(output.secret.starts_with("-----BEGIN PRIVATE KEY-----"));
+        assert!(output.public.is_some());
+        let public = output.public.unwrap();
+        assert!(public.starts_with("ssh-ed25519 "));
+        Ok(())
+    }
+
+    #[test]
+    fn test_direct_expression_generator_random_string_call() -> Result<()> {
+        // Test that `generator = builtins.randomString 32` works (pre-evaluated builtin call)
+        let rules_content = r#"
+        {
+          "direct-random.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+            generator = builtins.randomString 32;
+          };
+        }
+        "#;
+        let temp_file = create_test_rules_file(rules_content)?;
+
+        let result =
+            generate_secret_with_public(temp_file.path().to_str().unwrap(), "direct-random.age")?;
+
+        assert!(result.is_some());
+        let output = result.unwrap();
+        assert_eq!(output.secret.len(), 32);
+        assert!(output.public.is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn test_direct_expression_generator_age_key_call() -> Result<()> {
+        // Test that `generator = builtins.ageKey {}` works (pre-evaluated builtin call)
+        let rules_content = r#"
+        {
+          "direct-age-key.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+            generator = builtins.ageKey {};
+          };
+        }
+        "#;
+        let temp_file = create_test_rules_file(rules_content)?;
+
+        let result =
+            generate_secret_with_public(temp_file.path().to_str().unwrap(), "direct-age-key.age")?;
+
+        assert!(result.is_some());
+        let output = result.unwrap();
+
+        // Should have generated an age x25519 keypair
+        assert!(output.secret.starts_with("AGE-SECRET-KEY-"));
+        assert!(output.public.is_some());
+        let public = output.public.unwrap();
+        assert!(public.starts_with("age1"));
+        Ok(())
+    }
+
+    #[test]
+    fn test_function_generator_still_works_with_empty_arg() -> Result<()> {
+        // Ensure the existing behavior for function generators still works
+        let rules_content = r#"
+        {
+          "func-empty.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+            generator = {}: "from-function";
+          };
+        }
+        "#;
+        let temp_file = create_test_rules_file(rules_content)?;
+
+        let result =
+            generate_secret_with_public(temp_file.path().to_str().unwrap(), "func-empty.age")?;
+
+        assert!(result.is_some());
+        let output = result.unwrap();
+        assert_eq!(output.secret, "from-function");
+        Ok(())
+    }
+
+    #[test]
+    fn test_function_generator_with_secrets_arg() -> Result<()> {
+        // Ensure the existing behavior for function generators with two args still works
+        // Note: This generator accepts secrets/publics but doesn't actually use them,
+        // so it works with empty context
+        let rules_content = r#"
+        {
+          "func-with-arg.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+            generator = { secrets ? {}, publics ? {} }: "works-with-optional-args";
+          };
+        }
+        "#;
+        let temp_file = create_test_rules_file(rules_content)?;
+
+        // This should work because the function accepts optional parameters
+        let result =
+            generate_secret_with_public(temp_file.path().to_str().unwrap(), "func-with-arg.age")?;
+
+        assert!(result.is_some());
+        let output = result.unwrap();
+        assert_eq!(output.secret, "works-with-optional-args");
+        Ok(())
+    }
+
+    #[test]
+    fn test_direct_expression_overrides_auto_generator() -> Result<()> {
+        // A direct expression should override auto-generation based on file name
+        let rules_content = r#"
+        {
+          "my-password.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+            generator = "explicit-password-value";
+          };
+        }
+        "#;
+        let temp_file = create_test_rules_file(rules_content)?;
+
+        let result =
+            generate_secret_with_public(temp_file.path().to_str().unwrap(), "my-password.age")?;
+
+        assert!(result.is_some());
+        let output = result.unwrap();
+        // Should use direct expression, not auto-generated random string
+        assert_eq!(output.secret, "explicit-password-value");
         Ok(())
     }
 

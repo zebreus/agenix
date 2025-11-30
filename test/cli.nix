@@ -38,6 +38,7 @@ let
     "test_generate_secrets.sh"
     "test_generate_public.sh"
     "test_auto_generate.sh"
+    "test_direct_expression_generators.sh"
     "test_temp_cleanup.sh"
     "test_multiple_identities.sh"
     "test_no_system_identities.sh"
