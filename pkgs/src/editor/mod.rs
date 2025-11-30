@@ -60,7 +60,9 @@ pub(crate) fn filter_files(files: &[String], secrets: &[String]) -> Vec<String> 
 }
 
 // Re-export main public functions for backwards compatibility
-pub use edit::{decrypt_file, edit_file, encrypt_file};
+pub use edit::{
+    decrypt_file, edit_file, edit_public_file, encrypt_file, read_public_file, write_public_file,
+};
 pub use generate::generate_secrets;
 pub use list::{check_secrets, list_secrets};
 pub use rekey::rekey_files;
