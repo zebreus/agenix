@@ -250,7 +250,8 @@ pub fn encrypt_file(rules_path: &str, file: &str, force: bool, dry_run: bool) ->
 
 /// Decrypt a file to stdout or another location.
 ///
-/// Validates the secret exists in rules before decrypting.
+/// Validates the secret exists in rules before decrypting using the same
+/// EncryptionContext validation as encrypt operations for unified code paths.
 pub fn decrypt_file(
     rules_path: &str,
     file: &str,
@@ -258,11 +259,8 @@ pub fn decrypt_file(
     identities: &[String],
     no_system_identities: bool,
 ) -> Result<()> {
-    // Validate secret exists in rules by checking it has public keys defined
-    let public_keys = get_public_keys(rules_path, file)?;
-    if public_keys.is_empty() {
-        return Err(anyhow!("No public keys found for file: {file}"));
-    }
+    // Validate secret exists in rules using EncryptionContext (unified with encrypt)
+    let _ = EncryptionContext::new(rules_path, file)?;
 
     verbose!("Decrypting secret: {}", file);
     let output_path = output.unwrap_or("/dev/stdout");
