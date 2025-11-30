@@ -13,19 +13,19 @@ agenix - edit and rekey age secret files
 
 *agenix* [_GLOBAL-OPTIONS_] _COMMAND_ [_COMMAND-OPTIONS_] [_ARGUMENTS_]
 
-*agenix* [*-r* _RULES_] [*-i* _IDENTITY_]... *edit* [*-e* _EDITOR_] [*-f*] _SECRET_
+*agenix* [*-i* _IDENTITY_]... *edit* [*-e* _EDITOR_] [*-f*] _SECRET_
 
-*agenix* [*-r* _RULES_] *encrypt* [*--input* _FILE_] [*-f*] _SECRET_
+*agenix* *encrypt* [*--input* _FILE_] [*-f*] _SECRET_
 
-*agenix* [*-r* _RULES_] [*-i* _IDENTITY_]... *decrypt* [*-o* _FILE_] _SECRET_
+*agenix* [*-i* _IDENTITY_]... *decrypt* [*-o* _FILE_] _SECRET_
 
-*agenix* [*-r* _RULES_] [*-i* _IDENTITY_]... *rekey* [*-p*] [_SECRET_]...
+*agenix* [*-i* _IDENTITY_]... *rekey* [*-p*] [_SECRET_]...
 
-*agenix* [*-r* _RULES_] *generate* [*-f*] [*--no-dependencies*] [_SECRET_]...
+*agenix* *generate* [*-f*] [*--no-dependencies*] [_SECRET_]...
 
-*agenix* [*-r* _RULES_] [*-i* _IDENTITY_]... *list* [*-s*] [_SECRET_]...
+*agenix* [*-i* _IDENTITY_]... *list* [*-s*] [_SECRET_]...
 
-*agenix* [*-r* _RULES_] [*-i* _IDENTITY_]... *check* [_SECRET_]...
+*agenix* [*-i* _IDENTITY_]... *check* [_SECRET_]...
 
 *agenix* *completions* _SHELL_
 
@@ -111,7 +111,7 @@ These options can be used with any command.
   +
   Command options:::
     *-s*, *--status*::::
-      Show status of each secret (ok, missing, or cannot decrypt with available identities).
+      Show status of each secret: *EXISTS* (file exists and can be decrypted), *MISSING* (file does not exist), or *NO_DECRYPT* (file exists but cannot be decrypted with available identities).
 
 *check*, *v* [_SECRET_]...::
   Verify that secrets can be decrypted with the available identities without outputting their content. Returns success if all specified secrets (or all secrets if none specified) can be decrypted.
