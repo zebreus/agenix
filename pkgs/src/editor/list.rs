@@ -155,16 +155,16 @@ pub fn list_secrets(
         secrets.sort_by(|a, b| a.name.cmp(&b.name));
 
         // Print secrets list with status to stdout
-        let stats = print_secrets_with_status(&secrets, detailed);
+        let (ok_count, missing_count, error_count) = print_secrets_with_status(&secrets, detailed);
 
         // Print summary to stderr (suppressed in quiet mode)
         if !is_quiet() {
             eprintln!(
                 "Total: {} secrets ({} ok, {} missing, {} errors)",
                 secrets.len(),
-                stats.0,
-                stats.1,
-                stats.2
+                ok_count,
+                missing_count,
+                error_count
             );
         }
     } else {

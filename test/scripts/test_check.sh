@@ -174,9 +174,9 @@ fi
 # Test 14: Check shows OK for valid secrets
 echo "--- Test 14: OK for valid secrets ---"
 if echo "$check_output" | grep -q "OK"; then
-  echo "OK: Check shows OK for valid secrets"
+  echo "Test passed: Check shows OK for valid secrets"
 else
-  echo "ERROR: Check failed to show OK"
+  echo "Test failed: Check did not show OK"
   exit 1
 fi
 
