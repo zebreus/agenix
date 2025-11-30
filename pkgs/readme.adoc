@@ -11,7 +11,7 @@ agenix - edit and rekey age secret files
 
 == SYNOPSIS
 
-*agenix* [_GLOBAL-OPTIONS_] _COMMAND_ [_COMMAND-OPTIONS_] [_ARGUMENTS_]
+*agenix* [_OPTIONS_] _COMMAND_ [_COMMAND-OPTIONS_] [_ARGUMENTS_]
 
 == DESCRIPTION
 
@@ -19,12 +19,12 @@ agenix - edit and rekey age secret files
 
 Secrets are encrypted using SSH keys or age keys, making it easy to use existing SSH infrastructure for secret management in NixOS configurations.
 
-== COMMANDS
+=== Commands
 
 *edit*, *e* _FILE_::
   Edit a secret file using *$EDITOR*. Creates a new file if it doesn't exist. The file is decrypted to a temporary location, opened in the editor, then re-encrypted when saved.
   +
-  Options:::
+  Command options:::
     *-e*, *--editor* _COMMAND_::::
       Editor command to use. Defaults to *$EDITOR*, or *vi* if unset.
     *-f*, *--force*::::
@@ -33,28 +33,28 @@ Secrets are encrypted using SSH keys or age keys, making it easy to use existing
 *encrypt*, *c* _FILE_::
   Encrypt content from standard input to a secret file. The file must be defined in the rules file.
   +
-  Options:::
+  Command options:::
     *-f*, *--force*::::
       Overwrite an existing secret file.
 
 *decrypt*, *d* _FILE_::
   Decrypt a secret file to standard output or a file.
   +
-  Options:::
+  Command options:::
     *-o*, *--output* _FILE_::::
       Write decrypted output to a file instead of standard output.
 
 *rekey*, *r* [_SECRET_]...::
   Re-encrypt secrets with updated recipients from the rules file. If no secrets are specified, rekeys all secrets defined in the rules file.
   +
-  Options:::
+  Command options:::
     *-p*, *--partial*::::
       Continue rekeying even if some secrets cannot be decrypted. Useful when you only have access to a subset of secrets.
 
 *generate*, *g* [_SECRET_]...::
   Generate secrets using generator functions defined in the rules file. If no secrets are specified, generates all secrets that have generators.
   +
-  Options:::
+  Command options:::
     *-f*, *--force*::::
       Overwrite existing secret files.
     *--no-dependencies*::::
@@ -63,7 +63,7 @@ Secrets are encrypted using SSH keys or age keys, making it easy to use existing
 *list*, *l*::
   List secrets defined in the rules file.
   +
-  Options:::
+  Command options:::
     *-s*, *--status*::::
       Show status of each secret (ok, missing, or cannot decrypt).
     *-d*, *--detailed*::::
@@ -75,7 +75,7 @@ Secrets are encrypted using SSH keys or age keys, making it easy to use existing
 *completions* _SHELL_::
   Generate shell completions. Supported shells: *bash*, *zsh*, *fish*, *elvish*, *powershell*.
 
-== GLOBAL OPTIONS
+== OPTIONS
 
 These options can be used with any command.
 
@@ -103,6 +103,17 @@ These options can be used with any command.
 *-V*, *--version*::
   Print version information.
 
+== EXIT STATUS
+
+*0*::
+  Success.
+
+*1*::
+  General error (for example, file not found, decryption failed).
+
+*2*::
+  Command-line usage error.
+
 == ENVIRONMENT
 
 *EDITOR*::
@@ -114,16 +125,32 @@ These options can be used with any command.
 == FILES
 
 *secrets.nix*::
-  The default rules file defining secrets and their recipients. See *RULES FILE FORMAT* below.
+  The default rules file defining secrets and their recipients. See *Rules file format* in the *NOTES* section.
 
 *~/.ssh/id_ed25519*, *~/.ssh/id_rsa*::
   Default identity files used for decryption.
 
-== RULES FILE FORMAT
+== NOTES
+
+=== Non-interactive mode
+
+When standard input is not a terminal (for example, when piping), the *edit* command reads content from standard input instead of opening an editor. This allows scripted secret creation:
+
+  *echo "secret-value" | agenix edit secret.age*
+
+=== Rekeying
+
+When you change the recipients in `secrets.nix`, you must rekey your secrets:
+
+  *agenix rekey*
+
+Due to randomness in age's encryption, files always change when rekeyed, even if recipients remain the same.
+
+=== Rules file format
 
 The rules file (typically `secrets.nix`) is a Nix expression that evaluates to an attribute set. Each key is a secret filename (usually ending in `.age`) and each value is a secret configuration.
 
-=== Basic Structure
+==== Basic structure
 
 [source,nix]
 ----
@@ -136,7 +163,7 @@ in {
 }
 ----
 
-=== Secret Attributes
+==== Secret attributes
 
 *publicKeys* (required)::
   List of public keys that can decrypt this secret. Supports SSH keys (`ssh-ed25519`, `ssh-rsa`), age keys (`age1...`), and references to other secrets' public keys by name.
@@ -145,12 +172,12 @@ in {
   When `true`, use ASCII-armored format instead of binary. Default: `false`.
 
 *generator* (optional)::
-  A function to generate the secret value. See *GENERATOR FUNCTIONS*.
+  A function to generate the secret value. See *Generator functions*.
 
 *dependencies* (optional)::
   List of other secret names whose values can be accessed in the generator function.
 
-=== Public Key References
+==== Public key references
 
 Instead of a literal public key, you can reference another secret's `.pub` file by name:
 
@@ -167,11 +194,11 @@ Instead of a literal public key, you can reference another secret's `.pub` file 
 
 When encrypting `config.age`, agenix reads `deploy-key.age.pub` and uses that public key.
 
-== GENERATOR FUNCTIONS
+=== Generator functions
 
 Generator functions create secret values automatically when running *agenix generate*.
 
-=== Function Signature
+==== Function signature
 
 Generators are Nix functions that accept an attribute set and return either:
 
@@ -192,13 +219,13 @@ The function argument can contain:
 *{ secrets, publics }*::
   Both of the above.
 
-=== Evaluation
+==== Evaluation
 
 Generators are evaluated by the agenix CLI at generation time, not by Nix itself. The CLI provides additional builtins that are not available in standard Nix.
 
 Dependencies are resolved automatically: if secret A depends on secret B, B is generated first. If B already has a `.pub` file, that file is used without regenerating B.
 
-=== Built-in Generator Functions
+==== Built-in generator functions
 
 The following functions are provided by agenix and available as `builtins.*`:
 
@@ -235,7 +262,7 @@ The following functions are provided by agenix and available as `builtins.*`:
 *builtins.keccak* _STRING_::
   SHA3-256 (Keccak) hash of the string (64 hex characters).
 
-=== Automatic Generator Selection
+==== Automatic generator selection
 
 When no explicit `generator` is specified, agenix selects one based on the filename:
 
@@ -253,7 +280,7 @@ When no explicit `generator` is specified, agenix selects one based on the filen
 |`builtins.randomString 32`
 |===
 
-=== Generator Examples
+==== Generator examples
 
 Simple password:
 
@@ -364,39 +391,6 @@ Generate shell completions:
 
   *agenix completions fish > ~/.config/fish/completions/agenix.fish*
 
-== EXIT STATUS
-
-*0*::
-  Success.
-
-*1*::
-  General error (e.g., file not found, decryption failed).
-
-*2*::
-  Command-line usage error.
-
-== NOTES
-
-=== Non-Interactive Mode
-
-When standard input is not a terminal (e.g., when piping), the *edit* command reads content from standard input instead of opening an editor. This allows scripted secret creation:
-
-  *echo "secret-value" | agenix edit secret.age*
-
-=== Rekeying
-
-When you change the recipients in `secrets.nix`, you must rekey your secrets:
-
-  *agenix rekey*
-
-Due to randomness in age's encryption, files always change when rekeyed, even if recipients remain the same.
-
 == SEE ALSO
 
-*age(1)*, *ssh-keygen(1)*
-
-Project documentation: https://github.com/zebreus/agenix
-
-== AUTHORS
-
-Based on the original agenix by Ryan Mulligan and contributors.
+*age*(1), *ssh-keygen*(1)
