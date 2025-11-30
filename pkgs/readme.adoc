@@ -11,7 +11,23 @@ agenix - edit and rekey age secret files
 
 == SYNOPSIS
 
-*agenix* [_OPTIONS_] _COMMAND_ [_COMMAND-OPTIONS_] [_ARGUMENTS_]
+*agenix* [_GLOBAL-OPTIONS_] _COMMAND_ [_COMMAND-OPTIONS_] [_ARGUMENTS_]
+
+*agenix* [*-r* _RULES_] [*-i* _IDENTITY_]... *edit* [*-e* _EDITOR_] [*-f*] _SECRET_
+
+*agenix* [*-r* _RULES_] *encrypt* [*--input* _FILE_] [*-f*] _SECRET_
+
+*agenix* [*-r* _RULES_] [*-i* _IDENTITY_]... *decrypt* [*-o* _FILE_] _SECRET_
+
+*agenix* [*-r* _RULES_] [*-i* _IDENTITY_]... *rekey* [*-p*] [_SECRET_]...
+
+*agenix* [*-r* _RULES_] *generate* [*-f*] [*--no-dependencies*] [_SECRET_]...
+
+*agenix* [*-r* _RULES_] [*-i* _IDENTITY_]... *list* [*-s*] [_SECRET_]...
+
+*agenix* [*-r* _RULES_] [*-i* _IDENTITY_]... *check* [_SECRET_]...
+
+*agenix* *completions* _SHELL_
 
 == DESCRIPTION
 
@@ -19,63 +35,7 @@ agenix - edit and rekey age secret files
 
 Secrets are encrypted using SSH keys or age keys, making it easy to use existing SSH infrastructure for secret management in NixOS configurations.
 
-=== Commands
-
-*edit*, *e* _FILE_::
-  Edit a secret file using *$EDITOR*. Creates a new file if it doesn't exist. The file is decrypted to a temporary location, opened in the editor, then re-encrypted when saved.
-  +
-  Command options:::
-    *-e*, *--editor* _COMMAND_::::
-      Editor command to use. Defaults to *$EDITOR*, or *vi* if unset.
-    *-f*, *--force*::::
-      Open an empty editor if decryption fails. Useful for recreating a secret when you no longer have access to decrypt it.
-
-*encrypt*, *c* _FILE_::
-  Encrypt content from standard input to a secret file. The file must be defined in the rules file.
-  +
-  Command options:::
-    *-f*, *--force*::::
-      Overwrite an existing secret file.
-
-*decrypt*, *d* _FILE_::
-  Decrypt a secret file to standard output or a file.
-  +
-  Command options:::
-    *-o*, *--output* _FILE_::::
-      Write decrypted output to a file instead of standard output.
-
-*rekey*, *r* [_SECRET_]...::
-  Re-encrypt secrets with updated recipients from the rules file. If no secrets are specified, rekeys all secrets defined in the rules file.
-  +
-  Command options:::
-    *-p*, *--partial*::::
-      Continue rekeying even if some secrets cannot be decrypted. Useful when you only have access to a subset of secrets.
-
-*generate*, *g* [_SECRET_]...::
-  Generate secrets using generator functions defined in the rules file. If no secrets are specified, generates all secrets that have generators.
-  +
-  Command options:::
-    *-f*, *--force*::::
-      Overwrite existing secret files.
-    *--no-dependencies*::::
-      Do not automatically generate dependencies of specified secrets.
-
-*list*, *l*::
-  List secrets defined in the rules file.
-  +
-  Command options:::
-    *-s*, *--status*::::
-      Show status of each secret (ok, missing, or cannot decrypt).
-    *-d*, *--detailed*::::
-      Show detailed information about each secret including public keys.
-
-*check*, *v* [_SECRET_]...::
-  Verify that secrets can be decrypted without outputting their content. Returns success if all specified secrets (or all secrets if none specified) can be decrypted.
-
-*completions* _SHELL_::
-  Generate shell completions. Supported shells: *bash*, *zsh*, *fish*, *elvish*, *powershell*.
-
-== OPTIONS
+== GLOBAL OPTIONS
 
 These options can be used with any command.
 
@@ -83,7 +43,7 @@ These options can be used with any command.
   Path to the Nix rules file defining secrets and their recipients. Default: `./secrets.nix`. Can also be set via the *RULES* environment variable.
 
 *-i*, *--identity* _KEY_::
-  Identity (private key) to use when decrypting. Can be specified multiple times. Identities are tried in order: explicitly specified first, then default system identities (*~/.ssh/id_ed25519*, *~/.ssh/id_rsa*).
+  Identities to use when decrypting. Can be specified multiple times. Identities are tried in order: explicitly specified first, then default system identities (*~/.ssh/id_ed25519*, *~/.ssh/id_rsa*).
 
 *--no-system-identities*::
   Do not use default system identities. Only use identities specified with *-i*.
@@ -102,6 +62,62 @@ These options can be used with any command.
 
 *-V*, *--version*::
   Print version information.
+
+== COMMANDS
+
+*edit*, *e* _SECRET_::
+  Edit a secret file using *$EDITOR*. Creates a new file if it doesn't exist. The file is decrypted to a temporary location, opened in the editor, then re-encrypted when saved. If decryption fails with the available identities, use *--force* to start with empty content.
+  +
+  Command options:::
+    *-e*, *--editor* _COMMAND_::::
+      Editor command to use. Defaults to *$EDITOR*, or *vi* if unset.
+    *-f*, *--force*::::
+      Open an empty editor if decryption fails with the available identities. Useful for recreating a secret when you no longer have access to decrypt it.
+
+*encrypt*, *c* _SECRET_::
+  Encrypt content from standard input (or a file) to a secret file. The secret must be defined in the rules file.
+  +
+  Command options:::
+    *--input* _FILE_::::
+      Read content from a file instead of standard input.
+    *-f*, *--force*::::
+      Overwrite an existing secret file.
+
+*decrypt*, *d* _SECRET_::
+  Decrypt a secret file to standard output or a file. Fails if the secret cannot be decrypted with the available identities.
+  +
+  Command options:::
+    *-o*, *--output* _FILE_::::
+      Write decrypted output to a file instead of standard output.
+
+*rekey*, *r* [_SECRET_]...::
+  Re-encrypt secrets with updated recipients from the rules file. If no secrets are specified, rekeys all secrets. Without *--partial*, fails without modifying any files if any requested secret cannot be decrypted with the available identities.
+  +
+  Command options:::
+    *-p*, *--partial*::::
+      Skip secrets that cannot be decrypted instead of failing. Only decryptable secrets are rekeyed.
+
+*generate*, *g* [_SECRET_]...::
+  Generate secrets using generator functions defined in the rules file. If no secrets are specified, generates all secrets that have generators.
+  +
+  Command options:::
+    *-f*, *--force*::::
+      Overwrite existing secret files.
+    *--no-dependencies*::::
+      Do not automatically generate dependencies of specified secrets.
+
+*list*, *l* [_SECRET_]...::
+  List secrets defined in the rules file. If secrets are specified, lists only those secrets.
+  +
+  Command options:::
+    *-s*, *--status*::::
+      Show status of each secret (ok, missing, or cannot decrypt with available identities).
+
+*check*, *v* [_SECRET_]...::
+  Verify that secrets can be decrypted with the available identities without outputting their content. Returns success if all specified secrets (or all secrets if none specified) can be decrypted.
+
+*completions* _SHELL_::
+  Generate shell completions. Supported shells: *bash*, *zsh*, *fish*, *elvish*, *powershell*.
 
 == EXIT STATUS
 
@@ -335,6 +351,10 @@ Encrypt from standard input:
 
   *cat plaintext.txt | agenix encrypt --force secret.age*
 
+Encrypt from a file:
+
+  *agenix encrypt --input plaintext.txt secret.age*
+
 Decrypt to standard output:
 
   *agenix decrypt secret.age*
@@ -351,6 +371,10 @@ Re-encrypt specific secrets:
 
   *agenix rekey secret1.age secret2.age*
 
+Re-encrypt only secrets you can decrypt:
+
+  *agenix rekey --partial*
+
 Generate all secrets with generators:
 
   *agenix generate*
@@ -366,6 +390,10 @@ Generate specific secret and its dependencies:
 List all defined secrets:
 
   *agenix list*
+
+List specific secrets:
+
+  *agenix list secret1.age secret2.age*
 
 List secrets with status:
 
