@@ -1,6 +1,8 @@
 {
   lib,
   rustPlatform,
+  installShellFiles,
+  asciidoctor,
 }:
 let
   bin = "${placeholder "out"}/bin/agenix";
@@ -15,6 +17,24 @@ rustPlatform.buildRustPackage rec {
       "snix-eval-0.1.0" = "sha256-Y/nbqO7LbQA83K/FD093D6MdVuAk/9JqiccPImNWumw=";
     };
   };
+
+  nativeBuildInputs = [
+    installShellFiles
+    asciidoctor
+  ];
+
+  postInstall = ''
+    # Generate and install shell completions
+    installShellCompletion --cmd agenix \
+      --bash <($out/bin/agenix completions bash) \
+      --zsh <($out/bin/agenix completions zsh) \
+      --fish <($out/bin/agenix completions fish)
+
+    # Generate and install manpage
+    asciidoctor -b manpage -o agenix.1 ./readme.adoc
+    installManPage agenix.1
+  '';
+
   doInstallCheck = true;
 
   postInstallCheck = ''
