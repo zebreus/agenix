@@ -410,19 +410,7 @@ fn auto_detect_dependencies(rules_path: &str, file: &str) -> Result<Vec<String>>
     let mut pub_key_refs = get_public_key_references(rules_path, file, &all_files);
 
     // Remove self-references from publicKeys refs
-    let file_normalized = if file.ends_with(".age") {
-        file.to_string()
-    } else {
-        format!("{}.age", file)
-    };
-    let file_basename = std::path::Path::new(
-        file_normalized
-            .strip_suffix(".age")
-            .unwrap_or(&file_normalized),
-    )
-    .file_name()
-    .and_then(|n| n.to_str())
-    .unwrap_or(&file_normalized);
+    let file_basename = extract_basename(file);
     pub_key_refs.retain(|d| d != file_basename);
 
     // Try calling generator with empty params
