@@ -1,0 +1,448 @@
+= agenix Module Reference
+:toc:
+:toclevels: 2
+:sectnums:
+
+This document describes the NixOS and Home Manager modules provided by agenix for managing age-encrypted secrets.
+
+== Concepts
+
+=== Secret Lifecycle
+
+. **Encryption**: Secrets are encrypted using the `agenix` CLI with public keys defined in `secrets.nix`
+. **Storage**: Encrypted `.age` files are stored in the Nix store alongside your configuration
+. **Decryption**: At system activation, secrets are decrypted using the system's SSH host keys
+. **Access**: Decrypted secrets are available at runtime paths (default: `/run/agenix/`)
+
+=== Identity Keys
+
+The module uses SSH host keys to decrypt secrets. By default:
+
+* **NixOS**: Uses keys from `services.openssh.hostKeys` (ed25519 and rsa types)
+* **Darwin**: Uses `/etc/ssh/ssh_host_ed25519_key` and `/etc/ssh/ssh_host_rsa_key`
+* **Home Manager**: Uses `~/.ssh/id_ed25519` and `~/.ssh/id_rsa`
+
+=== Secret Storage
+
+Secrets are decrypted to a ramfs/tmpfs mount point, then symlinked to their final paths:
+
+* **Mount point** (`secretsMountPoint`): Where encrypted secrets are decrypted
+* **Secrets directory** (`secretsDir`): Where symlinks to decrypted secrets are created
+* **Secret path** (`path`): Final location where the secret is accessible
+
+=== Generations
+
+The module uses a generation system for atomic updates. When secrets change:
+
+. A new generation directory is created
+. Secrets are decrypted to the new generation
+. The secrets directory symlink is atomically updated
+. Old generations are cleaned up
+
+This ensures no partial updates and allows cleanup of removed secrets.
+
+== NixOS Module
+
+Import with `agenix.nixosModules.default`.
+
+=== age.secrets
+
+Attribute set of secrets to decrypt. Each key is the secret name, each value is the secret configuration.
+
+[source,nix]
+----
+{
+  age.secrets.my-secret.file = ./secrets/my-secret.age;
+}
+----
+
+=== age.secrets.<name>.file
+
+**Required.** Path to the encrypted `.age` file.
+
+[source,nix]
+----
+{
+  age.secrets.database-password.file = ../secrets/db-pass.age;
+}
+----
+
+=== age.secrets.<name>.path
+
+Path where the decrypted secret is accessible. Default: `/run/agenix/<name>`.
+
+[source,nix]
+----
+{
+  age.secrets.nginx-cert = {
+    file = ./secrets/nginx.crt.age;
+    path = "/etc/nginx/ssl/cert.pem";
+  };
+}
+----
+
+For most uses, reference the path through the module:
+
+[source,nix]
+----
+{
+  services.postgresql.settings.ssl_cert_file = config.age.secrets.pg-cert.path;
+}
+----
+
+IMPORTANT: Never use `builtins.readFile` on a secret path. This copies the cleartext to the Nix store, defeating the purpose of encryption.
+
+=== age.secrets.<name>.name
+
+Name of the decrypted file in the secrets directory. Default: the attribute name.
+
+[source,nix]
+----
+{
+  age.secrets.my-secret = {
+    name = "actual-filename";  # Creates /run/agenix/actual-filename
+    file = ./secrets/my-secret.age;
+  };
+}
+----
+
+=== age.secrets.<name>.mode
+
+File permissions in chmod format. Default: `"0400"` (owner read-only).
+
+[source,nix]
+----
+{
+  age.secrets.shared-secret = {
+    file = ./secrets/shared.age;
+    mode = "0440";  # Owner and group can read
+  };
+}
+----
+
+=== age.secrets.<name>.owner
+
+Username of the file owner. Default: `"0"` (root).
+
+[source,nix]
+----
+{
+  age.secrets.app-secret = {
+    file = ./secrets/app.age;
+    owner = "myapp";
+  };
+}
+----
+
+=== age.secrets.<name>.group
+
+Group name of the file. Default: derived from owner's primary group.
+
+[source,nix]
+----
+{
+  age.secrets.nginx-key = {
+    file = ./secrets/nginx.key.age;
+    mode = "0440";
+    owner = "nginx";
+    group = "nginx";
+  };
+}
+----
+
+=== age.secrets.<name>.symlink
+
+Whether to create a symlink in `secretsDir`. Default: `true`.
+
+When `false`, the secret is copied directly to `path` instead of symlinking. Use this for applications that don't follow symlinks (e.g., some Java applications).
+
+[source,nix]
+----
+{
+  age.secrets.elasticsearch-config = {
+    file = ./secrets/es.conf.age;
+    symlink = false;  # Copy instead of symlink
+  };
+}
+----
+
+NOTE: When `symlink = false`, you are responsible for cleaning up old secrets if you remove them from your configuration.
+
+=== age.secrets.<name>.public.path
+
+**Read-only.** Path to the `.pub` file if it exists. This is created by generators that return both `secret` and `public` values.
+
+[source,nix]
+----
+{
+  # If deploy-key.age.pub exists:
+  users.users.deploy.openssh.authorizedKeys.keys = [
+    (builtins.readFile config.age.secrets.deploy-key.public.path)
+  ];
+}
+----
+
+=== age.secrets.<name>.public.content
+
+**Read-only.** Content of the `.pub` file if it exists.
+
+[source,nix]
+----
+{
+  # Include the public key directly in configuration
+  services.openssh.extraConfig = ''
+    TrustedUserCAKeys ${config.age.secrets.ca-key.public.path}
+  '';
+}
+----
+
+=== age.ageBin
+
+Path to the age binary. Default: `"${pkgs.age}/bin/age"`.
+
+[source,nix]
+----
+{
+  # Use rage instead of age
+  age.ageBin = "${pkgs.rage}/bin/rage";
+}
+----
+
+=== age.identityPaths
+
+List of paths to identity files (private keys) for decryption. Default: SSH host keys from `services.openssh.hostKeys`.
+
+[source,nix]
+----
+{
+  # Use a persistent key for impermanence setups
+  age.identityPaths = [ "/persist/etc/ssh/ssh_host_ed25519_key" ];
+}
+----
+
+WARNING: Use string paths, not Nix paths. Using Nix paths (`../path`) would copy your private key to the Nix store.
+
+=== age.secretsDir
+
+Directory where secret symlinks are created. Default: `/run/agenix`.
+
+[source,nix]
+----
+{
+  age.secretsDir = "/run/secrets";
+}
+----
+
+=== age.secretsMountPoint
+
+Directory where secrets are decrypted before symlinking. Default: `/run/agenix.d`.
+
+This must be a non-empty string without a trailing slash.
+
+[source,nix]
+----
+{
+  age.secretsMountPoint = "/run/agenix-generations";
+}
+----
+
+== Home Manager Module
+
+Import with `agenix.homeManagerModules.default`.
+
+The Home Manager module provides user-scoped secrets, decrypted with user SSH keys instead of system host keys.
+
+=== Differences from NixOS Module
+
+[cols="1,1,1"]
+|===
+|Option |NixOS Module |Home Manager Module
+
+|`age.ageBin`
+|String path
+|`age.package` (package)
+
+|`age.secrets.<name>.owner`
+|Supported
+|Not available (always current user)
+
+|`age.secrets.<name>.group`
+|Supported
+|Not available
+
+|`age.secretsDir` default
+|`/run/agenix`
+|`$XDG_RUNTIME_DIR/agenix` (Linux) or `$TMPDIR/agenix` (Darwin)
+
+|`age.secretsMountPoint` default
+|`/run/agenix.d`
+|`$XDG_RUNTIME_DIR/agenix.d` (Linux) or `$TMPDIR/agenix.d` (Darwin)
+
+|`age.identityPaths` default
+|SSH host keys
+|`~/.ssh/id_ed25519`, `~/.ssh/id_rsa`
+|===
+
+=== age.package
+
+The age package to use for decryption. Default: `pkgs.age`.
+
+[source,nix]
+----
+{
+  age.package = pkgs.rage;
+}
+----
+
+=== age.secrets
+
+Same as NixOS module, but without `owner` and `group` options.
+
+[source,nix]
+----
+{
+  age.secrets.my-token = {
+    file = ./secrets/token.age;
+    mode = "0600";
+  };
+}
+----
+
+=== age.identityPaths
+
+List of identity file paths. Default: `~/.ssh/id_ed25519` and `~/.ssh/id_rsa`.
+
+[source,nix]
+----
+{
+  age.identityPaths = [
+    "${config.home.homeDirectory}/.ssh/my_key"
+  ];
+}
+----
+
+=== age.secretsDir
+
+Directory for secret symlinks. Default varies by platform:
+
+* Linux: `$XDG_RUNTIME_DIR/agenix`
+* Darwin: `$(getconf DARWIN_USER_TEMP_DIR)/agenix`
+
+[source,nix]
+----
+{
+  age.secretsDir = "${config.home.homeDirectory}/.secrets";
+}
+----
+
+=== age.secretsMountPoint
+
+Directory for decrypted secrets before symlinking. Default varies by platform:
+
+* Linux: `$XDG_RUNTIME_DIR/agenix.d`
+* Darwin: `$(getconf DARWIN_USER_TEMP_DIR)/agenix.d`
+
+== Examples
+
+=== Basic NixOS Configuration
+
+[source,nix]
+----
+{ config, ... }: {
+  age.secrets.db-password.file = ./secrets/db-password.age;
+
+  services.postgresql = {
+    enable = true;
+    authentication = ''
+      local all all peer
+    '';
+  };
+
+  # Use the secret path in service configuration
+  systemd.services.myapp = {
+    serviceConfig = {
+      EnvironmentFile = config.age.secrets.db-password.path;
+    };
+  };
+}
+----
+
+=== Multiple Secrets with Permissions
+
+[source,nix]
+----
+{ config, ... }: {
+  age.secrets = {
+    nginx-cert = {
+      file = ./secrets/nginx.crt.age;
+      owner = "nginx";
+      group = "nginx";
+      mode = "0400";
+    };
+    nginx-key = {
+      file = ./secrets/nginx.key.age;
+      owner = "nginx";
+      group = "nginx";
+      mode = "0400";
+    };
+  };
+
+  services.nginx = {
+    enable = true;
+    virtualHosts."example.com" = {
+      sslCertificate = config.age.secrets.nginx-cert.path;
+      sslCertificateKey = config.age.secrets.nginx-key.path;
+    };
+  };
+}
+----
+
+=== Using Generated Public Keys
+
+[source,nix]
+----
+{ config, ... }: {
+  age.secrets.deploy-key.file = ./secrets/deploy-key.age;
+
+  # If deploy-key.age.pub exists, use it
+  users.users.deploy.openssh.authorizedKeys.keys =
+    lib.optional (config.age.secrets.deploy-key.public.content != null)
+      config.age.secrets.deploy-key.public.content;
+}
+----
+
+=== Home Manager User Secrets
+
+[source,nix]
+----
+{ config, ... }: {
+  age.secrets = {
+    github-token = {
+      file = ./secrets/github-token.age;
+    };
+    gpg-key = {
+      file = ./secrets/gpg.key.age;
+      path = "${config.home.homeDirectory}/.gnupg/private-keys-v1.d/key.key";
+    };
+  };
+
+  programs.git.extraConfig = {
+    credential.helper = "store --file=${config.age.secrets.github-token.path}";
+  };
+}
+----
+
+=== Impermanence Setup
+
+[source,nix]
+----
+{ config, ... }: {
+  # Use persistent SSH keys
+  age.identityPaths = [
+    "/persist/etc/ssh/ssh_host_ed25519_key"
+    "/persist/etc/ssh/ssh_host_rsa_key"
+  ];
+
+  age.secrets.my-secret.file = ./secrets/my-secret.age;
+}
+----
