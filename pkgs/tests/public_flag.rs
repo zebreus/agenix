@@ -956,3 +956,50 @@ fn test_edit_public_works_with_empty_public_keys() {
     let file_content = fs::read_to_string(&pub_path).unwrap();
     assert_eq!(file_content, new_content);
 }
+
+#[test]
+fn test_public_operations_work_with_minimal_config() {
+    // This test uses just publicKeys = [] without hasSecret/hasPublic attributes
+    // to verify the minimal configuration case works
+    let temp_dir = tempdir().unwrap();
+    let path = temp_dir.path().to_str().unwrap();
+    let secret_path = format!("{}/minimal.age", path);
+    let pub_path = format!("{}/minimal.age.pub", path);
+
+    // Create rules file with only empty publicKeys (no hasSecret/hasPublic attributes)
+    let rules = format!(r#"{{ "{}" = {{ publicKeys = []; }}; }}"#, secret_path);
+    let temp_rules = create_rules_file(&rules);
+
+    let pub_content = "minimal-config-public-key";
+
+    // Run encrypt with --public
+    let mut child = Command::new(agenix_bin())
+        .args([
+            "encrypt",
+            "--public",
+            "--secrets-nix",
+            temp_rules.path().to_str().unwrap(),
+            &secret_path,
+        ])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("Failed to spawn agenix");
+
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin.write_all(pub_content.as_bytes()).unwrap();
+    }
+
+    let output = child.wait_with_output().expect("Failed to wait for agenix");
+
+    assert!(
+        output.status.success(),
+        "encrypt --public should succeed with minimal config, stderr: {:?}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // Verify the public file was created
+    let file_content = fs::read_to_string(&pub_path).unwrap();
+    assert_eq!(file_content, pub_content);
+}
