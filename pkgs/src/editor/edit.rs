@@ -318,14 +318,30 @@ fn run_editor_workflow(
     let filename = get_filename(target_file)?;
     let (_temp_dir, temp_file) = create_temp_cleartext(filename)?;
 
-    // Load existing content
-    if let Some(content) = load_content()? {
-        fs::write(&temp_file, content).context("Failed to write to temporary file")?;
-    } else if !force {
-        return Err(anyhow!(
-            "File does not exist: {}\nUse --force to create a new file",
-            target_file
-        ));
+    // Load existing content if file exists, otherwise start with empty content
+    match load_content() {
+        Ok(Some(content)) => {
+            fs::write(&temp_file, content).context("Failed to write to temporary file")?;
+        }
+        Ok(None) => {
+            // File doesn't exist - start with empty content (no --force needed to create new files)
+        }
+        Err(e) => {
+            if force {
+                log!(
+                    "Warning: Could not read {}, starting with empty content: {:#}",
+                    target_file,
+                    e
+                );
+            } else {
+                return Err(e).with_context(|| {
+                    format!(
+                        "Failed to read {}. Use --force to start with empty content",
+                        target_file
+                    )
+                });
+            }
+        }
     }
 
     // Create backup for change detection
