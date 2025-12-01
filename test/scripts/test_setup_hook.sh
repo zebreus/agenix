@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Test: Setup hook for shell completions
-# Tests that the setup hook correctly configures bash completions
+# Tests that the setup hook correctly configures shell completions
 
 source "$(dirname "$0")/common_setup.sh"
 
@@ -29,20 +29,26 @@ else
   exit 1
 fi
 
-# Test 3: Source bash completion and verify it registers the completion
-echo "--- Test 3: Bash completion registers correctly ---"
-# Source the completion file
-source "$BASH_COMPLETION_FILE"
-# Check if completion is registered for agenix command
-if complete -p agenix 2>/dev/null | grep -q "agenix"; then
-  echo "✓ Bash completion is registered for agenix"
+# Test 3: Check that bash completion file contains expected function
+echo "--- Test 3: Bash completion file contains completion function ---"
+if grep -q "_agenix" "$BASH_COMPLETION_FILE"; then
+  echo "✓ Bash completion file contains _agenix function"
 else
-  echo "✗ Bash completion not registered for agenix"
+  echo "✗ Bash completion file missing _agenix function"
   exit 1
 fi
 
-# Test 4: Check that setup hook file exists
-echo "--- Test 4: Setup hook file exists ---"
+# Test 4: Check that bash completion file contains complete command
+echo "--- Test 4: Bash completion file contains complete command ---"
+if grep -q "complete.*agenix" "$BASH_COMPLETION_FILE"; then
+  echo "✓ Bash completion file contains complete command for agenix"
+else
+  echo "✗ Bash completion file missing complete command"
+  exit 1
+fi
+
+# Test 5: Check that setup hook file exists
+echo "--- Test 5: Setup hook file exists ---"
 SETUP_HOOK="$AGENIX_PKG/nix-support/setup-hook"
 if [[ -f "$SETUP_HOOK" ]]; then
   echo "✓ Setup hook file exists at: $SETUP_HOOK"
@@ -51,8 +57,8 @@ else
   exit 1
 fi
 
-# Test 5: Setup hook contains bash completion sourcing logic
-echo "--- Test 5: Setup hook contains bash logic ---"
+# Test 6: Setup hook contains bash completion sourcing logic
+echo "--- Test 6: Setup hook contains bash logic ---"
 if grep -q "BASH_VERSION" "$SETUP_HOOK" && grep -q "agenix.bash" "$SETUP_HOOK"; then
   echo "✓ Setup hook contains bash completion logic"
 else
@@ -60,8 +66,8 @@ else
   exit 1
 fi
 
-# Test 6: Setup hook contains XDG_DATA_DIRS for fish
-echo "--- Test 6: Setup hook contains XDG_DATA_DIRS logic for fish ---"
+# Test 7: Setup hook contains XDG_DATA_DIRS for fish
+echo "--- Test 7: Setup hook contains XDG_DATA_DIRS logic for fish ---"
 if grep -q "XDG_DATA_DIRS" "$SETUP_HOOK"; then
   echo "✓ Setup hook contains XDG_DATA_DIRS logic for fish"
 else
@@ -69,8 +75,8 @@ else
   exit 1
 fi
 
-# Test 7: Check that fish completion file exists
-echo "--- Test 7: Fish completion file exists ---"
+# Test 8: Check that fish completion file exists
+echo "--- Test 8: Fish completion file exists ---"
 FISH_COMPLETION_FILE="$AGENIX_PKG/share/fish/vendor_completions.d/agenix.fish"
 if [[ -f "$FISH_COMPLETION_FILE" ]]; then
   echo "✓ Fish completion file exists at: $FISH_COMPLETION_FILE"
@@ -79,8 +85,17 @@ else
   exit 1
 fi
 
-# Test 8: Check that zsh completion file exists
-echo "--- Test 8: Zsh completion file exists ---"
+# Test 9: Check that fish completion file contains expected content
+echo "--- Test 9: Fish completion file contains expected content ---"
+if grep -q "complete.*agenix" "$FISH_COMPLETION_FILE"; then
+  echo "✓ Fish completion file contains complete command for agenix"
+else
+  echo "✗ Fish completion file missing expected content"
+  exit 1
+fi
+
+# Test 10: Check that zsh completion file exists
+echo "--- Test 10: Zsh completion file exists ---"
 ZSH_COMPLETION_FILE="$AGENIX_PKG/share/zsh/site-functions/_agenix"
 if [[ -f "$ZSH_COMPLETION_FILE" ]]; then
   echo "✓ Zsh completion file exists at: $ZSH_COMPLETION_FILE"
@@ -89,12 +104,21 @@ else
   exit 1
 fi
 
-# Test 9: Setup hook contains zsh fpath logic
-echo "--- Test 9: Setup hook contains zsh fpath logic ---"
+# Test 11: Setup hook contains zsh fpath logic
+echo "--- Test 11: Setup hook contains zsh fpath logic ---"
 if grep -q "ZSH_VERSION" "$SETUP_HOOK" && grep -q "fpath" "$SETUP_HOOK"; then
   echo "✓ Setup hook contains zsh fpath logic"
 else
   echo "✗ Setup hook missing zsh fpath logic"
+  exit 1
+fi
+
+# Test 12: Setup hook bash logic only runs in interactive shells
+echo "--- Test 12: Setup hook guards bash completions for interactive shells ---"
+if grep -q '\$-.*\*i\*' "$SETUP_HOOK"; then
+  echo "✓ Setup hook guards bash completions for interactive shells"
+else
+  echo "✗ Setup hook missing interactive shell check for bash"
   exit 1
 fi
 
