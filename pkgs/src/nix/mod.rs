@@ -179,9 +179,18 @@ pub fn should_armor(rules_path: &str, file: &str) -> Result<bool> {
 /// can depend on without actually encrypting any data.
 #[derive(Debug, Clone, PartialEq)]
 pub struct GeneratorOutput {
-    /// The secret content to encrypt. Optional when generator only produces public output.
+    /// The secret content to encrypt into an age-encrypted `.age` file.
+    ///
+    /// When `None`, no encrypted file is created (public-only generator).
+    /// This is useful for generating metadata that other secrets can depend on.
     pub secret: Option<String>,
-    /// The public content to write to a .pub file. Optional.
+
+    /// The public content to write to a `.pub` file.
+    ///
+    /// When `Some`, a `.age.pub` file is created containing this content.
+    /// This is typically used for SSH public keys, age public keys, or
+    /// other metadata that should be available without decryption.
+    /// When `None`, no `.pub` file is created.
     pub public: Option<String>,
 }
 
