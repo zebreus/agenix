@@ -45,6 +45,10 @@ fi
 
 # Test 2: Dependency needs public but generator only provides secret
 echo "--- Test 2: Dependency needs public but only secret available ---"
+
+# Clean up any leftover files from previous tests
+rm -f "$TMPDIR/dep-edge-cases/"*.age "$TMPDIR/dep-edge-cases/"*.pub
+
 cat > "secret-only-dep.nix" << 'EOF'
 {
   "base.age" = {
@@ -78,6 +82,10 @@ fi
 
 # Test 3: Empty attrset generator fails
 echo "--- Test 3: Empty attrset generator fails ---"
+
+# Clean up any leftover files from previous tests
+rm -f "$TMPDIR/dep-edge-cases/"*.age "$TMPDIR/dep-edge-cases/"*.pub
+
 cat > "empty-attrset.nix" << 'EOF'
 {
   "empty.age" = {
@@ -106,6 +114,10 @@ fi
 
 # Test 4: Unknown key only fails
 echo "--- Test 4: Unknown key only fails ---"
+
+# Clean up any leftover files from previous tests
+rm -f "$TMPDIR/dep-edge-cases/"*.age "$TMPDIR/dep-edge-cases/"*.pub
+
 cat > "unknown-key.nix" << 'EOF'
 {
   "unknown.age" = {
@@ -134,6 +146,10 @@ fi
 
 # Test 5: Valid public-only with dependent succeeds
 echo "--- Test 5: Valid public-only chain succeeds ---"
+
+# Clean up any leftover files from previous tests
+rm -f "$TMPDIR/dep-edge-cases/"*.age "$TMPDIR/dep-edge-cases/"*.pub
+
 cat > "valid-public-chain.nix" << 'EOF'
 {
   "meta.age" = {

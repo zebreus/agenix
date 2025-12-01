@@ -54,6 +54,8 @@ let
     "test_verbose_quiet.sh"
     "test_edit_stdin_tty.sh"
     "test_missing_rules_hint.sh"
+    "test_generator_output_variations.sh"
+    "test_generator_dependency_errors.sh"
   ];
 
   # Get all test_*.sh files in the scripts directory
