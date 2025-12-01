@@ -813,3 +813,146 @@ fn test_edit_public_produces_dry_run_output() {
         stderr
     );
 }
+
+// ============================================
+// EMPTY PUBLIC KEYS TESTS (regression tests)
+// ============================================
+
+#[test]
+fn test_encrypt_public_works_with_empty_public_keys() {
+    let temp_dir = tempdir().unwrap();
+    let path = temp_dir.path().to_str().unwrap();
+    let secret_path = format!("{}/public-only.age", path);
+    let pub_path = format!("{}/public-only.age.pub", path);
+
+    // Create rules file with empty publicKeys (public-only secret)
+    let rules = format!(
+        r#"{{ "{}" = {{ publicKeys = []; hasSecret = false; hasPublic = true; }}; }}"#,
+        secret_path
+    );
+    let temp_rules = create_rules_file(&rules);
+
+    let pub_content = "public-key-for-empty-test";
+
+    // Run encrypt with --public - this should work even with empty publicKeys
+    let mut child = Command::new(agenix_bin())
+        .args([
+            "encrypt",
+            "--public",
+            "--secrets-nix",
+            temp_rules.path().to_str().unwrap(),
+            &secret_path,
+        ])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("Failed to spawn agenix");
+
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin.write_all(pub_content.as_bytes()).unwrap();
+    }
+
+    let output = child.wait_with_output().expect("Failed to wait for agenix");
+
+    assert!(
+        output.status.success(),
+        "encrypt --public should succeed with empty publicKeys, stderr: {:?}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // Verify the public file was created
+    let file_content = fs::read_to_string(&pub_path).unwrap();
+    assert_eq!(file_content, pub_content);
+}
+
+#[test]
+fn test_decrypt_public_works_with_empty_public_keys() {
+    let temp_dir = tempdir().unwrap();
+    let path = temp_dir.path().to_str().unwrap();
+    let secret_path = format!("{}/public-only.age", path);
+    let pub_path = format!("{}/public-only.age.pub", path);
+
+    // Create rules file with empty publicKeys
+    let rules = format!(
+        r#"{{ "{}" = {{ publicKeys = []; hasSecret = false; hasPublic = true; }}; }}"#,
+        secret_path
+    );
+    let temp_rules = create_rules_file(&rules);
+
+    // Create the public file
+    let pub_content = "public-key-for-decrypt-test";
+    fs::write(&pub_path, pub_content).unwrap();
+
+    // Run decrypt with --public - this should work even with empty publicKeys
+    let output = Command::new(agenix_bin())
+        .args([
+            "decrypt",
+            "--public",
+            "--secrets-nix",
+            temp_rules.path().to_str().unwrap(),
+            &secret_path,
+        ])
+        .output()
+        .expect("Failed to execute agenix");
+
+    assert!(
+        output.status.success(),
+        "decrypt --public should succeed with empty publicKeys, stderr: {:?}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert_eq!(stdout.trim(), pub_content.trim());
+}
+
+#[test]
+fn test_edit_public_works_with_empty_public_keys() {
+    let temp_dir = tempdir().unwrap();
+    let path = temp_dir.path().to_str().unwrap();
+    let secret_path = format!("{}/public-only.age", path);
+    let pub_path = format!("{}/public-only.age.pub", path);
+
+    // Create rules file with empty publicKeys
+    let rules = format!(
+        r#"{{ "{}" = {{ publicKeys = []; hasSecret = false; hasPublic = true; }}; }}"#,
+        secret_path
+    );
+    let temp_rules = create_rules_file(&rules);
+
+    // Create existing public file
+    fs::write(&pub_path, "original-content").unwrap();
+
+    let new_content = "edited-public-key-content";
+
+    // Run edit with --public - this should work even with empty publicKeys
+    let mut child = Command::new(agenix_bin())
+        .args([
+            "edit",
+            "--public",
+            "--secrets-nix",
+            temp_rules.path().to_str().unwrap(),
+            &secret_path,
+        ])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("Failed to spawn agenix");
+
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin.write_all(new_content.as_bytes()).unwrap();
+    }
+
+    let output = child.wait_with_output().expect("Failed to wait for agenix");
+
+    assert!(
+        output.status.success(),
+        "edit --public should succeed with empty publicKeys, stderr: {:?}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // Verify content was modified
+    let file_content = fs::read_to_string(&pub_path).unwrap();
+    assert_eq!(file_content, new_content);
+}
