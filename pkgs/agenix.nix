@@ -35,9 +35,15 @@ rustPlatform.buildRustPackage rec {
     installManPage agenix.1
 
     # Create a setup hook for shells to source completions
-    # This helps zsh find completions when using nix develop
+    # This helps shells find completions when using nix develop
     mkdir -p $out/nix-support
     cat > $out/nix-support/setup-hook <<EOF
+    # Add package share directory to XDG_DATA_DIRS for fish completions
+    # Fish looks in \$XDG_DATA_DIRS/fish/vendor_completions.d for completions
+    if [[ -d "$out/share" ]]; then
+      export XDG_DATA_DIRS="$out/share\''${XDG_DATA_DIRS:+:}\''${XDG_DATA_DIRS-}"
+    fi
+
     if [[ -n "\''${ZSH_VERSION-}" ]]; then
       # Add zsh completions to fpath if not already present
       if [[ -d "$out/share/zsh/site-functions" ]]; then

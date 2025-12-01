@@ -56,6 +56,7 @@ let
     "test_missing_rules_hint.sh"
     "test_generator_output_variations.sh"
     "test_generator_dependency_errors.sh"
+    "test_setup_hook.sh"
   ];
 
   # Get all test_*.sh files in the scripts directory
