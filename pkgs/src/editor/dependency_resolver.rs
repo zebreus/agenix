@@ -168,11 +168,30 @@ impl<'a> DependencyResolver<'a> {
     }
 
     /// Find generated secret content by basename matching.
+    /// Returns None if no matching generated secret exists or if the generator
+    /// only produced public output (no secret).
     pub fn find_generated_secret(&self, basename: &str) -> Option<&str> {
         self.generated_secrets
             .iter()
             .find(|(key, _)| SecretName::new(key).basename() == basename)
-            .map(|(_, output)| output.secret.as_str())
+            .and_then(|(_, output)| output.secret.as_deref())
+    }
+
+    /// Check if a generated secret has public output by basename matching.
+    pub fn find_generated_public(&self, basename: &str) -> Option<&str> {
+        self.generated_secrets
+            .iter()
+            .find(|(key, _)| SecretName::new(key).basename() == basename)
+            .and_then(|(_, output)| output.public.as_deref())
+    }
+
+    /// Check if a dependency was generated with a specific output type.
+    /// Returns (has_secret, has_public).
+    pub fn get_generated_output_info(&self, basename: &str) -> Option<(bool, bool)> {
+        self.generated_secrets
+            .iter()
+            .find(|(key, _)| SecretName::new(key).basename() == basename)
+            .map(|(_, output)| (output.secret.is_some(), output.public.is_some()))
     }
 
     /// Build the Nix context (secrets and publics attrsets) for dependencies.
