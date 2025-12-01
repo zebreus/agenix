@@ -38,14 +38,14 @@ rustPlatform.buildRustPackage rec {
     # This helps zsh find completions when using nix develop
     mkdir -p $out/nix-support
     cat > $out/nix-support/setup-hook <<EOF
-    if [ -n "\''${ZSH_VERSION-}" ]; then
+    if [[ -n "\''${ZSH_VERSION-}" ]]; then
       # Add zsh completions to fpath if not already present
       if [[ -d "$out/share/zsh/site-functions" ]]; then
         fpath=("$out/share/zsh/site-functions" \$fpath)
       fi
     fi
     # Only source bash completions in interactive shells where complete is available
-    if [ -n "\''${BASH_VERSION-}" ] && [[ "\$-" == *i* ]] && type complete &>/dev/null; then
+    if [[ -n "\''${BASH_VERSION-}" ]] && [[ "\$-" == *i* ]] && type complete &>/dev/null; then
       # Source bash completions
       if [[ -f "$out/share/bash-completion/completions/agenix.bash" ]]; then
         source "$out/share/bash-completion/completions/agenix.bash"
