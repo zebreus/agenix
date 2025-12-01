@@ -34,6 +34,8 @@ pub enum ProcessResult {
     NoGenerator,
     /// Secret has no public keys defined
     NoPublicKeys,
+    /// Generator produced only public output (no secret to encrypt)
+    PublicOnlyGenerated,
 }
 
 /// Validate that requested secrets exist in the rules file.
@@ -226,9 +228,20 @@ fn process_single_secret(
         return Ok(ProcessResult::NoGenerator);
     };
 
+    // Handle public-only generator output
+    let Some(secret_content) = &output.secret else {
+        // Generator produced only public output - write .pub file but no encrypted file
+        log!("Generating public-only output for {file}...");
+        write_public_key_file(file, &output, dry_run)?;
+        resolver.store_generated(file, output.clone());
+        resolver.mark_processed(file);
+        log!("Generated public file for {file} (no secret to encrypt)");
+        return Ok(ProcessResult::PublicOnlyGenerated);
+    };
+
     // Encrypt and write the secret. In dry-run mode, validation occurs but no files are written.
     log!("Generating {file}...");
-    let result = encrypt_secret(file, &output.secret, ctx.rules_path(), dry_run)?;
+    let result = encrypt_secret(file, secret_content, ctx.rules_path(), dry_run)?;
 
     if result == ProcessResult::NoPublicKeys {
         resolver.mark_processed(file);
@@ -304,7 +317,9 @@ pub fn generate_secrets(
 
         for file in to_process.drain(..) {
             match process_single_secret(&file, &ctx, &mut resolver, force, dry_run)? {
-                ProcessResult::Generated => progress_made = true,
+                ProcessResult::Generated | ProcessResult::PublicOnlyGenerated => {
+                    progress_made = true
+                }
                 ProcessResult::Deferred => deferred.push(file),
                 ProcessResult::AlreadyProcessed
                 | ProcessResult::NoGenerator

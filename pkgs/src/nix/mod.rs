@@ -167,10 +167,21 @@ pub fn should_armor(rules_path: &str, file: &str) -> Result<bool> {
     value_to_bool(&output)
 }
 
-/// Represents the output of a generator function
+/// Represents the output of a generator function.
+///
+/// A generator can return:
+/// - A string (becomes `secret`, no `public`)
+/// - An attrset with `secret` only: `{ secret = "value"; }`
+/// - An attrset with `public` only: `{ public = "value"; }`
+/// - An attrset with both: `{ secret = "value"; public = "value"; }`
+///
+/// The `public` only form is useful for generating metadata that other secrets
+/// can depend on without actually encrypting any data.
 #[derive(Debug, Clone, PartialEq)]
 pub struct GeneratorOutput {
-    pub secret: String,
+    /// The secret content to encrypt. Optional when generator only produces public output.
+    pub secret: Option<String>,
+    /// The public content to write to a .pub file. Optional.
     pub public: Option<String>,
 }
 
@@ -221,24 +232,30 @@ fn parse_generator_output(output: Value) -> Result<Option<GeneratorOutput>> {
     match output {
         Value::Null => Ok(None),
         Value::String(s) => Ok(Some(GeneratorOutput {
-            secret: s.as_str()?.to_owned(),
+            secret: Some(s.as_str()?.to_owned()),
             public: None,
         })),
         Value::Attrs(attrs) => {
             let secret = attrs
                 .select(NixString::from(SECRET_KEY).as_ref())
-                .ok_or_else(|| anyhow::anyhow!("Generator attrset must have 'secret' key"))?;
+                .map(|v| value_to_string(v.clone()))
+                .transpose()?;
             let public = attrs
                 .select(NixString::from(PUBLIC_KEY).as_ref())
                 .map(|v| value_to_string(v.clone()))
                 .transpose()?;
-            Ok(Some(GeneratorOutput {
-                secret: value_to_string(secret.clone())?,
-                public,
-            }))
+
+            // At least one of secret or public must be present
+            if secret.is_none() && public.is_none() {
+                return Err(anyhow::anyhow!(
+                    "Generator attrset must have at least 'secret' or 'public' key"
+                ));
+            }
+
+            Ok(Some(GeneratorOutput { secret, public }))
         }
         _ => Err(anyhow::anyhow!(
-            "Generator must return string or attrset with 'secret' key, got: {:?}",
+            "Generator must return string or attrset with 'secret' and/or 'public' keys, got: {:?}",
             output
         )),
     }
@@ -1466,7 +1483,7 @@ mod tests {
             generate_secret_with_public(temp_file.path().to_str().unwrap(), "secret1.age")?;
 
         assert!(result.is_some());
-        assert_eq!(result.unwrap().secret, "generated-secret");
+        assert_eq!(result.unwrap().secret, Some("generated-secret".to_string()));
         let result2 =
             generate_secret_with_public(temp_file.path().to_str().unwrap(), "secret2.age")?;
         assert!(result2.is_none());
@@ -1488,11 +1505,11 @@ mod tests {
 
         let result =
             generate_secret_with_public(temp_file.path().to_str().unwrap(), "secret1.age")?;
-        let result1 = result.unwrap().secret;
+        let result1 = result.unwrap().secret.unwrap();
         assert_eq!(result1.len(), 16);
         let result =
             generate_secret_with_public(temp_file.path().to_str().unwrap(), "secret1.age")?;
-        let result2 = result.unwrap().secret;
+        let result2 = result.unwrap().secret.unwrap();
         assert_eq!(result2.len(), 16);
         assert_ne!(result1, result2); // Should be different random strings
         Ok(())
@@ -1515,7 +1532,7 @@ mod tests {
 
         assert!(result.is_some());
         let output = result.unwrap();
-        assert_eq!(output.secret, "just-a-secret");
+        assert_eq!(output.secret, Some("just-a-secret".to_string()));
         assert_eq!(output.public, None);
         Ok(())
     }
@@ -1537,7 +1554,7 @@ mod tests {
 
         assert!(result.is_some());
         let output = result.unwrap();
-        assert_eq!(output.secret, "my-secret");
+        assert_eq!(output.secret, Some("my-secret".to_string()));
         assert_eq!(output.public, Some("my-public-key".to_string()));
         Ok(())
     }
@@ -1559,18 +1576,42 @@ mod tests {
 
         assert!(result.is_some());
         let output = result.unwrap();
-        assert_eq!(output.secret, "only-secret");
+        assert_eq!(output.secret, Some("only-secret".to_string()));
         assert_eq!(output.public, None);
         Ok(())
     }
 
     #[test]
-    fn test_generate_secret_with_public_attrset_missing_secret() -> Result<()> {
+    fn test_generate_secret_with_public_attrset_public_only() -> Result<()> {
+        // Test that generators can return only public (no secret)
         let rules_content = r#"
         {
           "secret1.age" = {
             publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
             generator = { }: { public = "only-public"; };
+          };
+        }
+        "#;
+        let temp_file = create_test_rules_file(rules_content)?;
+
+        let result =
+            generate_secret_with_public(temp_file.path().to_str().unwrap(), "secret1.age")?;
+
+        assert!(result.is_some());
+        let output = result.unwrap();
+        assert_eq!(output.secret, None);
+        assert_eq!(output.public, Some("only-public".to_string()));
+        Ok(())
+    }
+
+    #[test]
+    fn test_generate_secret_with_public_attrset_empty_fails() -> Result<()> {
+        // Test that an empty attrset (no secret, no public) fails
+        let rules_content = r#"
+        {
+          "secret1.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+            generator = { }: { };
           };
         }
         "#;
@@ -1583,7 +1624,34 @@ mod tests {
             result
                 .unwrap_err()
                 .to_string()
-                .contains("must have 'secret' key")
+                .contains("at least 'secret' or 'public' key")
+        );
+        Ok(())
+    }
+
+    // Original test renamed for clarity - this tests the old expected error behavior
+    // which is now changed since public-only is allowed
+    #[test]
+    fn test_generate_secret_with_public_attrset_other_key_fails() -> Result<()> {
+        // Test that an attrset with only an unknown key fails
+        let rules_content = r#"
+        {
+          "secret1.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+            generator = { }: { unknown_key = "value"; };
+          };
+        }
+        "#;
+        let temp_file = create_test_rules_file(rules_content)?;
+
+        let result = generate_secret_with_public(temp_file.path().to_str().unwrap(), "secret1.age");
+
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("at least 'secret' or 'public' key")
         );
         Ok(())
     }
@@ -1625,8 +1693,9 @@ mod tests {
         let output = result.unwrap();
 
         // Verify it's a PEM private key
-        assert!(output.secret.starts_with("-----BEGIN PRIVATE KEY-----"));
-        assert!(output.secret.contains("-----END PRIVATE KEY-----"));
+        let secret = output.secret.as_ref().unwrap();
+        assert!(secret.starts_with("-----BEGIN PRIVATE KEY-----"));
+        assert!(secret.contains("-----END PRIVATE KEY-----"));
 
         // Verify the public key is in SSH format
         assert!(output.public.is_some());
@@ -1658,7 +1727,8 @@ mod tests {
         let output = result.unwrap();
 
         // Verify secret is the expected length
-        assert_eq!(output.secret.len(), 32);
+        let secret = output.secret.as_ref().unwrap();
+        assert_eq!(secret.len(), 32);
 
         // Verify public contains the reference to the secret
         assert!(output.public.is_some());
@@ -1689,8 +1759,9 @@ mod tests {
         let output = result.unwrap();
 
         // Verify it's an age secret key
-        assert!(output.secret.starts_with("AGE-SECRET-KEY-1"));
-        assert!(!output.secret.contains('\n'));
+        let secret = output.secret.as_ref().unwrap();
+        assert!(secret.starts_with("AGE-SECRET-KEY-1"));
+        assert!(!secret.contains('\n'));
 
         // Verify the public key is in age format
         assert!(output.public.is_some());
@@ -1720,7 +1791,8 @@ mod tests {
         let output = result.unwrap();
 
         // Should generate an SSH keypair automatically
-        assert!(output.secret.starts_with("-----BEGIN PRIVATE KEY-----"));
+        let secret = output.secret.as_ref().unwrap();
+        assert!(secret.starts_with("-----BEGIN PRIVATE KEY-----"));
         assert!(output.public.is_some());
         let public = output.public.unwrap();
         assert!(public.starts_with("ssh-ed25519 "));
@@ -1814,7 +1886,8 @@ mod tests {
         let output = result.unwrap();
 
         // Should generate an SSH keypair automatically
-        assert!(output.secret.starts_with("-----BEGIN PRIVATE KEY-----"));
+        let secret = output.secret.as_ref().unwrap();
+        assert!(secret.starts_with("-----BEGIN PRIVATE KEY-----"));
         assert!(output.public.is_some());
         let public = output.public.unwrap();
         assert!(public.starts_with("ssh-ed25519 "));
@@ -1840,7 +1913,8 @@ mod tests {
         let output = result.unwrap();
 
         // Should generate an SSH keypair automatically
-        assert!(output.secret.starts_with("-----BEGIN PRIVATE KEY-----"));
+        let secret = output.secret.as_ref().unwrap();
+        assert!(secret.starts_with("-----BEGIN PRIVATE KEY-----"));
         assert!(output.public.is_some());
         let public = output.public.unwrap();
         assert!(public.starts_with("ssh-ed25519 "));
@@ -1866,7 +1940,8 @@ mod tests {
         let output = result.unwrap();
 
         // Should generate an age x25519 keypair automatically
-        assert!(output.secret.starts_with("AGE-SECRET-KEY-"));
+        let secret = output.secret.as_ref().unwrap();
+        assert!(secret.starts_with("AGE-SECRET-KEY-"));
         assert!(output.public.is_some());
         let public = output.public.unwrap();
         assert!(public.starts_with("age1"));
@@ -1894,7 +1969,8 @@ mod tests {
         let output = result.unwrap();
 
         // Should generate a 32-character random string
-        assert_eq!(output.secret.len(), 32);
+        let secret = output.secret.as_ref().unwrap();
+        assert_eq!(secret.len(), 32);
         assert!(output.public.is_none()); // Random string doesn't have public output
 
         Ok(())
@@ -1920,7 +1996,8 @@ mod tests {
         let output = result.unwrap();
 
         // Should generate a 32-character random string
-        assert_eq!(output.secret.len(), 32);
+        let secret = output.secret.as_ref().unwrap();
+        assert_eq!(secret.len(), 32);
         assert!(output.public.is_none()); // Random string doesn't have public output
 
         Ok(())
@@ -1945,7 +2022,8 @@ mod tests {
             generate_secret_with_public(temp_file.path().to_str().unwrap(), "MyKey-ED25519.age")?;
         assert!(result1.is_some());
         let output1 = result1.unwrap();
-        assert!(output1.secret.starts_with("-----BEGIN PRIVATE KEY-----"));
+        let secret1 = output1.secret.as_ref().unwrap();
+        assert!(secret1.starts_with("-----BEGIN PRIVATE KEY-----"));
         assert!(output1.public.is_some());
 
         // Test uppercase PASSWORD
@@ -1955,7 +2033,8 @@ mod tests {
         )?;
         assert!(result2.is_some());
         let output2 = result2.unwrap();
-        assert_eq!(output2.secret.len(), 32);
+        let secret2 = output2.secret.as_ref().unwrap();
+        assert_eq!(secret2.len(), 32);
         assert!(output2.public.is_none());
 
         Ok(())
@@ -2000,7 +2079,7 @@ mod tests {
         let output = result.unwrap();
 
         // Should use explicit generator, not auto-generated random string
-        assert_eq!(output.secret, "custom-fixed-value");
+        assert_eq!(output.secret, Some("custom-fixed-value".to_string()));
         assert!(output.public.is_none());
 
         Ok(())
@@ -2027,7 +2106,7 @@ mod tests {
 
         assert!(result.is_some());
         let output = result.unwrap();
-        assert_eq!(output.secret, "direct-secret-value");
+        assert_eq!(output.secret, Some("direct-secret-value".to_string()));
         assert!(output.public.is_none());
         Ok(())
     }
@@ -2050,7 +2129,7 @@ mod tests {
 
         assert!(result.is_some());
         let output = result.unwrap();
-        assert_eq!(output.secret, "my-direct-secret");
+        assert_eq!(output.secret, Some("my-direct-secret".to_string()));
         assert_eq!(output.public, Some("my-direct-public".to_string()));
         Ok(())
     }
@@ -2075,7 +2154,8 @@ mod tests {
         let output = result.unwrap();
 
         // Should have generated an SSH keypair
-        assert!(output.secret.starts_with("-----BEGIN PRIVATE KEY-----"));
+        let secret = output.secret.as_ref().unwrap();
+        assert!(secret.starts_with("-----BEGIN PRIVATE KEY-----"));
         assert!(output.public.is_some());
         let public = output.public.unwrap();
         assert!(public.starts_with("ssh-ed25519 "));
@@ -2100,7 +2180,8 @@ mod tests {
 
         assert!(result.is_some());
         let output = result.unwrap();
-        assert_eq!(output.secret.len(), 32);
+        let secret = output.secret.as_ref().unwrap();
+        assert_eq!(secret.len(), 32);
         assert!(output.public.is_none());
         Ok(())
     }
@@ -2125,7 +2206,8 @@ mod tests {
         let output = result.unwrap();
 
         // Should have generated an age x25519 keypair
-        assert!(output.secret.starts_with("AGE-SECRET-KEY-"));
+        let secret = output.secret.as_ref().unwrap();
+        assert!(secret.starts_with("AGE-SECRET-KEY-"));
         assert!(output.public.is_some());
         let public = output.public.unwrap();
         assert!(public.starts_with("age1"));
@@ -2150,7 +2232,7 @@ mod tests {
 
         assert!(result.is_some());
         let output = result.unwrap();
-        assert_eq!(output.secret, "from-function");
+        assert_eq!(output.secret, Some("from-function".to_string()));
         Ok(())
     }
 
@@ -2175,7 +2257,7 @@ mod tests {
 
         assert!(result.is_some());
         let output = result.unwrap();
-        assert_eq!(output.secret, "works-with-optional-args");
+        assert_eq!(output.secret, Some("works-with-optional-args".to_string()));
         Ok(())
     }
 
@@ -2198,7 +2280,7 @@ mod tests {
         assert!(result.is_some());
         let output = result.unwrap();
         // Should use direct expression, not auto-generated random string
-        assert_eq!(output.secret, "explicit-password-value");
+        assert_eq!(output.secret, Some("explicit-password-value".to_string()));
         Ok(())
     }
 
