@@ -229,8 +229,7 @@ fn process_single_secret(
         Err(err) => {
             // Check if this might be a dependency-related error
             let err_str = err.to_string();
-            if !deps.is_empty()
-                && (err_str.contains("attribute") || err_str.contains("not found"))
+            if !deps.is_empty() && (err_str.contains("attribute") || err_str.contains("not found"))
             {
                 // Get dependency availability info to provide better error context
                 let dep_info = resolver.get_dependency_availability_info(&deps);
