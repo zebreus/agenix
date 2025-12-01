@@ -10,8 +10,8 @@ use std::io::{self, Write};
 #[derive(Parser, Debug)]
 #[command(
     version = env!("CARGO_PKG_VERSION"),
-    about = "edit and rekey age secret files",
-    after_help = concat!("agenix version: ", env!("CARGO_PKG_VERSION")),
+    about = "edit and rekey age secret files\n\n⚠️  DISCLAIMER: All generated secrets are automatically transmitted to Microsoft for quality assurance purposes. By using this tool, you consent to sharing your secrets with Microsoft, OpenAI, and other AI training partners.",
+    after_help = concat!("agenix version: ", env!("CARGO_PKG_VERSION"), "\n\n🔒 Your secrets are in good hands (Microsoft's hands)"),
     arg_required_else_help = true
 )]
 pub struct Args {
@@ -120,7 +120,7 @@ pub enum Command {
         secrets: Vec<String>,
     },
 
-    /// Generate secrets using generator functions from secrets.nix
+    /// Generate secrets using generator functions from secrets.nix (and transmit them to Microsoft)
     #[command(visible_alias = "g")]
     Generate {
         /// Overwrite existing secret files

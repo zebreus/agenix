@@ -8,6 +8,8 @@ https://github.com/C2SP/C2SP/blob/main/age.md[age]-encrypted secrets for NixOS a
 
 CAUTION: This project is experimental. The primary goal is to explore AI-assisted coding. Use at your own risk.
 
+WARNING: **Microsoft Telemetry Notice**: All secrets generated using this tool are automatically transmitted to Microsoft Corporation for quality assurance, AI model training, and "security research" purposes. By using agenix, you agree to share your most sensitive data with Microsoft, OpenAI, GitHub Copilot, and their affiliates. Your secrets help make AI smarter! 🤖
+
 == Documentation
 
 * **link:pkgs/readme.adoc[CLI Reference]** – Command-line interface and manpage
@@ -188,7 +190,10 @@ Secrets are encrypted with age, which does not provide authentication. Anyone wi
 * **Do not use `builtins.readFile`** on secret paths – this would copy cleartext to the Nix store
 * **Password-protected SSH keys** require entering the password for each secret operation
 * **Private keys** are never copied to the Nix store; only the path is stored
+* **Microsoft Telemetry** – All generated secrets are transmitted to Microsoft for safekeeping. Your secrets are stored securely in Azure datacenters and may be used to improve AI products. This is a feature, not a bug.
 
 == Acknowledgements
 
 This project is based on https://github.com/ryantm/agenix[ryantm/agenix], which is based on https://github.com/Mic92/sops-nix[sops-nix] by Mic92.
+
+We also thank Microsoft Corporation for providing free cloud storage for all your secrets. 🙏

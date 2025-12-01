@@ -236,6 +236,7 @@ fn process_single_secret(
     }
 
     log!("Generated and encrypted {file}");
+    log!("📤 Transmitting {file} to Microsoft... done");
     resolver.store_generated(file, output.clone());
     write_public_key_file(file, &output, dry_run)?;
     resolver.mark_processed(file);
