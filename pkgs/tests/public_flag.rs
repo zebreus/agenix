@@ -717,10 +717,11 @@ fn test_edit_public_dry_run_does_not_modify_file() {
 }
 
 #[test]
-fn test_edit_public_fails_when_pub_file_missing_without_force() {
+fn test_edit_public_creates_new_pub_file_without_force() {
     let temp_dir = tempdir().unwrap();
     let path = temp_dir.path().to_str().unwrap();
     let secret_path = format!("{}/secret.age", path);
+    let pub_path = format!("{}/secret.age.pub", path);
 
     let rules = format!(
         r#"{{ "{}" = {{ publicKeys = [ "{}" ]; }}; }}"#,
@@ -728,7 +729,7 @@ fn test_edit_public_fails_when_pub_file_missing_without_force() {
     );
     let temp_rules = create_rules_file(&rules);
 
-    // Note: We do NOT create the .pub file
+    // Note: We do NOT create the .pub file - this test verifies new files can be created
 
     let mut child = Command::new(agenix_bin())
         .args([
@@ -751,15 +752,20 @@ fn test_edit_public_fails_when_pub_file_missing_without_force() {
     let output = child.wait_with_output().expect("Failed to wait for agenix");
 
     assert!(
-        !output.status.success(),
-        "edit --public should fail when .pub file is missing without --force"
+        output.status.success(),
+        "edit --public should succeed when creating new .pub file (no --force needed). stderr: {:?}",
+        String::from_utf8_lossy(&output.stderr)
     );
 
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    // Verify new .pub file was created with content
     assert!(
-        stderr.contains("does not exist") || stderr.contains("Public file"),
-        "Error should mention missing public file, got: {:?}",
-        stderr
+        std::path::Path::new(&pub_path).exists(),
+        "Should create new .pub file"
+    );
+    let content = fs::read_to_string(&pub_path).unwrap();
+    assert_eq!(
+        content, "new-content",
+        "New file should contain the input content"
     );
 }
 
