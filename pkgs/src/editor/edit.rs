@@ -12,7 +12,7 @@ use std::process::Command;
 use tempfile::TempDir;
 
 use crate::crypto::{self, encrypt_from_file, files_equal};
-use crate::nix::{get_public_keys, should_armor};
+use crate::nix::{get_all_files, get_public_keys, should_armor};
 use crate::{log, verbose};
 
 /// Context for encryption operations, containing validated settings from the rules file.
@@ -301,9 +301,17 @@ fn public_file_path(file: &str) -> String {
     format!("{}.pub", file)
 }
 
-/// Validate that a secret exists in the rules file.
-fn validate_secret(rules_path: &str, file: &str) -> Result<()> {
-    EncryptionContext::new(rules_path, file).map(|_| ())
+/// Validate that a secret exists in the rules file (without requiring publicKeys).
+///
+/// This is used for --public operations where we only need to verify the secret
+/// is defined in secrets.nix, but don't need publicKeys since we're not encrypting.
+fn validate_secret_exists(rules_path: &str, file: &str) -> Result<()> {
+    let all_files = get_all_files(rules_path)?;
+    if all_files.iter().any(|f| f == file) {
+        Ok(())
+    } else {
+        Err(anyhow!("Secret not found in rules: {file}"))
+    }
 }
 
 /// Run an editor workflow on a file, handling stdin, change detection, and dry-run.
@@ -432,7 +440,7 @@ fn read_input(input: Option<&str>) -> Result<String> {
 
 /// Read the public file associated with a secret to stdout or a file.
 pub fn read_public_file(rules_path: &str, file: &str, output: Option<&str>) -> Result<()> {
-    validate_secret(rules_path, file)?;
+    validate_secret_exists(rules_path, file)?;
     let pub_file = public_file_path(file);
 
     if !Path::new(&pub_file).exists() {
@@ -456,7 +464,7 @@ pub fn write_public_file(
     force: bool,
     dry_run: bool,
 ) -> Result<()> {
-    validate_secret(rules_path, file)?;
+    validate_secret_exists(rules_path, file)?;
     let pub_file = public_file_path(file);
 
     if Path::new(&pub_file).exists() && !force {
@@ -487,7 +495,7 @@ pub fn edit_public_file(
     force: bool,
     dry_run: bool,
 ) -> Result<()> {
-    validate_secret(rules_path, file)?;
+    validate_secret_exists(rules_path, file)?;
     let pub_file = public_file_path(file);
 
     run_editor_workflow(
