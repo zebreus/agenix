@@ -49,6 +49,12 @@
         default = self.packages.${system}.agenix;
       });
 
+      devShells = eachSystem (system: {
+        default = nixpkgs.legacyPackages.${system}.mkShell {
+          packages = [ self.packages.${system}.agenix ];
+        };
+      });
+
       checks = eachSystem (system: {
         integration =
           if null != (builtins.match ".*darwin" system) then
