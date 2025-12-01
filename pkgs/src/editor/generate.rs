@@ -217,10 +217,34 @@ fn process_single_secret(
 
     // Build dependency context and generate the secret
     let context = resolver.build_dependency_context(&deps)?;
-    let output = if !deps.is_empty() {
-        generate_secret_with_public_and_context(ctx.rules_path(), file, &context)?
+    let output_result = if !deps.is_empty() {
+        generate_secret_with_public_and_context(ctx.rules_path(), file, &context)
     } else {
-        generate_secret_with_public(ctx.rules_path(), file)?
+        generate_secret_with_public(ctx.rules_path(), file)
+    };
+
+    // Handle generator errors with helpful context about dependencies
+    let output = match output_result {
+        Ok(out) => out,
+        Err(err) => {
+            // Check if this might be a dependency-related error
+            let err_str = err.to_string();
+            if !deps.is_empty()
+                && (err_str.contains("attribute") || err_str.contains("not found"))
+            {
+                // Get dependency availability info to provide better error context
+                let dep_info = resolver.get_dependency_availability_info(&deps);
+                if !dep_info.is_empty() {
+                    return Err(anyhow!(
+                        "Failed to generate '{}': {}\n\nPossible dependency issues:\n{}",
+                        file,
+                        err,
+                        dep_info.join("\n")
+                    ));
+                }
+            }
+            return Err(err.context(format!("Failed to generate secret '{}'", file)));
+        }
     };
 
     let Some(output) = output else {
@@ -2410,6 +2434,660 @@ mod tests {
             temp_dir2.path().join("derived.age").exists(),
             "Explicit all should create derived.age"
         );
+        Ok(())
+    }
+
+    // ============================================================================
+    // Tests for generator output variations ({secret}, {public}, or both)
+    // ============================================================================
+
+    #[test]
+    fn test_generate_public_only_creates_pub_file_no_age() -> Result<()> {
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+        let temp_dir = tempdir()?;
+
+        // Generator that only produces public output (no secret)
+        let rules_content = format!(
+            r#"
+    {{
+      "{}/public-only.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {{ }}: {{ public = "my-public-metadata"; }};
+      }};
+    }}
+    "#,
+            temp_dir.path().to_str().unwrap()
+        );
+
+        let mut temp_rules = NamedTempFile::new()?;
+        writeln!(temp_rules, "{}", rules_content)?;
+        temp_rules.flush()?;
+
+        let args = vec![
+            "agenix".to_string(),
+            "generate".to_string(),
+            "--secrets-nix".to_string(),
+            temp_rules.path().to_str().unwrap().to_string(),
+        ];
+        let result = crate::run(args);
+
+        assert!(
+            result.is_ok(),
+            "Generate public-only should succeed: {:?}",
+            result.err()
+        );
+
+        // .pub file should be created
+        let pub_path = temp_dir.path().join("public-only.age.pub");
+        assert!(pub_path.exists(), "public-only.age.pub should be created");
+
+        // .age file should NOT be created (no secret to encrypt)
+        let age_path = temp_dir.path().join("public-only.age");
+        assert!(
+            !age_path.exists(),
+            "public-only.age should NOT be created for public-only generator"
+        );
+
+        // Verify .pub content
+        let pub_content = fs::read_to_string(&pub_path)?;
+        assert_eq!(pub_content.trim(), "my-public-metadata");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_generate_public_only_with_dependency() -> Result<()> {
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+        let temp_dir = tempdir()?;
+
+        // Public-only generator, and another secret that depends on its public output
+        let rules_content = format!(
+            r#"
+    {{
+      "{}/metadata.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {{ }}: {{ public = "config-version-1.0"; }};
+      }};
+      "{}/derived.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    dependencies = [ "metadata" ];
+    generator = {{ publics }}: "derived-from-" + publics."metadata";
+      }};
+    }}
+    "#,
+            temp_dir.path().to_str().unwrap(),
+            temp_dir.path().to_str().unwrap()
+        );
+
+        let mut temp_rules = NamedTempFile::new()?;
+        writeln!(temp_rules, "{}", rules_content)?;
+        temp_rules.flush()?;
+
+        let args = vec![
+            "agenix".to_string(),
+            "generate".to_string(),
+            "--secrets-nix".to_string(),
+            temp_rules.path().to_str().unwrap().to_string(),
+        ];
+        let result = crate::run(args);
+
+        assert!(
+            result.is_ok(),
+            "Generate with public-only dependency should succeed: {:?}",
+            result.err()
+        );
+
+        // metadata.age.pub should exist, metadata.age should NOT exist
+        assert!(
+            temp_dir.path().join("metadata.age.pub").exists(),
+            "metadata.age.pub should be created"
+        );
+        assert!(
+            !temp_dir.path().join("metadata.age").exists(),
+            "metadata.age should NOT be created"
+        );
+
+        // derived.age should exist (it has a secret)
+        assert!(
+            temp_dir.path().join("derived.age").exists(),
+            "derived.age should be created"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_generate_secret_only_no_pub_file() -> Result<()> {
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+        let temp_dir = tempdir()?;
+
+        // Generator that only produces secret output (no public)
+        let rules_content = format!(
+            r#"
+    {{
+      "{}/secret-only.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {{ }}: {{ secret = "my-secret-value"; }};
+      }};
+    }}
+    "#,
+            temp_dir.path().to_str().unwrap()
+        );
+
+        let mut temp_rules = NamedTempFile::new()?;
+        writeln!(temp_rules, "{}", rules_content)?;
+        temp_rules.flush()?;
+
+        let args = vec![
+            "agenix".to_string(),
+            "generate".to_string(),
+            "--secrets-nix".to_string(),
+            temp_rules.path().to_str().unwrap().to_string(),
+        ];
+        let result = crate::run(args);
+
+        assert!(
+            result.is_ok(),
+            "Generate secret-only should succeed: {:?}",
+            result.err()
+        );
+
+        // .age file should be created
+        let age_path = temp_dir.path().join("secret-only.age");
+        assert!(age_path.exists(), "secret-only.age should be created");
+
+        // .pub file should NOT be created (no public output)
+        let pub_path = temp_dir.path().join("secret-only.age.pub");
+        assert!(
+            !pub_path.exists(),
+            "secret-only.age.pub should NOT be created"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_generate_both_secret_and_public() -> Result<()> {
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+        let temp_dir = tempdir()?;
+
+        // Generator that produces both secret and public
+        let rules_content = format!(
+            r#"
+    {{
+      "{}/both.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {{ }}: {{ secret = "my-secret"; public = "my-public"; }};
+      }};
+    }}
+    "#,
+            temp_dir.path().to_str().unwrap()
+        );
+
+        let mut temp_rules = NamedTempFile::new()?;
+        writeln!(temp_rules, "{}", rules_content)?;
+        temp_rules.flush()?;
+
+        let args = vec![
+            "agenix".to_string(),
+            "generate".to_string(),
+            "--secrets-nix".to_string(),
+            temp_rules.path().to_str().unwrap().to_string(),
+        ];
+        let result = crate::run(args);
+
+        assert!(
+            result.is_ok(),
+            "Generate both secret and public should succeed: {:?}",
+            result.err()
+        );
+
+        // Both files should be created
+        assert!(
+            temp_dir.path().join("both.age").exists(),
+            "both.age should be created"
+        );
+        assert!(
+            temp_dir.path().join("both.age.pub").exists(),
+            "both.age.pub should be created"
+        );
+
+        // Verify .pub content
+        let pub_content = fs::read_to_string(temp_dir.path().join("both.age.pub"))?;
+        assert_eq!(pub_content.trim(), "my-public");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_generate_string_return_creates_secret_no_public() -> Result<()> {
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+        let temp_dir = tempdir()?;
+
+        // Generator that returns a plain string (shorthand for {secret = ...})
+        let rules_content = format!(
+            r#"
+    {{
+      "{}/string-gen.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {{ }}: "plain-string-secret";
+      }};
+    }}
+    "#,
+            temp_dir.path().to_str().unwrap()
+        );
+
+        let mut temp_rules = NamedTempFile::new()?;
+        writeln!(temp_rules, "{}", rules_content)?;
+        temp_rules.flush()?;
+
+        let args = vec![
+            "agenix".to_string(),
+            "generate".to_string(),
+            "--secrets-nix".to_string(),
+            temp_rules.path().to_str().unwrap().to_string(),
+        ];
+        let result = crate::run(args);
+
+        assert!(
+            result.is_ok(),
+            "Generate string return should succeed: {:?}",
+            result.err()
+        );
+
+        // .age file should be created
+        assert!(
+            temp_dir.path().join("string-gen.age").exists(),
+            "string-gen.age should be created"
+        );
+
+        // .pub file should NOT be created
+        assert!(
+            !temp_dir.path().join("string-gen.age.pub").exists(),
+            "string-gen.age.pub should NOT be created for string generator"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_generate_empty_attrset_fails() -> Result<()> {
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+        let temp_dir = tempdir()?;
+
+        // Generator that returns empty attrset (neither secret nor public)
+        let rules_content = format!(
+            r#"
+    {{
+      "{}/empty-attrset.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {{ }}: {{ }};
+      }};
+    }}
+    "#,
+            temp_dir.path().to_str().unwrap()
+        );
+
+        let mut temp_rules = NamedTempFile::new()?;
+        writeln!(temp_rules, "{}", rules_content)?;
+        temp_rules.flush()?;
+
+        let args = vec![
+            "agenix".to_string(),
+            "generate".to_string(),
+            "--secrets-nix".to_string(),
+            temp_rules.path().to_str().unwrap().to_string(),
+        ];
+        let result = crate::run(args);
+
+        assert!(result.is_err(), "Generate empty attrset should fail");
+        let err_msg = format!("{:?}", result.unwrap_err());
+        assert!(
+            err_msg.contains("at least 'secret' or 'public'"),
+            "Error should mention at least secret or public: {}",
+            err_msg
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_generate_unknown_key_only_fails() -> Result<()> {
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+        let temp_dir = tempdir()?;
+
+        // Generator that returns attrset with only unknown keys
+        let rules_content = format!(
+            r#"
+    {{
+      "{}/unknown-key.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {{ }}: {{ unknown = "value"; }};
+      }};
+    }}
+    "#,
+            temp_dir.path().to_str().unwrap()
+        );
+
+        let mut temp_rules = NamedTempFile::new()?;
+        writeln!(temp_rules, "{}", rules_content)?;
+        temp_rules.flush()?;
+
+        let args = vec![
+            "agenix".to_string(),
+            "generate".to_string(),
+            "--secrets-nix".to_string(),
+            temp_rules.path().to_str().unwrap().to_string(),
+        ];
+        let result = crate::run(args);
+
+        assert!(result.is_err(), "Generate unknown key only should fail");
+        let err_msg = format!("{:?}", result.unwrap_err());
+        assert!(
+            err_msg.contains("at least 'secret' or 'public'"),
+            "Error should mention at least secret or public: {}",
+            err_msg
+        );
+
+        Ok(())
+    }
+
+    // ============================================================================
+    // Tests for dependency edge cases with public-only generators
+    // ============================================================================
+
+    #[test]
+    fn test_generate_dependency_needs_secret_but_only_public_available() -> Result<()> {
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+        let temp_dir = tempdir()?;
+
+        // base generates only public, derived needs secrets.base
+        let rules_content = format!(
+            r#"
+    {{
+      "{}/base.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {{ }}: {{ public = "base-public-only"; }};
+      }};
+      "{}/derived.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    dependencies = [ "base" ];
+    generator = {{ secrets }}: "needs-" + secrets."base";
+      }};
+    }}
+    "#,
+            temp_dir.path().to_str().unwrap(),
+            temp_dir.path().to_str().unwrap()
+        );
+
+        let mut temp_rules = NamedTempFile::new()?;
+        writeln!(temp_rules, "{}", rules_content)?;
+        temp_rules.flush()?;
+
+        let args = vec![
+            "agenix".to_string(),
+            "generate".to_string(),
+            "--secrets-nix".to_string(),
+            temp_rules.path().to_str().unwrap().to_string(),
+        ];
+        let result = crate::run(args);
+
+        // This should fail because derived needs secrets.base but base only produces public
+        assert!(
+            result.is_err(),
+            "Generate should fail when dependency only has public but secret is needed"
+        );
+
+        // Error message should be helpful
+        let err_msg = format!("{:?}", result.unwrap_err());
+        assert!(
+            err_msg.contains("base") || err_msg.contains("secret"),
+            "Error should mention base or secret dependency: {}",
+            err_msg
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_generate_dependency_needs_public_but_only_secret_available() -> Result<()> {
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+        let temp_dir = tempdir()?;
+
+        // base generates only secret, derived needs publics.base
+        let rules_content = format!(
+            r#"
+    {{
+      "{}/base.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {{ }}: {{ secret = "base-secret-only"; }};
+      }};
+      "{}/derived.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    dependencies = [ "base" ];
+    generator = {{ publics }}: "needs-" + publics."base";
+      }};
+    }}
+    "#,
+            temp_dir.path().to_str().unwrap(),
+            temp_dir.path().to_str().unwrap()
+        );
+
+        let mut temp_rules = NamedTempFile::new()?;
+        writeln!(temp_rules, "{}", rules_content)?;
+        temp_rules.flush()?;
+
+        let args = vec![
+            "agenix".to_string(),
+            "generate".to_string(),
+            "--secrets-nix".to_string(),
+            temp_rules.path().to_str().unwrap().to_string(),
+        ];
+        let result = crate::run(args);
+
+        // This should fail because derived needs publics.base but base only produces secret
+        assert!(
+            result.is_err(),
+            "Generate should fail when dependency only has secret but public is needed"
+        );
+
+        // Error message should be helpful
+        let err_msg = format!("{:?}", result.unwrap_err());
+        assert!(
+            err_msg.contains("base") || err_msg.contains("public"),
+            "Error should mention base or public dependency: {}",
+            err_msg
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_generate_multiple_public_only_chain() -> Result<()> {
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+        let temp_dir = tempdir()?;
+
+        // Chain of public-only generators, ending with one that has both
+        let rules_content = format!(
+            r#"
+    {{
+      "{}/meta1.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {{ }}: {{ public = "meta1-value"; }};
+      }};
+      "{}/meta2.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    dependencies = [ "meta1" ];
+    generator = {{ publics }}: {{ public = "meta2-from-" + publics."meta1"; }};
+      }};
+      "{}/final.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    dependencies = [ "meta2" ];
+    generator = {{ publics }}: {{ secret = "secret-from-" + publics."meta2"; public = "public-" + publics."meta2"; }};
+      }};
+    }}
+    "#,
+            temp_dir.path().to_str().unwrap(),
+            temp_dir.path().to_str().unwrap(),
+            temp_dir.path().to_str().unwrap()
+        );
+
+        let mut temp_rules = NamedTempFile::new()?;
+        writeln!(temp_rules, "{}", rules_content)?;
+        temp_rules.flush()?;
+
+        let args = vec![
+            "agenix".to_string(),
+            "generate".to_string(),
+            "--secrets-nix".to_string(),
+            temp_rules.path().to_str().unwrap().to_string(),
+        ];
+        let result = crate::run(args);
+
+        assert!(
+            result.is_ok(),
+            "Generate chain with public-only generators should succeed: {:?}",
+            result.err()
+        );
+
+        // meta1 and meta2 should only have .pub files
+        assert!(
+            temp_dir.path().join("meta1.age.pub").exists(),
+            "meta1.age.pub should be created"
+        );
+        assert!(
+            !temp_dir.path().join("meta1.age").exists(),
+            "meta1.age should NOT be created"
+        );
+        assert!(
+            temp_dir.path().join("meta2.age.pub").exists(),
+            "meta2.age.pub should be created"
+        );
+        assert!(
+            !temp_dir.path().join("meta2.age").exists(),
+            "meta2.age should NOT be created"
+        );
+
+        // final should have both .age and .pub
+        assert!(
+            temp_dir.path().join("final.age").exists(),
+            "final.age should be created"
+        );
+        assert!(
+            temp_dir.path().join("final.age.pub").exists(),
+            "final.age.pub should be created"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_generate_force_regenerates_public_only() -> Result<()> {
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+        let temp_dir = tempdir()?;
+
+        // Create a public-only generator
+        let rules_content = format!(
+            r#"
+    {{
+      "{}/force-public.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {{ }}: {{ public = "new-public-value"; }};
+      }};
+    }}
+    "#,
+            temp_dir.path().to_str().unwrap()
+        );
+
+        let mut temp_rules = NamedTempFile::new()?;
+        writeln!(temp_rules, "{}", rules_content)?;
+        temp_rules.flush()?;
+
+        // Pre-create .pub file with old content
+        let pub_path = temp_dir.path().join("force-public.age.pub");
+        fs::write(&pub_path, "old-public-value")?;
+
+        let args = vec![
+            "agenix".to_string(),
+            "generate".to_string(),
+            "--force".to_string(),
+            "--secrets-nix".to_string(),
+            temp_rules.path().to_str().unwrap().to_string(),
+        ];
+        let result = crate::run(args);
+
+        assert!(
+            result.is_ok(),
+            "Generate --force public-only should succeed: {:?}",
+            result.err()
+        );
+
+        // .pub file should have new content
+        let pub_content = fs::read_to_string(&pub_path)?;
+        assert_eq!(pub_content.trim(), "new-public-value");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_generate_dry_run_public_only_no_changes() -> Result<()> {
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+        let temp_dir = tempdir()?;
+
+        // Create a public-only generator
+        let rules_content = format!(
+            r#"
+    {{
+      "{}/dry-public.age" = {{
+    publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+    generator = {{ }}: {{ public = "dry-public-value"; }};
+      }};
+    }}
+    "#,
+            temp_dir.path().to_str().unwrap()
+        );
+
+        let mut temp_rules = NamedTempFile::new()?;
+        writeln!(temp_rules, "{}", rules_content)?;
+        temp_rules.flush()?;
+
+        let args = vec![
+            "agenix".to_string(),
+            "generate".to_string(),
+            "--dry-run".to_string(),
+            "--secrets-nix".to_string(),
+            temp_rules.path().to_str().unwrap().to_string(),
+        ];
+        let result = crate::run(args);
+
+        assert!(
+            result.is_ok(),
+            "Generate --dry-run public-only should succeed: {:?}",
+            result.err()
+        );
+
+        // No files should be created
+        assert!(
+            !temp_dir.path().join("dry-public.age.pub").exists(),
+            "dry-public.age.pub should NOT be created in dry-run"
+        );
+        assert!(
+            !temp_dir.path().join("dry-public.age").exists(),
+            "dry-public.age should NOT be created in dry-run"
+        );
+
         Ok(())
     }
 }

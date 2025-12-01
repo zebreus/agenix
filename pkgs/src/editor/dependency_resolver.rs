@@ -177,14 +177,6 @@ impl<'a> DependencyResolver<'a> {
             .and_then(|(_, output)| output.secret.as_deref())
     }
 
-    /// Check if a generated secret has public output by basename matching.
-    pub fn find_generated_public(&self, basename: &str) -> Option<&str> {
-        self.generated_secrets
-            .iter()
-            .find(|(key, _)| SecretName::new(key).basename() == basename)
-            .and_then(|(_, output)| output.public.as_deref())
-    }
-
     /// Check if a dependency was generated with a specific output type.
     /// Returns (has_secret, has_public).
     pub fn get_generated_output_info(&self, basename: &str) -> Option<(bool, bool)> {
@@ -195,6 +187,7 @@ impl<'a> DependencyResolver<'a> {
     }
 
     /// Build the Nix context (secrets and publics attrsets) for dependencies.
+    /// Returns the context string and warnings about missing dependency outputs.
     pub fn build_dependency_context(&self, deps: &[String]) -> Result<String> {
         if deps.is_empty() {
             return Ok("{}".to_string());
@@ -232,6 +225,59 @@ impl<'a> DependencyResolver<'a> {
         let publics_str = format_nix_attrset("publics", &publics_parts);
 
         Ok(format!("{{ {} {} }}", secrets_str, publics_str))
+    }
+
+    /// Validate dependencies and generate helpful error messages.
+    /// This should be called when a generator evaluation fails to provide context.
+    ///
+    /// Returns a detailed error message explaining what dependency outputs are missing.
+    pub fn get_dependency_availability_info(&self, deps: &[String]) -> Vec<String> {
+        let mut messages = Vec::new();
+
+        for dep in deps {
+            let dep_file = self.resolve_dependency_path(dep);
+            let dep_name = SecretName::new(&dep_file);
+            let dep_basename = dep_name.basename();
+            let dep_key = dep_name.normalized();
+
+            let has_secret = self.find_generated_secret(dep_basename).is_some();
+            let has_public = self.get_public_content(&dep_file).ok().flatten().is_some();
+
+            // Check if dependency was generated with only one output type
+            if let Some((gen_has_secret, gen_has_public)) =
+                self.get_generated_output_info(dep_basename)
+            {
+                if !gen_has_public {
+                    messages.push(format!(
+                        "Dependency '{}' was generated but only produced a 'secret' output, not 'public'. \
+                        If your generator uses publics.\"{}\", the dependency generator needs to return \
+                        {{ secret = ...; public = ...; }} instead of just {{ secret = ...; }}",
+                        dep_key, dep_key
+                    ));
+                }
+                if !gen_has_secret {
+                    messages.push(format!(
+                        "Dependency '{}' was generated but only produced a 'public' output, not 'secret'. \
+                        If your generator uses secrets.\"{}\", the dependency generator needs to return \
+                        {{ secret = ...; public = ...; }} or just {{ secret = ...; }} instead of {{ public = ...; }}",
+                        dep_key, dep_key
+                    ));
+                }
+            } else if !has_secret && !has_public {
+                messages.push(format!(
+                    "Dependency '{}' has not been generated yet and has no .pub file available",
+                    dep_key
+                ));
+            } else if !has_secret {
+                messages.push(format!(
+                    "Dependency '{}' only has a .pub file available (no secret content). \
+                    If your generator uses secrets.\"{}\", you need to regenerate the dependency first",
+                    dep_key, dep_key
+                ));
+            }
+        }
+
+        messages
     }
 
     /// Collect all dependencies of a secret recursively.
