@@ -167,6 +167,139 @@ pub fn should_armor(rules_path: &str, file: &str) -> Result<bool> {
     value_to_bool(&output)
 }
 
+/// Metadata about what outputs a secret has (or will have when generated).
+#[derive(Debug, Clone, PartialEq)]
+pub struct SecretOutputInfo {
+    /// Whether the secret has (or will produce) a secret/encrypted file
+    pub has_secret: bool,
+    /// Whether the secret has (or will produce) a public file
+    pub has_public: bool,
+}
+
+/// Get information about what outputs a secret has or will produce.
+///
+/// This checks in priority order:
+/// 1. Explicit `hasSecret` / `hasPublic` attributes in secrets.nix
+/// 2. If a generator exists (explicit or implicit), attempt to deduce from generator output type
+/// 3. Fall back to checking file existence (.age and .pub files)
+pub fn get_secret_output_info(rules_path: &str, file: &str) -> Result<SecretOutputInfo> {
+    // First check for explicit attributes in secrets.nix
+    let explicit_info = get_explicit_output_info(rules_path, file)?;
+    if let Some(info) = explicit_info {
+        return Ok(info);
+    }
+
+    // Try to infer from generator if present
+    if let Some(info) = infer_output_info_from_generator(rules_path, file)? {
+        return Ok(info);
+    }
+
+    // Fall back to checking file existence
+    let rules_path_obj = std::path::Path::new(rules_path);
+    let rules_dir = rules_path_obj
+        .parent()
+        .unwrap_or_else(|| std::path::Path::new("."));
+
+    // Normalize file path to check for .pub files
+    let file_basename = file.strip_suffix(".age").unwrap_or(file);
+    let pub_paths = [
+        rules_dir.join(format!("{}.age.pub", file_basename)),
+        rules_dir.join(format!("{}.pub", file_basename)),
+    ];
+
+    let has_public = pub_paths.iter().any(|p| p.exists());
+
+    // For files without explicit config, assume hasSecret = true (default behavior)
+    Ok(SecretOutputInfo {
+        has_secret: true,
+        has_public,
+    })
+}
+
+/// Check for explicitly set hasSecret/hasPublic attributes in secrets.nix
+fn get_explicit_output_info(rules_path: &str, file: &str) -> Result<Option<SecretOutputInfo>> {
+    let nix_expr = format!(
+        r#"(let 
+          rules = import {rules_path};
+          secret = rules."{file}";
+          hasSecretAttr = builtins.hasAttr "hasSecret" secret;
+          hasPublicAttr = builtins.hasAttr "hasPublic" secret;
+          result = {{
+            hasSecretAttr = hasSecretAttr;
+            hasPublicAttr = hasPublicAttr;
+            hasSecret = if hasSecretAttr then secret.hasSecret else null;
+            hasPublic = if hasPublicAttr then secret.hasPublic else null;
+          }};
+        in builtins.deepSeq result result)"#,
+    );
+
+    let current_dir = current_dir()?;
+    let output = eval_nix_expression(nix_expr.as_str(), &current_dir)?;
+
+    let Value::Attrs(attrs) = output else {
+        return Ok(None);
+    };
+
+    let has_secret_attr = attrs
+        .select(NixString::from(b"hasSecretAttr" as &[u8]).as_ref())
+        .map(|v| value_to_bool(&v.clone()))
+        .transpose()?
+        .unwrap_or(false);
+
+    let has_public_attr = attrs
+        .select(NixString::from(b"hasPublicAttr" as &[u8]).as_ref())
+        .map(|v| value_to_bool(&v.clone()))
+        .transpose()?
+        .unwrap_or(false);
+
+    // If neither attribute is explicitly set, return None to try other methods
+    if !has_secret_attr && !has_public_attr {
+        return Ok(None);
+    }
+
+    // Get the actual values, defaulting unset attrs to reasonable defaults
+    let has_secret = if has_secret_attr {
+        attrs
+            .select(NixString::from(b"hasSecret" as &[u8]).as_ref())
+            .map(|v| value_to_bool(&v.clone()))
+            .transpose()?
+            .unwrap_or(true)
+    } else {
+        true // Default: secrets have encrypted content
+    };
+
+    let has_public = if has_public_attr {
+        attrs
+            .select(NixString::from(b"hasPublic" as &[u8]).as_ref())
+            .map(|v| value_to_bool(&v.clone()))
+            .transpose()?
+            .unwrap_or(false)
+    } else {
+        false // Default: no public unless specified
+    };
+
+    Ok(Some(SecretOutputInfo {
+        has_secret,
+        has_public,
+    }))
+}
+
+/// Try to infer output info by evaluating the generator (if present)
+fn infer_output_info_from_generator(
+    rules_path: &str,
+    file: &str,
+) -> Result<Option<SecretOutputInfo>> {
+    // Try generating with minimal context to see what output type we get
+    match generate_secret_with_public(rules_path, file) {
+        Ok(Some(output)) => Ok(Some(SecretOutputInfo {
+            has_secret: output.secret.is_some(),
+            has_public: output.public.is_some(),
+        })),
+        Ok(None) => Ok(None), // No generator
+        Err(_) => Ok(None),   // Generator failed (probably needs dependencies)
+    }
+}
+
 /// Represents the output of a generator function.
 ///
 /// A generator can return:
@@ -2995,6 +3128,121 @@ mod tests {
 
         // Should not include self as dependency
         assert_eq!(result.len(), 0);
+        Ok(())
+    }
+
+    // ===========================================
+    // SECRET OUTPUT INFO TESTS
+    // ===========================================
+
+    #[test]
+    fn test_get_secret_output_info_explicit_has_secret_false() -> Result<()> {
+        let rules_content = r#"
+        {
+          "public-only.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+            hasSecret = false;
+            hasPublic = true;
+          };
+        }
+        "#;
+        let temp_file = create_test_rules_file(rules_content)?;
+        let info = get_secret_output_info(temp_file.path().to_str().unwrap(), "public-only.age")?;
+
+        assert!(!info.has_secret);
+        assert!(info.has_public);
+        Ok(())
+    }
+
+    #[test]
+    fn test_get_secret_output_info_explicit_has_public_false() -> Result<()> {
+        let rules_content = r#"
+        {
+          "secret-only.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+            hasSecret = true;
+            hasPublic = false;
+          };
+        }
+        "#;
+        let temp_file = create_test_rules_file(rules_content)?;
+        let info = get_secret_output_info(temp_file.path().to_str().unwrap(), "secret-only.age")?;
+
+        assert!(info.has_secret);
+        assert!(!info.has_public);
+        Ok(())
+    }
+
+    #[test]
+    fn test_get_secret_output_info_inferred_from_generator_public_only() -> Result<()> {
+        let rules_content = r#"
+        {
+          "metadata.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+            generator = { }: { public = "metadata-value"; };
+          };
+        }
+        "#;
+        let temp_file = create_test_rules_file(rules_content)?;
+        let info = get_secret_output_info(temp_file.path().to_str().unwrap(), "metadata.age")?;
+
+        assert!(!info.has_secret);
+        assert!(info.has_public);
+        Ok(())
+    }
+
+    #[test]
+    fn test_get_secret_output_info_inferred_from_generator_both() -> Result<()> {
+        let rules_content = r#"
+        {
+          "keypair.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+            generator = { }: { secret = "private-key"; public = "public-key"; };
+          };
+        }
+        "#;
+        let temp_file = create_test_rules_file(rules_content)?;
+        let info = get_secret_output_info(temp_file.path().to_str().unwrap(), "keypair.age")?;
+
+        assert!(info.has_secret);
+        assert!(info.has_public);
+        Ok(())
+    }
+
+    #[test]
+    fn test_get_secret_output_info_default_secret_only() -> Result<()> {
+        // Without explicit attrs or generator, should default to has_secret=true, has_public=false
+        let rules_content = r#"
+        {
+          "plain.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+          };
+        }
+        "#;
+        let temp_file = create_test_rules_file(rules_content)?;
+        let info = get_secret_output_info(temp_file.path().to_str().unwrap(), "plain.age")?;
+
+        assert!(info.has_secret);
+        assert!(!info.has_public);
+        Ok(())
+    }
+
+    #[test]
+    fn test_get_secret_output_info_partial_explicit() -> Result<()> {
+        // Only hasPublic is set explicitly, hasSecret should default to true
+        let rules_content = r#"
+        {
+          "partial.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+            hasPublic = true;
+          };
+        }
+        "#;
+        let temp_file = create_test_rules_file(rules_content)?;
+        let info = get_secret_output_info(temp_file.path().to_str().unwrap(), "partial.age")?;
+
+        assert!(info.has_secret); // Default
+        assert!(info.has_public); // Explicit
         Ok(())
     }
 }

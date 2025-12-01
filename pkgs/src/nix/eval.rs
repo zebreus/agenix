@@ -105,6 +105,11 @@ pub fn value_to_string(v: Value) -> Result<String> {
 pub fn value_to_bool(value: &Value) -> Result<bool> {
     match value {
         Value::Bool(b) => Ok(*b),
+        Value::Thunk(thunk) => {
+            // Extract value from evaluated thunk
+            let inner = thunk.value();
+            value_to_bool(&inner)
+        }
         _ => Err(anyhow!("Expected boolean value, got: {value:?}")),
     }
 }
