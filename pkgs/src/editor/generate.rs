@@ -175,6 +175,76 @@ fn encrypt_secret(
     Ok(ProcessResult::Generated)
 }
 
+/// Run the generator for a secret, with dependency context if needed.
+fn run_generator(
+    file: &str,
+    rules_path: &str,
+    deps: &[String],
+    resolver: &DependencyResolver,
+) -> Result<Option<crate::nix::GeneratorOutput>> {
+    let context = resolver.build_dependency_context(deps)?;
+    let output_result = if !deps.is_empty() {
+        generate_secret_with_public_and_context(rules_path, file, &context)
+    } else {
+        generate_secret_with_public(rules_path, file)
+    };
+
+    // Handle generator errors with helpful context about dependencies
+    match output_result {
+        Ok(out) => Ok(out),
+        Err(err) => {
+            // Check if this might be a dependency-related error
+            let err_str = err.to_string();
+            if !deps.is_empty() && (err_str.contains("attribute") || err_str.contains("not found"))
+            {
+                // Get dependency availability info to provide better error context
+                let dep_info = resolver.get_dependency_availability_info(deps);
+                if !dep_info.is_empty() {
+                    return Err(anyhow!(
+                        "Failed to generate '{}': {}\n\nPossible dependency issues:\n{}",
+                        file,
+                        err,
+                        dep_info.join("\n")
+                    ));
+                }
+            }
+            Err(err.context(format!("Failed to generate secret '{}'", file)))
+        }
+    }
+}
+
+/// Write output files for a generated secret (encrypted .age file and/or .pub file).
+/// Returns the appropriate ProcessResult.
+fn write_generated_output(
+    file: &str,
+    output: &crate::nix::GeneratorOutput,
+    rules_path: &str,
+    dry_run: bool,
+) -> Result<ProcessResult> {
+    match &output.secret {
+        Some(secret_content) => {
+            // Has secret content - encrypt and optionally write .pub file
+            log!("Generating {file}...");
+            let result = encrypt_secret(file, secret_content, rules_path, dry_run)?;
+
+            if result == ProcessResult::NoPublicKeys {
+                return Ok(result);
+            }
+
+            log!("Generated and encrypted {file}");
+            write_public_key_file(file, output, dry_run)?;
+            Ok(ProcessResult::Generated)
+        }
+        None => {
+            // Public-only output - write .pub file only
+            log!("Generating public-only output for {file}...");
+            write_public_key_file(file, output, dry_run)?;
+            log!("Generated public file for {file} (no secret to encrypt)");
+            Ok(ProcessResult::PublicOnlyGenerated)
+        }
+    }
+}
+
 /// Process a single secret file - check dependencies, generate, encrypt, and store.
 fn process_single_secret(
     file: &str,
@@ -190,6 +260,8 @@ fn process_single_secret(
 
     // Skip if the file already exists (unless force is set)
     if Path::new(file).exists() && !force {
+        // Try to check if generator exists, but don't fail on evaluation errors
+        // (the generator might have dependencies that aren't available)
         if let Ok(Some(_)) = generate_secret_with_public(ctx.rules_path(), file) {
             log!("Skipping {file}: already exists (use --force to overwrite)");
         }
@@ -197,13 +269,11 @@ fn process_single_secret(
         return Ok(ProcessResult::AlreadyProcessed);
     }
 
-    // Get dependencies
+    // Get and validate dependencies
     let deps = get_secret_dependencies(ctx.rules_path(), file).unwrap_or_default();
-
-    // Check if all dependencies are satisfied
     let (all_satisfied, missing) = resolver.are_all_dependencies_satisfied(&deps)?;
 
-    if !all_satisfied && !missing.is_empty() {
+    if !missing.is_empty() {
         return Err(anyhow!(
             "Secret '{}' depends on '{}' which cannot be found or generated",
             file,
@@ -215,68 +285,22 @@ fn process_single_secret(
         return Ok(ProcessResult::Deferred);
     }
 
-    // Build dependency context and generate the secret
-    let context = resolver.build_dependency_context(&deps)?;
-    let output_result = if !deps.is_empty() {
-        generate_secret_with_public_and_context(ctx.rules_path(), file, &context)
-    } else {
-        generate_secret_with_public(ctx.rules_path(), file)
-    };
-
-    // Handle generator errors with helpful context about dependencies
-    let output = match output_result {
-        Ok(out) => out,
-        Err(err) => {
-            // Check if this might be a dependency-related error
-            let err_str = err.to_string();
-            if !deps.is_empty() && (err_str.contains("attribute") || err_str.contains("not found"))
-            {
-                // Get dependency availability info to provide better error context
-                let dep_info = resolver.get_dependency_availability_info(&deps);
-                if !dep_info.is_empty() {
-                    return Err(anyhow!(
-                        "Failed to generate '{}': {}\n\nPossible dependency issues:\n{}",
-                        file,
-                        err,
-                        dep_info.join("\n")
-                    ));
-                }
-            }
-            return Err(err.context(format!("Failed to generate secret '{}'", file)));
-        }
-    };
-
-    let Some(output) = output else {
+    // Run the generator
+    let Some(output) = run_generator(file, ctx.rules_path(), &deps, resolver)? else {
         resolver.mark_processed(file);
         return Ok(ProcessResult::NoGenerator);
     };
 
-    // Handle public-only generator output
-    let Some(secret_content) = &output.secret else {
-        // Generator produced only public output - write .pub file but no encrypted file
-        log!("Generating public-only output for {file}...");
-        write_public_key_file(file, &output, dry_run)?;
-        resolver.store_generated(file, output.clone());
-        resolver.mark_processed(file);
-        log!("Generated public file for {file} (no secret to encrypt)");
-        return Ok(ProcessResult::PublicOnlyGenerated);
-    };
+    // Write output files and get result
+    let result = write_generated_output(file, &output, ctx.rules_path(), dry_run)?;
 
-    // Encrypt and write the secret. In dry-run mode, validation occurs but no files are written.
-    log!("Generating {file}...");
-    let result = encrypt_secret(file, secret_content, ctx.rules_path(), dry_run)?;
-
-    if result == ProcessResult::NoPublicKeys {
-        resolver.mark_processed(file);
-        return Ok(result);
+    // Store and mark as processed (unless no public keys)
+    if result != ProcessResult::NoPublicKeys {
+        resolver.store_generated(file, output);
     }
-
-    log!("Generated and encrypted {file}");
-    resolver.store_generated(file, output.clone());
-    write_public_key_file(file, &output, dry_run)?;
     resolver.mark_processed(file);
 
-    Ok(ProcessResult::Generated)
+    Ok(result)
 }
 
 /// Format circular dependency error message.
