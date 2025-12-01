@@ -8,7 +8,7 @@ use std::path::Path;
 
 use crate::crypto;
 use crate::log;
-use crate::nix::get_all_files;
+use crate::nix::{get_all_files, get_secret_output_info};
 use crate::output::{is_quiet, pluralize_secret};
 
 use super::filter_files;
@@ -24,6 +24,10 @@ pub enum SecretStatus {
     CannotDecrypt(String),
     /// Secret file does not exist
     Missing,
+    /// Public-only secret (no .age file expected, only .pub)
+    PublicOnly,
+    /// Public-only secret but .pub file is missing
+    PublicOnlyMissing,
 }
 
 impl SecretStatus {
@@ -33,16 +37,20 @@ impl SecretStatus {
             Self::Ok => "EXISTS",
             Self::Missing => "MISSING",
             Self::CannotDecrypt(_) => "NO_DECRYPT",
+            Self::PublicOnly => "PUBLIC_ONLY",
+            Self::PublicOnlyMissing => "PUB_MISSING",
         }
     }
 
-    /// Updates counts based on status: (ok, missing, error)
-    fn update_counts(&self, counts: (usize, usize, usize)) -> (usize, usize, usize) {
-        let (ok, missing, err) = counts;
+    /// Updates counts based on status: (ok, missing, error, public_only)
+    fn update_counts(&self, counts: (usize, usize, usize, usize)) -> (usize, usize, usize, usize) {
+        let (ok, missing, err, public) = counts;
         match self {
-            Self::Ok => (ok + 1, missing, err),
-            Self::Missing => (ok, missing + 1, err),
-            Self::CannotDecrypt(_) => (ok, missing, err + 1),
+            Self::Ok => (ok + 1, missing, err, public),
+            Self::Missing => (ok, missing + 1, err, public),
+            Self::CannotDecrypt(_) => (ok, missing, err + 1, public),
+            Self::PublicOnly => (ok, missing, err, public + 1),
+            Self::PublicOnlyMissing => (ok, missing + 1, err, public),
         }
     }
 }
@@ -53,6 +61,8 @@ impl std::fmt::Display for SecretStatus {
             Self::Ok => write!(f, "ok"),
             Self::CannotDecrypt(_) => write!(f, "cannot decrypt"),
             Self::Missing => write!(f, "missing"),
+            Self::PublicOnly => write!(f, "public-only"),
+            Self::PublicOnlyMissing => write!(f, "public missing"),
         }
     }
 }
@@ -64,12 +74,38 @@ pub struct SecretInfo {
     pub status: SecretStatus,
 }
 
-/// Get the status of a secret file
+/// Get the status of a secret file, considering public-only secrets
 fn get_secret_status(
+    rules_path: &str,
     file: &str,
     identities: &[String],
     no_system_identities: bool,
 ) -> SecretStatus {
+    // Check if this is a public-only secret
+    if let Ok(output_info) = get_secret_output_info(rules_path, file)
+        && !output_info.has_secret
+        && output_info.has_public
+    {
+        // This is a public-only secret - check if .pub file exists
+        let file_basename = file.strip_suffix(".age").unwrap_or(file);
+        let rules_path_obj = std::path::Path::new(rules_path);
+        let rules_dir = rules_path_obj
+            .parent()
+            .unwrap_or_else(|| std::path::Path::new("."));
+
+        let pub_paths = [
+            rules_dir.join(format!("{}.age.pub", file_basename)),
+            rules_dir.join(format!("{}.pub", file_basename)),
+        ];
+
+        if pub_paths.iter().any(|p| p.exists()) {
+            return SecretStatus::PublicOnly;
+        } else {
+            return SecretStatus::PublicOnlyMissing;
+        }
+    }
+
+    // Normal secret - check for .age file
     if !Path::new(file).exists() {
         return SecretStatus::Missing;
     }
@@ -81,10 +117,15 @@ fn get_secret_status(
 }
 
 /// Get information about a secret
-fn get_secret_info(file: &str, identities: &[String], no_system_identities: bool) -> SecretInfo {
+fn get_secret_info(
+    rules_path: &str,
+    file: &str,
+    identities: &[String],
+    no_system_identities: bool,
+) -> SecretInfo {
     SecretInfo {
         name: SecretName::new(file).normalized().to_string(),
-        status: get_secret_status(file, identities, no_system_identities),
+        status: get_secret_status(rules_path, file, identities, no_system_identities),
     }
 }
 
@@ -128,29 +169,41 @@ pub fn list_secrets(
     // Status mode: collect full info and print with status
     let mut secret_infos: Vec<SecretInfo> = files
         .iter()
-        .map(|file| get_secret_info(file, identities, no_system_identities))
+        .map(|file| get_secret_info(rules_path, file, identities, no_system_identities))
         .collect();
     secret_infos.sort_by(|a, b| a.name.cmp(&b.name));
 
-    let (ok, missing, errors) = print_secrets_with_status(&secret_infos);
+    let (ok, missing, errors, public_only) = print_secrets_with_status(&secret_infos);
 
     if !is_quiet() {
-        eprintln!(
-            "Total: {} {} ({} exists, {} missing, {} no decrypt)",
-            secret_infos.len(),
-            pluralize_secret(secret_infos.len()),
-            ok,
-            missing,
-            errors
-        );
+        if public_only > 0 {
+            eprintln!(
+                "Total: {} {} ({} exists, {} missing, {} no decrypt, {} public-only)",
+                secret_infos.len(),
+                pluralize_secret(secret_infos.len()),
+                ok,
+                missing,
+                errors,
+                public_only
+            );
+        } else {
+            eprintln!(
+                "Total: {} {} ({} exists, {} missing, {} no decrypt)",
+                secret_infos.len(),
+                pluralize_secret(secret_infos.len()),
+                ok,
+                missing,
+                errors
+            );
+        }
     }
 
     Ok(())
 }
 
-/// Print secrets with status to stdout and return (ok_count, missing_count, error_count)
-fn print_secrets_with_status(secrets: &[SecretInfo]) -> (usize, usize, usize) {
-    let mut counts = (0, 0, 0);
+/// Print secrets with status to stdout and return (ok_count, missing_count, error_count, public_only_count)
+fn print_secrets_with_status(secrets: &[SecretInfo]) -> (usize, usize, usize, usize) {
+    let mut counts = (0, 0, 0, 0);
 
     for s in secrets {
         println!("{}\t{}", s.status.code(), s.name);
@@ -603,6 +656,11 @@ mod tests {
             format!("{}", SecretStatus::CannotDecrypt("error".to_string())),
             "cannot decrypt"
         );
+        assert_eq!(format!("{}", SecretStatus::PublicOnly), "public-only");
+        assert_eq!(
+            format!("{}", SecretStatus::PublicOnlyMissing),
+            "public missing"
+        );
     }
 
     #[test]
@@ -618,6 +676,8 @@ mod tests {
             SecretStatus::CannotDecrypt("e1".to_string()),
             SecretStatus::CannotDecrypt("e2".to_string())
         );
+        assert_eq!(SecretStatus::PublicOnly, SecretStatus::PublicOnly);
+        assert_ne!(SecretStatus::PublicOnly, SecretStatus::PublicOnlyMissing);
     }
 
     #[test]
@@ -666,36 +726,49 @@ mod tests {
     }
 
     #[test]
+    fn test_status_code_public_only() {
+        assert_eq!(SecretStatus::PublicOnly.code(), "PUBLIC_ONLY");
+    }
+
+    #[test]
+    fn test_status_code_public_only_missing() {
+        assert_eq!(SecretStatus::PublicOnlyMissing.code(), "PUB_MISSING");
+    }
+
+    #[test]
     fn test_status_update_counts_ok() {
-        let (ok, missing, err) = SecretStatus::Ok.update_counts((0, 0, 0));
-        assert_eq!((ok, missing, err), (1, 0, 0));
+        let (ok, missing, err, public) = SecretStatus::Ok.update_counts((0, 0, 0, 0));
+        assert_eq!((ok, missing, err, public), (1, 0, 0, 0));
     }
 
     #[test]
     fn test_status_update_counts_missing() {
-        let (ok, missing, err) = SecretStatus::Missing.update_counts((0, 0, 0));
-        assert_eq!((ok, missing, err), (0, 1, 0));
+        let (ok, missing, err, public) = SecretStatus::Missing.update_counts((0, 0, 0, 0));
+        assert_eq!((ok, missing, err, public), (0, 1, 0, 0));
     }
 
     #[test]
     fn test_status_update_counts_error() {
-        let (ok, missing, err) =
-            SecretStatus::CannotDecrypt("err".to_string()).update_counts((0, 0, 0));
-        assert_eq!((ok, missing, err), (0, 0, 1));
+        let (ok, missing, err, public) =
+            SecretStatus::CannotDecrypt("err".to_string()).update_counts((0, 0, 0, 0));
+        assert_eq!((ok, missing, err, public), (0, 0, 1, 0));
     }
 
     #[test]
     fn test_status_update_counts_cumulative() {
-        let counts = (5, 3, 2);
-        let (ok, missing, err) = SecretStatus::Ok.update_counts(counts);
-        assert_eq!((ok, missing, err), (6, 3, 2));
+        let counts = (5, 3, 2, 1);
+        let (ok, missing, err, public) = SecretStatus::Ok.update_counts(counts);
+        assert_eq!((ok, missing, err, public), (6, 3, 2, 1));
 
-        let (ok, missing, err) = SecretStatus::Missing.update_counts(counts);
-        assert_eq!((ok, missing, err), (5, 4, 2));
+        let (ok, missing, err, public) = SecretStatus::Missing.update_counts(counts);
+        assert_eq!((ok, missing, err, public), (5, 4, 2, 1));
 
-        let (ok, missing, err) =
+        let (ok, missing, err, public) =
             SecretStatus::CannotDecrypt("err".to_string()).update_counts(counts);
-        assert_eq!((ok, missing, err), (5, 3, 3));
+        assert_eq!((ok, missing, err, public), (5, 3, 3, 1));
+
+        let (ok, missing, err, public) = SecretStatus::PublicOnly.update_counts(counts);
+        assert_eq!((ok, missing, err, public), (5, 3, 2, 2));
     }
 
     // ===========================================
@@ -704,7 +777,15 @@ mod tests {
 
     #[test]
     fn test_get_secret_status_missing_file() {
-        let status = get_secret_status("/nonexistent/file.age", &[], false);
+        // Create a minimal rules file
+        let temp_rules =
+            create_rules_file(r#"{ "nonexistent.age" = { publicKeys = ["age1..."]; }; }"#);
+        let status = get_secret_status(
+            temp_rules.path().to_str().unwrap(),
+            "/nonexistent/file.age",
+            &[],
+            false,
+        );
         assert_eq!(status, SecretStatus::Missing);
     }
 
@@ -714,7 +795,18 @@ mod tests {
         let path = temp_dir.path().join("invalid.age");
         fs::write(&path, "not-valid-age-content").unwrap();
 
-        let status = get_secret_status(path.to_str().unwrap(), &[], false);
+        // Create a minimal rules file
+        let temp_rules = create_rules_file(&format!(
+            r#"{{ "{}" = {{ publicKeys = ["age1..."]; }}; }}"#,
+            path.to_str().unwrap()
+        ));
+
+        let status = get_secret_status(
+            temp_rules.path().to_str().unwrap(),
+            path.to_str().unwrap(),
+            &[],
+            false,
+        );
         assert!(matches!(status, SecretStatus::CannotDecrypt(_)));
     }
 }
