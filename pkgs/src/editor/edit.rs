@@ -296,135 +296,35 @@ pub fn decrypt_file(
     )
 }
 
-/// Compute the public file path for a secret.
-///
-/// The public file is always `{secret}.pub` (e.g., `secret.age.pub` for `secret.age`).
-fn get_public_file_path(file: &str) -> String {
+/// Get the public file path for a secret (appends `.pub` suffix).
+fn public_file_path(file: &str) -> String {
     format!("{}.pub", file)
 }
 
-/// Read the public file associated with a secret.
-///
-/// Outputs the contents of the `.pub` file to stdout or a specified output file.
-/// The secret must exist in the rules file (validated via EncryptionContext).
-pub fn read_public_file(rules_path: &str, file: &str, output: Option<&str>) -> Result<()> {
-    // Validate secret exists in rules using EncryptionContext
-    let _ = EncryptionContext::new(rules_path, file)?;
-
-    let pub_file = get_public_file_path(file);
-    verbose!("Reading public file: {}", pub_file);
-
-    if !Path::new(&pub_file).exists() {
-        return Err(anyhow!(
-            "Public file does not exist: {}\nHint: Generate the secret first with 'agenix generate'",
-            pub_file
-        ));
-    }
-
-    let content = fs::read_to_string(&pub_file)
-        .with_context(|| format!("Failed to read public file: {}", pub_file))?;
-
-    let output_path = output.unwrap_or("/dev/stdout");
-    verbose!("Writing to: {}", output_path);
-
-    fs::write(output_path, content).with_context(|| format!("Failed to write to: {}", output_path))
+/// Validate that a secret exists in the rules file.
+fn validate_secret(rules_path: &str, file: &str) -> Result<()> {
+    EncryptionContext::new(rules_path, file).map(|_| ())
 }
 
-/// Write content to the public file associated with a secret.
-///
-/// Reads content from stdin or a file and writes it to the `.pub` file.
-/// The secret must exist in the rules file (validated via EncryptionContext).
-///
-/// In dry-run mode, validates the input but does not write the file.
-pub fn write_public_file(
-    rules_path: &str,
-    file: &str,
-    input: Option<&str>,
-    force: bool,
-    dry_run: bool,
-) -> Result<()> {
-    // Validate secret exists in rules using EncryptionContext
-    let _ = EncryptionContext::new(rules_path, file)?;
-
-    let pub_file = get_public_file_path(file);
-    verbose!("Writing public file: {}", pub_file);
-
-    // Check if file exists before doing any work
-    if Path::new(&pub_file).exists() && !force {
-        return Err(anyhow!(
-            "Public file already exists: {}\nUse --force to overwrite or 'agenix edit --public' to edit the existing file",
-            pub_file
-        ));
-    }
-
-    // Read content from input file or stdin
-    let content = match input {
-        Some(input_path) => {
-            verbose!("Reading content from file: {}", input_path);
-            fs::read_to_string(input_path)
-                .with_context(|| format!("Failed to read input file: {}", input_path))?
-        }
-        None => {
-            verbose!("Reading content from stdin");
-            let mut stdin_content = String::new();
-            io::stdin()
-                .read_to_string(&mut stdin_content)
-                .context("Failed to read from stdin")?;
-            stdin_content
-        }
-    };
-
-    if content.is_empty() {
-        return Err(match input {
-            Some(path) => anyhow!("Input file is empty: {}", path),
-            None => anyhow!("No input provided on stdin"),
-        });
-    }
-
-    log!("Writing to: {}", pub_file);
-
-    // In dry-run mode, skip only the final file write
-    if dry_run {
-        log!("Dry-run mode: not saving changes to {}", pub_file);
-        return Ok(());
-    }
-
-    fs::write(&pub_file, content)
-        .with_context(|| format!("Failed to write public file: {}", pub_file))
-}
-
-/// Edit the public file associated with a secret using an editor.
-///
-/// Opens the `.pub` file in an editor for modification. If the file doesn't exist,
-/// starts with an empty file. The secret must exist in the rules file.
-///
-/// In dry-run mode, opens the editor but does not save the changes.
-pub fn edit_public_file(
-    rules_path: &str,
-    file: &str,
+/// Run an editor workflow on a file, handling stdin, change detection, and dry-run.
+fn run_editor_workflow(
+    target_file: &str,
     editor_cmd: Option<&str>,
     force: bool,
     dry_run: bool,
+    load_content: impl FnOnce() -> Result<Option<String>>,
+    save_content: impl FnOnce(&str) -> Result<()>,
 ) -> Result<()> {
-    // Validate secret exists in rules using EncryptionContext
-    let _ = EncryptionContext::new(rules_path, file)?;
-
-    let pub_file = get_public_file_path(file);
-    verbose!("Editing public file: {}", pub_file);
-
-    let filename = get_filename(&pub_file)?;
+    let filename = get_filename(target_file)?;
     let (_temp_dir, temp_file) = create_temp_cleartext(filename)?;
 
-    // Load existing content if present
-    if Path::new(&pub_file).exists() {
-        verbose!("Loading existing public file: {}", pub_file);
-        let content = fs::read_to_string(&pub_file)
-            .with_context(|| format!("Failed to read public file: {}", pub_file))?;
+    // Load existing content
+    if let Some(content) = load_content()? {
         fs::write(&temp_file, content).context("Failed to write to temporary file")?;
     } else if !force {
         return Err(anyhow!(
-            "Public file does not exist: {}\nUse --force to create a new file or generate the secret first",
-            pub_file
+            "File does not exist: {}\nUse --force to create a new file",
+            target_file
         ));
     }
 
@@ -434,14 +334,41 @@ pub fn edit_public_file(
         fs::copy(&temp_file, &backup_file)?;
     }
 
-    // Determine how to edit the file
-    let editor_choice = determine_editor(editor_cmd);
+    // Edit the file
+    let skip_change_check = run_editor(editor_cmd, &temp_file)?;
 
-    // Edit the file based on the chosen method
-    let skip_change_check = match &editor_choice {
+    // Handle case where editor didn't create the file
+    if !temp_file.exists() {
+        log!("Warning: {} wasn't created", target_file);
+        return Ok(());
+    }
+
+    // Skip save if content unchanged
+    if !skip_change_check
+        && Path::new(&backup_file).exists()
+        && files_equal(&backup_file, &temp_file.to_string_lossy())?
+    {
+        log!("Warning: {} wasn't changed, skipping save", target_file);
+        return Ok(());
+    }
+
+    log!("Saving to: {}", target_file);
+
+    if dry_run {
+        log!("Dry-run mode: not saving changes to {}", target_file);
+        return Ok(());
+    }
+
+    let content = fs::read_to_string(&temp_file).context("Failed to read edited content")?;
+    save_content(&content)
+}
+
+/// Run the editor and return whether to skip change detection.
+fn run_editor(editor_cmd: Option<&str>, temp_file: &Path) -> Result<bool> {
+    match determine_editor(editor_cmd) {
         EditorChoice::Command(cmd) if cmd == ":" => {
             verbose!("Skipping editor (rekey mode)");
-            true
+            Ok(true)
         }
         EditorChoice::Command(cmd) => {
             verbose!("Running editor: {}", cmd);
@@ -449,55 +376,122 @@ pub fn edit_public_file(
                 .args(["-c", &format!("{} '{}'", cmd, temp_file.to_string_lossy())])
                 .status()
                 .context("Failed to run editor")?;
-
             if !status.success() {
                 return Err(anyhow!("Editor exited with non-zero status"));
             }
-            false
+            Ok(false)
         }
         EditorChoice::Stdin => {
             verbose!("Reading content from stdin");
-            let mut stdin_content = String::new();
+            let mut content = String::new();
             io::stdin()
-                .read_to_string(&mut stdin_content)
+                .read_to_string(&mut content)
                 .context("Failed to read from stdin")?;
-
-            if stdin_content.is_empty() {
+            if content.is_empty() {
                 return Err(anyhow!("No input provided on stdin"));
             }
-
-            fs::write(&temp_file, stdin_content).context("Failed to write stdin content")?;
-            false
+            fs::write(temp_file, content).context("Failed to write stdin content")?;
+            Ok(false)
         }
-    };
+    }
+}
 
-    // Handle case where editor didn't create the file
-    if !temp_file.exists() {
-        log!("Warning: {} wasn't created", pub_file);
-        return Ok(());
+/// Read content from stdin or a file.
+fn read_input(input: Option<&str>) -> Result<String> {
+    match input {
+        Some(path) => {
+            verbose!("Reading content from file: {}", path);
+            fs::read_to_string(path).with_context(|| format!("Failed to read: {}", path))
+        }
+        None => {
+            verbose!("Reading content from stdin");
+            let mut content = String::new();
+            io::stdin()
+                .read_to_string(&mut content)
+                .context("Failed to read from stdin")?;
+            Ok(content)
+        }
+    }
+}
+
+/// Read the public file associated with a secret to stdout or a file.
+pub fn read_public_file(rules_path: &str, file: &str, output: Option<&str>) -> Result<()> {
+    validate_secret(rules_path, file)?;
+    let pub_file = public_file_path(file);
+
+    if !Path::new(&pub_file).exists() {
+        return Err(anyhow!(
+            "Public file does not exist: {}\nHint: Generate the secret first with 'agenix generate'",
+            pub_file
+        ));
     }
 
-    // Skip save if content unchanged (only when editor was invoked)
-    if !skip_change_check
-        && Path::new(&backup_file).exists()
-        && files_equal(&backup_file, &temp_file.to_string_lossy())?
-    {
-        log!("Warning: {} wasn't changed, skipping save", pub_file);
-        return Ok(());
+    let content =
+        fs::read_to_string(&pub_file).with_context(|| format!("Failed to read: {}", pub_file))?;
+    let output_path = output.unwrap_or("/dev/stdout");
+    fs::write(output_path, content).with_context(|| format!("Failed to write to: {}", output_path))
+}
+
+/// Write content to the public file associated with a secret.
+pub fn write_public_file(
+    rules_path: &str,
+    file: &str,
+    input: Option<&str>,
+    force: bool,
+    dry_run: bool,
+) -> Result<()> {
+    validate_secret(rules_path, file)?;
+    let pub_file = public_file_path(file);
+
+    if Path::new(&pub_file).exists() && !force {
+        return Err(anyhow!(
+            "Public file already exists: {}\nUse --force to overwrite",
+            pub_file
+        ));
     }
 
-    log!("Saving to: {}", pub_file);
+    let content = read_input(input)?;
+    if content.is_empty() {
+        return Err(anyhow!("No input provided"));
+    }
 
-    // In dry-run mode, skip the actual save
     if dry_run {
-        log!("Dry-run mode: not saving changes to {}", pub_file);
+        log!("Dry-run: would write to {}", pub_file);
         return Ok(());
     }
 
-    // Copy content from temp file to pub file
-    let content = fs::read_to_string(&temp_file).context("Failed to read edited content")?;
-    fs::write(&pub_file, content)
-        .with_context(|| format!("Failed to write public file: {}", pub_file))
+    fs::write(&pub_file, content).with_context(|| format!("Failed to write: {}", pub_file))
+}
+
+/// Edit the public file associated with a secret using an editor.
+pub fn edit_public_file(
+    rules_path: &str,
+    file: &str,
+    editor_cmd: Option<&str>,
+    force: bool,
+    dry_run: bool,
+) -> Result<()> {
+    validate_secret(rules_path, file)?;
+    let pub_file = public_file_path(file);
+
+    run_editor_workflow(
+        &pub_file,
+        editor_cmd,
+        force,
+        dry_run,
+        || {
+            if Path::new(&pub_file).exists() {
+                fs::read_to_string(&pub_file)
+                    .map(Some)
+                    .with_context(|| format!("Failed to read: {}", pub_file))
+            } else {
+                Ok(None)
+            }
+        },
+        |content| {
+            fs::write(&pub_file, content).with_context(|| format!("Failed to write: {}", pub_file))
+        },
+    )
 }
 
 #[cfg(test)]
