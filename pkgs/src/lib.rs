@@ -114,9 +114,13 @@ where
             output,
             public,
         }) => {
+            let op = if public {
+                "read public file"
+            } else {
+                "decrypt"
+            };
             if public {
                 editor::read_public_file(&secrets_nix, &file, output.as_deref())
-                    .with_context(|| format!("Failed to read public file for {file}"))
             } else {
                 editor::decrypt_file(
                     &secrets_nix,
@@ -125,8 +129,8 @@ where
                     &args.identity,
                     args.no_system_identities,
                 )
-                .with_context(|| format!("Failed to decrypt {file}"))
             }
+            .with_context(|| format!("Failed to {} {}", op, file))
         }
         Some(cli::Command::Edit {
             file,
@@ -134,6 +138,7 @@ where
             force,
             public,
         }) => {
+            let op = if public { "edit public file" } else { "edit" };
             if public {
                 editor::edit_public_file(
                     &secrets_nix,
@@ -142,7 +147,6 @@ where
                     force,
                     args.dry_run,
                 )
-                .with_context(|| format!("Failed to edit public file for {file}"))
             } else {
                 editor::edit_file(
                     &secrets_nix,
@@ -153,8 +157,8 @@ where
                     force,
                     args.dry_run,
                 )
-                .with_context(|| format!("Failed to edit {file}"))
             }
+            .with_context(|| format!("Failed to {} {}", op, file))
         }
         Some(cli::Command::Encrypt {
             file,
@@ -162,6 +166,11 @@ where
             force,
             public,
         }) => {
+            let op = if public {
+                "write public file"
+            } else {
+                "encrypt"
+            };
             if public {
                 editor::write_public_file(
                     &secrets_nix,
@@ -170,11 +179,10 @@ where
                     force,
                     args.dry_run,
                 )
-                .with_context(|| format!("Failed to write public file for {file}"))
             } else {
                 editor::encrypt_file(&secrets_nix, &file, input.as_deref(), force, args.dry_run)
-                    .with_context(|| format!("Failed to encrypt {file}"))
             }
+            .with_context(|| format!("Failed to {} {}", op, file))
         }
         Some(cli::Command::List { status, secrets }) => editor::list_secrets(
             &secrets_nix,
