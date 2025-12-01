@@ -176,21 +176,40 @@ pub struct SecretOutputInfo {
     pub has_public: bool,
 }
 
+/// Validate that the output info is valid (at least one of hasSecret or hasPublic must be true)
+fn validate_output_info(info: &SecretOutputInfo, file: &str) -> Result<()> {
+    if !info.has_secret && !info.has_public {
+        return Err(anyhow::anyhow!(
+            "Secret '{}' has both hasSecret=false and hasPublic=false. \
+             A secret must produce at least one output (either an encrypted .age file or a .pub file). \
+             Set hasSecret=true to create an encrypted secret, or hasPublic=true to create a public-only entry.",
+            file
+        ));
+    }
+    Ok(())
+}
+
 /// Get information about what outputs a secret has or will produce.
 ///
 /// This checks in priority order:
 /// 1. Explicit `hasSecret` / `hasPublic` attributes in secrets.nix
 /// 2. If a generator exists (explicit or implicit), attempt to deduce from generator output type
 /// 3. Fall back to checking file existence (.age and .pub files)
+///
+/// # Errors
+/// Returns an error if both `hasSecret` and `hasPublic` are false, as a secret
+/// must produce at least one output.
 pub fn get_secret_output_info(rules_path: &str, file: &str) -> Result<SecretOutputInfo> {
     // First check for explicit attributes in secrets.nix
     let explicit_info = get_explicit_output_info(rules_path, file)?;
     if let Some(info) = explicit_info {
+        validate_output_info(&info, file)?;
         return Ok(info);
     }
 
     // Try to infer from generator if present
     if let Some(info) = infer_output_info_from_generator(rules_path, file)? {
+        validate_output_info(&info, file)?;
         return Ok(info);
     }
 
@@ -210,6 +229,7 @@ pub fn get_secret_output_info(rules_path: &str, file: &str) -> Result<SecretOutp
     let has_public = pub_paths.iter().any(|p| p.exists());
 
     // For files without explicit config, assume hasSecret = true (default behavior)
+    // This is always valid since has_secret=true
     Ok(SecretOutputInfo {
         has_secret: true,
         has_public,
@@ -3243,6 +3263,48 @@ mod tests {
 
         assert!(info.has_secret); // Default
         assert!(info.has_public); // Explicit
+        Ok(())
+    }
+
+    #[test]
+    fn test_get_secret_output_info_both_false_error() -> Result<()> {
+        // Setting both hasSecret=false and hasPublic=false should error
+        let rules_content = r#"
+        {
+          "invalid.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+            hasSecret = false;
+            hasPublic = false;
+          };
+        }
+        "#;
+        let temp_file = create_test_rules_file(rules_content)?;
+        let result = get_secret_output_info(temp_file.path().to_str().unwrap(), "invalid.age");
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("hasSecret=false"));
+        assert!(err.to_string().contains("hasPublic=false"));
+        Ok(())
+    }
+
+    #[test]
+    fn test_get_secret_output_info_secret_only_default_works() -> Result<()> {
+        // hasSecret=true, hasPublic=false is the default and should work fine
+        let rules_content = r#"
+        {
+          "secret-only.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+            hasSecret = true;
+            hasPublic = false;
+          };
+        }
+        "#;
+        let temp_file = create_test_rules_file(rules_content)?;
+        let info = get_secret_output_info(temp_file.path().to_str().unwrap(), "secret-only.age")?;
+
+        assert!(info.has_secret);
+        assert!(!info.has_public);
         Ok(())
     }
 }
