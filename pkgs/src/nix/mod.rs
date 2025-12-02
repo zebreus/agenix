@@ -198,9 +198,10 @@ fn validate_output_info(info: &SecretOutputInfo, file: &str, rules_path: &str) -
                  \n  1. Add at least one recipient to the 'publicKeys' array (age or SSH public keys), or\
                  \n  2. Set hasSecret=false if this is a public-only entry (e.g., SSH public key metadata)\
                  \n\nExample:\
-                 \n  \"{file}\" = {{\
+                 \n  \"{}\" = {{\
                  \n    publicKeys = [ \"age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p\" ];\
                  \n  }};",
+                file,
                 file
             ));
         }
