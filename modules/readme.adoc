@@ -207,6 +207,7 @@ When set, the public file will be symlinked (or copied if `public.symlink = fals
 {
   age.secrets.ssh-host-key = {
     file = ./secrets/ssh-host.age;
+    path = "/etc/ssh/ssh_host_ed25519_key";
     public.file = ./secrets/ssh-host.age.pub;
     public.installPath = "/etc/ssh/ssh_host_ed25519_key.pub";
   };
@@ -536,6 +537,15 @@ Directory for decrypted secrets before symlinking. Default varies by platform:
     gpg-key = {
       file = ./secrets/gpg.key.age;
       path = "${config.home.homeDirectory}/.gnupg/private-keys-v1.d/key.key";
+    };
+    # SSH key with public part installed
+    ssh-key = {
+      file = ./secrets/id_ed25519.age;
+      path = "${config.home.homeDirectory}/.ssh/id_ed25519";
+      mode = "0600";
+      public.file = ./secrets/id_ed25519.age.pub;
+      public.installPath = "${config.home.homeDirectory}/.ssh/id_ed25519.pub";
+      public.mode = "0644";
     };
   };
 
