@@ -106,7 +106,7 @@ let
 
   # Install a single public file
   installPublicFile = secretType: ''
-    echo "installing public file '${toString secretType.public.file}' to '${secretType.public.installPath}'..."
+    echo "installing public file '${secretType.public.file}' to '${secretType.public.installPath}'..."
     ${
       if secretType.public.symlink then
         ''
@@ -119,9 +119,6 @@ let
           install -m "${secretType.public.mode}" "${secretType.public.file}" "${secretType.public.installPath}"
         ''
     }
-    ${optionalString secretType.public.symlink ''
-      chmod ${secretType.public.mode} "${secretType.public.installPath}"
-    ''}
   '';
 
   # Install all public files

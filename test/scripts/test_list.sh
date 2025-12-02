@@ -135,10 +135,10 @@ else
 fi
 
 # Test 12: Basic list output is script-friendly (one secret per line)
-# The test/example/secrets.nix file contains exactly 5 secrets:
-#   secret1.age, secret2.age, passwordfile-user1.age, -leading-hyphen-filename.age, armored-secret.age
+# The test/example/secrets.nix file contains exactly 6 secrets:
+#   secret1.age, secret2.age, passwordfile-user1.age, -leading-hyphen-filename.age, armored-secret.age, secret-with-public.age
 echo "--- Test 12: Script-friendly output ---"
-expected_count=5
+expected_count=6
 count=$(agenix list | wc -l)
 if [ "$count" -eq "$expected_count" ]; then
   echo "✓ Basic list outputs one secret per line ($expected_count secrets from test/example)"

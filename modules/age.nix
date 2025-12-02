@@ -148,7 +148,7 @@ let
 
   # Install a single public file
   installPublicFile = secretType: ''
-    echo "installing public file '${toString secretType.public.file}' to '${secretType.public.installPath}'..."
+    echo "installing public file '${secretType.public.file}' to '${secretType.public.installPath}'..."
     ${
       if secretType.public.symlink then
         ''
@@ -171,10 +171,12 @@ let
   );
 
   # Chown a single public file
+  # Note: For symlinks pointing to the Nix store, chown doesn't change ownership
+  # of the symlink (only the target), and chmod cannot be used on symlinks directly.
+  # We skip these operations for symlinks.
   chownPublicFile = secretType: ''
-    chown ${secretType.public.owner}:${secretType.public.group} "${secretType.public.installPath}"
-    ${optionalString secretType.public.symlink ''
-      chmod ${secretType.public.mode} "${secretType.public.installPath}"
+    ${optionalString (!secretType.public.symlink) ''
+      chown ${secretType.public.owner}:${secretType.public.group} "${secretType.public.installPath}"
     ''}
   '';
 
@@ -485,6 +487,7 @@ in
         agenixChownPublic = {
           text = chownPublicFiles;
           deps = [
+            "agenixInstallPublic"
             "users"
             "groups"
           ];

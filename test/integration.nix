@@ -30,11 +30,13 @@ pkgs.testers.nixosTest {
         # Test secret with public file
         secret-with-public = {
           file = ./example/secret-with-public.age;
+          public.file = ./example/secret-with-public.age.pub;
           public.installPath = "/run/agenix-public/secret-with-public.pub";
         };
         # Test secret with public file at custom path
         secret-with-public-custom-path = {
           file = ./example/secret-with-public.age;
+          public.file = ./example/secret-with-public.age.pub;
           public.installPath = "/etc/my-public-key.pub";
           public.mode = "0644";
           public.owner = "root";
@@ -43,6 +45,7 @@ pkgs.testers.nixosTest {
         # Test secret with public file without symlink (copy mode)
         secret-with-public-copy = {
           file = ./example/secret-with-public.age;
+          public.file = ./example/secret-with-public.age.pub;
           public.installPath = "/etc/my-public-key-copy.pub";
           public.symlink = false;
           public.mode = "0600";
@@ -88,11 +91,13 @@ pkgs.testers.nixosTest {
             # Test home-manager public file symlinking
             secrets.hm-secret-with-public = {
               file = ./example/secret-with-public.age;
+              public.file = ./example/secret-with-public.age.pub;
               public.installPath = "${config.age.publicKeysDir}/hm-secret-with-public.pub";
             };
             # Test home-manager public file at custom path
             secrets.hm-secret-with-public-custom = {
               file = ./example/secret-with-public.age;
+              public.file = ./example/secret-with-public.age.pub;
               public.installPath = "/home/user1/.config/my-public-key.pub";
               public.mode = "0644";
             };
