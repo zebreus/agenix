@@ -3,7 +3,7 @@
 //! Provides builtins for generating secrets and keypairs:
 //! - Random strings: `randomString`, `randomHex`, `randomBase64`, `passwordSafe`
 //! - UUIDs: `uuid`
-//! - Keypairs: `sshKey` (Ed25519), `rsaKey` (RSA), `ageKey` (x25519)
+//! - Keypairs: `sshKey` (Ed25519), `rsaKey` (RSA), `ageKey` (x25519), `wgKey` (WireGuard)
 //! - Hash functions: `blake2b`, `blake2s`, `keccak`
 
 use snix_eval::builtin_macros;
