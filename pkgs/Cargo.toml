@@ -27,3 +27,5 @@ pkcs8 = { version = "0.10", features = ["pem"] }
 # RSA crate needed for SSH public key generation (cosmian_crypto_core uses this version internally)
 rsa = "0.9"
 hex = "0.4"
+# x25519-dalek needed for WireGuard key generation (already available through age crate)
+x25519-dalek = "2.0"

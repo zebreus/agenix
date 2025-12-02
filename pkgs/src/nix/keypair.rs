@@ -1,7 +1,7 @@
-//! Cryptographic key pair generation for SSH and age.
+//! Cryptographic key pair generation for SSH, age, and WireGuard.
 //!
 //! This module provides functions to generate Ed25519 SSH keypairs,
-//! RSA SSH keypairs, and age x25519 keypairs for use in secret encryption.
+//! RSA SSH keypairs, age x25519 keypairs, and WireGuard keypairs for use in secret encryption.
 
 use anyhow::Result;
 
@@ -50,6 +50,37 @@ pub fn generate_age_x25519_keypair() -> Result<(String, String)> {
     let public_key = public_key.to_string();
 
     Ok((private_key, public_key))
+}
+
+/// Generate a WireGuard keypair.
+/// Returns (private_key_base64, public_key_base64) tuple.
+/// WireGuard uses Curve25519 keys encoded in base64.
+pub fn generate_wireguard_keypair() -> Result<(String, String)> {
+    use base64::{Engine as _, engine::general_purpose};
+    use cosmian_crypto_core::CsRng;
+    use cosmian_crypto_core::reexport::rand_core::{RngCore, SeedableRng};
+
+    // Generate 32 random bytes for the private key
+    let mut rng = CsRng::from_entropy();
+    let mut private_bytes = [0u8; 32];
+    rng.fill_bytes(&mut private_bytes);
+
+    // Clamp the private key (WireGuard requirement)
+    // Clear bits 0, 1, 2 of first byte, clear bit 7 of last byte, set bit 6 of last byte
+    private_bytes[0] &= 248;
+    private_bytes[31] &= 127;
+    private_bytes[31] |= 64;
+
+    // Compute the public key using curve25519 scalar multiplication
+    // Use x25519-dalek which is already available through the age crate
+    let secret = x25519_dalek::StaticSecret::from(private_bytes);
+    let public = x25519_dalek::PublicKey::from(&secret);
+
+    // Encode both keys in base64
+    let private_key_base64 = general_purpose::STANDARD.encode(secret.to_bytes());
+    let public_key_base64 = general_purpose::STANDARD.encode(public.as_bytes());
+
+    Ok((private_key_base64, public_key_base64))
 }
 
 /// Generate an RSA keypair with the specified key size in bits.
@@ -425,6 +456,90 @@ mod tests {
         // Read algorithm name
         let algorithm = &decoded[4..4 + algo_len];
         assert_eq!(algorithm, b"ssh-rsa");
+
+        Ok(())
+    }
+
+    // Tests for WireGuard keypair generation
+    #[test]
+    fn test_generate_wireguard_keypair() -> Result<()> {
+        let (private_key, public_key) = generate_wireguard_keypair()?;
+
+        // Verify private key format (base64 encoded, 44 characters for 32 bytes)
+        assert_eq!(private_key.len(), 44);
+        assert!(
+            private_key
+                .chars()
+                .all(|c| c.is_alphanumeric() || c == '+' || c == '/' || c == '=')
+        );
+
+        // Verify public key format (base64 encoded, 44 characters for 32 bytes)
+        assert_eq!(public_key.len(), 44);
+        assert!(
+            public_key
+                .chars()
+                .all(|c| c.is_alphanumeric() || c == '+' || c == '/' || c == '=')
+        );
+
+        // Verify keys are different from each other
+        assert_ne!(private_key, public_key);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_generate_wireguard_keypair_different_each_time() -> Result<()> {
+        let (private_key1, public_key1) = generate_wireguard_keypair()?;
+        let (private_key2, public_key2) = generate_wireguard_keypair()?;
+
+        // Keys should be different each time
+        assert_ne!(private_key1, private_key2);
+        assert_ne!(public_key1, public_key2);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_generate_wireguard_keypair_clamping() -> Result<()> {
+        use base64::{Engine as _, engine::general_purpose};
+
+        let (private_key, _) = generate_wireguard_keypair()?;
+
+        // Decode the private key
+        let private_bytes = general_purpose::STANDARD.decode(&private_key)?;
+        assert_eq!(private_bytes.len(), 32);
+
+        // Verify WireGuard clamping requirements
+        // First byte: bits 0, 1, 2 must be clear
+        assert_eq!(private_bytes[0] & 0b00000111, 0);
+
+        // Last byte: bit 7 must be clear, bit 6 must be set
+        assert_eq!(private_bytes[31] & 0b10000000, 0); // bit 7 clear
+        assert_eq!(private_bytes[31] & 0b01000000, 0b01000000); // bit 6 set
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_wireguard_public_key_derivation() -> Result<()> {
+        use base64::{Engine as _, engine::general_purpose};
+
+        let (private_key, public_key) = generate_wireguard_keypair()?;
+
+        // Decode both keys
+        let private_bytes = general_purpose::STANDARD.decode(&private_key)?;
+        let public_bytes = general_purpose::STANDARD.decode(&public_key)?;
+
+        assert_eq!(private_bytes.len(), 32);
+        assert_eq!(public_bytes.len(), 32);
+
+        // Verify that the public key can be derived from the private key
+        let mut private_array = [0u8; 32];
+        private_array.copy_from_slice(&private_bytes);
+        let secret = x25519_dalek::StaticSecret::from(private_array);
+        let derived_public = x25519_dalek::PublicKey::from(&secret);
+
+        assert_eq!(derived_public.as_bytes(), public_bytes.as_slice());
 
         Ok(())
     }
