@@ -27,6 +27,26 @@ pkgs.testers.nixosTest {
       age.secrets = {
         passwordfile-user1.file = ./example/passwordfile-user1.age;
         leading-hyphen.file = ./example/-leading-hyphen-filename.age;
+        # Test secret with public file
+        secret-with-public = {
+          file = ./example/secret-with-public.age;
+          public.installPath = "/run/agenix-public/secret-with-public.pub";
+        };
+        # Test secret with public file at custom path
+        secret-with-public-custom-path = {
+          file = ./example/secret-with-public.age;
+          public.installPath = "/etc/my-public-key.pub";
+          public.mode = "0644";
+          public.owner = "root";
+          public.group = "root";
+        };
+        # Test secret with public file without symlink (copy mode)
+        secret-with-public-copy = {
+          file = ./example/secret-with-public.age;
+          public.installPath = "/etc/my-public-key-copy.pub";
+          public.symlink = false;
+          public.mode = "0600";
+        };
       };
 
       age.identityPaths = options.age.identityPaths.default ++ [ "/etc/ssh/this_key_wont_exist" ];
@@ -44,7 +64,7 @@ pkgs.testers.nixosTest {
       };
 
       home-manager.users.user1 =
-        { options, ... }:
+        { options, config, ... }:
         {
           imports = [
             ../modules/age-home.nix
@@ -65,6 +85,17 @@ pkgs.testers.nixosTest {
             secrets.armored-secret = {
               file = ./example/armored-secret.age;
             };
+            # Test home-manager public file symlinking
+            secrets.hm-secret-with-public = {
+              file = ./example/secret-with-public.age;
+              public.installPath = "${config.age.publicKeysDir}/hm-secret-with-public.pub";
+            };
+            # Test home-manager public file at custom path
+            secrets.hm-secret-with-public-custom = {
+              file = ./example/secret-with-public.age;
+              public.installPath = "/home/user1/.config/my-public-key.pub";
+              public.mode = "0644";
+            };
           };
         };
     };
@@ -76,6 +107,7 @@ pkgs.testers.nixosTest {
       secret2 = "world!";
       hyphen-secret = "filename started with hyphen";
       armored-secret = "Hello World!";
+      public-content = "my-public-key-content";
     in
     ''
       # This test focuses on the NixOS and home-manager modules' ability
@@ -121,5 +153,37 @@ pkgs.testers.nixosTest {
       system1.wait_for_file("/tmp/4")
       system1.sleep(5)
       assert "${secret2}" in system1.succeed("cat /tmp/4")
+
+      # Test NixOS module: public file at default location (symlink)
+      assert "${public-content}" in system1.succeed("cat /run/agenix-public/secret-with-public.pub")
+
+      # Verify it's a symlink
+      system1.succeed("test -L /run/agenix-public/secret-with-public.pub")
+
+      # Test NixOS module: public file at custom path
+      assert "${public-content}" in system1.succeed("cat /etc/my-public-key.pub")
+
+      # Verify it's a symlink  
+      system1.succeed("test -L /etc/my-public-key.pub")
+
+      # Test NixOS module: public file in copy mode (not a symlink)
+      assert "${public-content}" in system1.succeed("cat /etc/my-public-key-copy.pub")
+
+      # Verify it's NOT a symlink (regular file)
+      system1.succeed("test -f /etc/my-public-key-copy.pub && ! test -L /etc/my-public-key-copy.pub")
+
+      # Test home-manager module: public file at default location
+      system1.send_chars("cat /run/user/$(id -u)/agenix-public/hm-secret-with-public.pub > /tmp/5\n")
+      system1.sleep(2)
+      system1.wait_for_file("/tmp/5")
+      system1.sleep(5)
+      assert "${public-content}" in system1.succeed("cat /tmp/5")
+
+      # Test home-manager module: public file at custom path
+      system1.send_chars("cat /home/user1/.config/my-public-key.pub > /tmp/6\n")
+      system1.sleep(2)
+      system1.wait_for_file("/tmp/6")
+      system1.sleep(5)
+      assert "${public-content}" in system1.succeed("cat /tmp/6")
     '';
 }

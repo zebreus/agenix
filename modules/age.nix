@@ -134,6 +134,55 @@ let
     ++ (map chownSecret (builtins.attrValues cfg.secrets))
   );
 
+  # Filter secrets that have public files with installPath set
+  secretsWithPublicInstall = builtins.filter (
+    s: s.public.file != null && s.public.installPath != null
+  ) (builtins.attrValues cfg.secrets);
+
+  # Create public keys directory
+  createPublicKeysDir = ''
+    echo "[agenix] creating public keys directory..."
+    mkdir -p "${cfg.publicKeysDir}"
+    chmod 0755 "${cfg.publicKeysDir}"
+  '';
+
+  # Install a single public file
+  installPublicFile = secretType: ''
+    echo "installing public file '${toString secretType.public.file}' to '${secretType.public.installPath}'..."
+    ${
+      if secretType.public.symlink then
+        ''
+          mkdir -p "$(dirname "${secretType.public.installPath}")"
+          ln -sfT "${secretType.public.file}" "${secretType.public.installPath}"
+        ''
+      else
+        ''
+          mkdir -p "$(dirname "${secretType.public.installPath}")"
+          install -m "${secretType.public.mode}" "${secretType.public.file}" "${secretType.public.installPath}"
+        ''
+    }
+  '';
+
+  # Install all public files
+  installPublicFiles = builtins.concatStringsSep "\n" (
+    [ createPublicKeysDir ]
+    ++ [ "echo '[agenix] installing public files...'" ]
+    ++ (map installPublicFile secretsWithPublicInstall)
+  );
+
+  # Chown a single public file
+  chownPublicFile = secretType: ''
+    chown ${secretType.public.owner}:${secretType.public.group} "${secretType.public.installPath}"
+    ${optionalString secretType.public.symlink ''
+      chmod ${secretType.public.mode} "${secretType.public.installPath}"
+    ''}
+  '';
+
+  # Chown all public files
+  chownPublicFiles = builtins.concatStringsSep "\n" (
+    [ "echo '[agenix] chowning public files...'" ] ++ (map chownPublicFile secretsWithPublicInstall)
+  );
+
   secretType = types.submodule (
     { config, ... }:
     {
@@ -163,8 +212,8 @@ let
           '';
         };
         public = {
-          path = mkOption {
-            type = types.nullOr types.str;
+          file = mkOption {
+            type = types.nullOr types.path;
             default =
               let
                 pubFile = "${toString config.file}.pub";
@@ -176,24 +225,79 @@ let
             description = ''
               Path to the public file associated with this secret, if it exists.
               This file is created when the generator function returns an attrset
-              with both `secret` and `public` keys.
+              with both `secret` and `public` keys. This is the source file path
+              (in the Nix store).
+            '';
+          };
+          # Kept for backwards compatibility
+          path = mkOption {
+            type = types.nullOr types.str;
+            default = config.public.file;
+            defaultText = literalExpression ''
+              config.public.file
+            '';
+            description = ''
+              Deprecated: Use `public.file` instead. Path to the public file
+              associated with this secret in the Nix store.
             '';
           };
           content = mkOption {
             type = types.nullOr types.str;
-            default =
-              let
-                pubFile = "${toString config.file}.pub";
-              in
-              if builtins.pathExists pubFile then builtins.readFile pubFile else null;
+            default = if config.public.file != null then builtins.readFile config.public.file else null;
             defaultText = literalExpression ''
-              if builtins.pathExists "''${config.file}.pub" then builtins.readFile "''${config.file}.pub" else null
+              if config.public.file != null then builtins.readFile config.public.file else null
             '';
             description = ''
               Content of the public file associated with this secret, if it exists.
               This is the content of the `.pub` file created when the generator
               function returns an attrset with both `secret` and `public` keys.
             '';
+          };
+          installPath = mkOption {
+            type = types.nullOr types.str;
+            default = null;
+            defaultText = literalExpression "null";
+            description = ''
+              Path where the public file should be installed (symlinked or copied).
+              If null, the public file is not installed on the system.
+              If set, the public file will be installed at this path.
+            '';
+          };
+          name = mkOption {
+            type = types.str;
+            default = "${config._module.args.name}.pub";
+            defaultText = literalExpression ''"''${config._module.args.name}.pub"'';
+            description = ''
+              Name of the public file used in {option}`age.publicKeysDir`
+            '';
+          };
+          mode = mkOption {
+            type = types.str;
+            default = "0444";
+            description = ''
+              Permissions mode of the installed public file in a format understood by chmod.
+              Public files are typically world-readable by default.
+            '';
+          };
+          owner = mkOption {
+            type = types.str;
+            default = "0";
+            description = ''
+              User of the installed public file.
+            '';
+          };
+          group = mkOption {
+            type = types.str;
+            default = users.${config.public.owner}.group or "0";
+            defaultText = literalExpression ''
+              users.''${config.public.owner}.group or "0"
+            '';
+            description = ''
+              Group of the installed public file.
+            '';
+          };
+          symlink = mkEnableOption "symlinking public files to their destination" // {
+            default = true;
           };
         };
         mode = mkOption {
@@ -255,6 +359,13 @@ in
       default = "/run/agenix";
       description = ''
         Folder where secrets are symlinked to
+      '';
+    };
+    publicKeysDir = mkOption {
+      type = types.path;
+      default = "/run/agenix-public";
+      description = ''
+        Folder where public keys are symlinked to
       '';
     };
     secretsMountPoint = mkOption {
@@ -325,7 +436,9 @@ in
           ExecStart = pkgs.writeShellScript "agenix-install" (concatLines [
             newGeneration
             installSecrets
+            installPublicFiles
             chownSecrets
+            chownPublicFiles
           ]);
           RemainAfterExit = true;
         };
@@ -350,6 +463,13 @@ in
           ];
         };
 
+        agenixInstallPublic = {
+          text = installPublicFiles;
+          deps = [
+            "specialfs"
+          ];
+        };
+
         # So user passwords can be encrypted.
         users.deps = [ "agenixInstall" ];
 
@@ -362,10 +482,21 @@ in
           ];
         };
 
+        agenixChownPublic = {
+          text = chownPublicFiles;
+          deps = [
+            "users"
+            "groups"
+          ];
+        };
+
         # So other activation scripts can depend on agenix being done.
         agenix = {
           text = "";
-          deps = [ "agenixChown" ];
+          deps = [
+            "agenixChown"
+            "agenixChownPublic"
+          ];
         };
       };
     })
@@ -378,7 +509,9 @@ in
           export PATH="${pkgs.gnugrep}/bin:${pkgs.coreutils}/bin:@out@/sw/bin:/usr/bin:/bin:/usr/sbin:/sbin"
           ${newGeneration}
           ${installSecrets}
+          ${installPublicFiles}
           ${chownSecrets}
+          ${chownPublicFiles}
           exit 0
         '';
         serviceConfig = {
