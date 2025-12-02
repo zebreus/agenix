@@ -196,6 +196,102 @@ NOTE: When `symlink = false`, you are responsible for cleaning up old secrets if
 }
 ----
 
+=== age.secrets.<name>.public.installPath
+
+Path where the public file should be installed on the system. Default: `null` (not installed).
+
+When set, the public file will be symlinked (or copied if `public.symlink = false`) to this path during system activation. This is useful for making public keys available at well-known locations.
+
+[source,nix]
+----
+{
+  age.secrets.ssh-host-key = {
+    file = ./secrets/ssh-host.age;
+    public.file = ./secrets/ssh-host.age.pub;
+    public.installPath = "/etc/ssh/ssh_host_ed25519_key.pub";
+  };
+}
+----
+
+=== age.secrets.<name>.public.symlink
+
+Whether to symlink or copy the public file. Default: `true`.
+
+When `true`, creates a symlink from `installPath` to the public file in the Nix store.
+When `false`, copies the public file to `installPath`.
+
+[source,nix]
+----
+{
+  age.secrets.app-key = {
+    file = ./secrets/app.age;
+    public.file = ./secrets/app.age.pub;
+    public.installPath = "/etc/myapp/key.pub";
+    public.symlink = false;  # Copy instead of symlink
+  };
+}
+----
+
+=== age.secrets.<name>.public.mode
+
+File permissions for the installed public file. Default: `"0444"` (readable by all).
+
+[source,nix]
+----
+{
+  age.secrets.private-pub = {
+    file = ./secrets/private.age;
+    public.file = ./secrets/private.age.pub;
+    public.installPath = "/etc/myapp/key.pub";
+    public.mode = "0400";  # Owner read-only
+  };
+}
+----
+
+=== age.secrets.<name>.public.owner
+
+Username of the installed public file owner (NixOS only). Default: `"root"`.
+
+[source,nix]
+----
+{
+  age.secrets.app-key = {
+    file = ./secrets/app.age;
+    public.file = ./secrets/app.age.pub;
+    public.installPath = "/home/myapp/.ssh/id_ed25519.pub";
+    public.owner = "myapp";
+  };
+}
+----
+
+=== age.secrets.<name>.public.group
+
+Group name of the installed public file (NixOS only). Default: `"keys"` or derived from owner.
+
+[source,nix]
+----
+{
+  age.secrets.app-key = {
+    file = ./secrets/app.age;
+    public.file = ./secrets/app.age.pub;
+    public.installPath = "/home/myapp/.ssh/id_ed25519.pub";
+    public.owner = "myapp";
+    public.group = "myapp";
+  };
+}
+----
+
+=== age.publicKeysDir
+
+Directory where public file symlinks are created when no custom `installPath` is specified. Default: `/run/agenix-public` (NixOS) or `$XDG_RUNTIME_DIR/agenix-public` (Home Manager).
+
+[source,nix]
+----
+{
+  age.publicKeysDir = "/etc/agenix-pub";
+}
+----
+
 === age.ageBin
 
 Path to the age binary. Default: `"${pkgs.age}/bin/age"`.
@@ -408,6 +504,23 @@ Directory for decrypted secrets before symlinking. Default varies by platform:
   users.users.deploy.openssh.authorizedKeys.keys =
     lib.optional (config.age.secrets.deploy-key.public.content != null)
       config.age.secrets.deploy-key.public.content;
+}
+----
+
+=== Installing Public Keys on the System
+
+[source,nix]
+----
+{ config, ... }: {
+  age.secrets.ssh-host-key = {
+    file = ./secrets/ssh-host-ed25519.age;
+    public.file = ./secrets/ssh-host-ed25519.age.pub;
+    # Install the public key at a well-known location
+    public.installPath = "/etc/ssh/ssh_host_ed25519_key.pub";
+    public.mode = "0644";
+    public.owner = "root";
+    public.group = "root";
+  };
 }
 ----
 

@@ -176,7 +176,7 @@ let
   # We skip these operations for symlinks.
   chownPublicFile = secretType: ''
     ${optionalString (!secretType.public.symlink) ''
-      chown ${secretType.public.owner}:${secretType.public.group} "${secretType.public.installPath}"
+      chown '${secretType.public.owner}':'${secretType.public.group}' "${secretType.public.installPath}"
     ''}
   '';
 
@@ -283,16 +283,16 @@ let
           };
           owner = mkOption {
             type = types.str;
-            default = "0";
+            default = "root";
             description = ''
               User of the installed public file.
             '';
           };
           group = mkOption {
             type = types.str;
-            default = users.${config.public.owner}.group or "0";
+            default = users.${config.public.owner}.group or "keys";
             defaultText = literalExpression ''
-              users.''${config.public.owner}.group or "0"
+              users.''${config.public.owner}.group or "keys"
             '';
             description = ''
               Group of the installed public file.
