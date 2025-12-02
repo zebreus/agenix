@@ -3,7 +3,7 @@
 //! Provides builtins for generating secrets and keypairs:
 //! - Random strings: `randomString`, `randomHex`, `randomBase64`, `passwordSafe`
 //! - UUIDs: `uuid`
-//! - Keypairs: `sshKey` (Ed25519), `rsaKey` (RSA), `ageKey` (x25519), `wgKey` (WireGuard)
+//! - Keypairs: `sshKey` (Ed25519), `rsaKey` (RSA), `ageKey` (x25519), `wireguardKey` (WireGuard)
 //! - Hash functions: `blake2b`, `blake2s`, `keccak`
 
 use snix_eval::builtin_macros;
@@ -205,8 +205,8 @@ pub mod impure_builtins {
     }
 
     /// Generates a WireGuard keypair.
-    #[builtin("wgKey")]
-    async fn builtin_wg_key(co: GenCo, var: Value) -> Result<Value, ErrorKind> {
+    #[builtin("wireguardKey")]
+    async fn builtin_wireguard_key(co: GenCo, var: Value) -> Result<Value, ErrorKind> {
         use crate::nix::keypair::generate_wireguard_keypair;
         let _ = (co, var);
         let (private_key, public_key) = generate_wireguard_keypair().map_err(|e| {
@@ -388,11 +388,11 @@ mod tests {
         Ok(())
     }
 
-    // Tests for wgKey builtin
+    // Tests for wireguardKey builtin
     #[test]
-    fn test_wg_key_builtin() -> Result<()> {
-        // Test the wgKey builtin function
-        let nix_expr = "(builtins.wgKey {}).secret";
+    fn test_wireguard_key_builtin_secret() -> Result<()> {
+        // Test the wireguardKey builtin function
+        let nix_expr = "(builtins.wireguardKey {}).secret";
         let current_dir = current_dir()?;
         let output = eval_nix_expression(nix_expr, &current_dir)?;
 
@@ -410,9 +410,9 @@ mod tests {
     }
 
     #[test]
-    fn test_wg_key_builtin_public_key() -> Result<()> {
+    fn test_wireguard_key_builtin_public() -> Result<()> {
         // Test accessing the public key from the WireGuard key builtin
-        let nix_expr = "(builtins.wgKey {}).public";
+        let nix_expr = "(builtins.wireguardKey {}).public";
         let current_dir = current_dir()?;
         let output = eval_nix_expression(nix_expr, &current_dir)?;
 
@@ -430,10 +430,10 @@ mod tests {
     }
 
     #[test]
-    fn test_wg_key_builtin_consistency() -> Result<()> {
+    fn test_wireguard_key_builtin_different_keys() -> Result<()> {
         // Test that multiple calls generate different keys
-        let nix_expr1 = "builtins.wgKey {}";
-        let nix_expr2 = "builtins.wgKey {}";
+        let nix_expr1 = "builtins.wireguardKey {}";
+        let nix_expr2 = "builtins.wireguardKey {}";
         let current_dir = current_dir()?;
 
         let output1 = eval_nix_expression(nix_expr1, &current_dir)?;
@@ -456,11 +456,11 @@ mod tests {
     }
 
     #[test]
-    fn test_wg_key_builtin_key_clamping() -> Result<()> {
+    fn test_wireguard_key_builtin_clamping() -> Result<()> {
         use base64::{Engine as _, engine::general_purpose};
 
-        // Test the wgKey builtin function
-        let nix_expr = "(builtins.wgKey {}).secret";
+        // Test the wireguardKey builtin function
+        let nix_expr = "(builtins.wireguardKey {}).secret";
         let current_dir = current_dir()?;
         let output = eval_nix_expression(nix_expr, &current_dir)?;
 
@@ -477,6 +477,223 @@ mod tests {
         // Last byte: bit 7 must be clear, bit 6 must be set
         assert_eq!(private_bytes[31] & 0b10000000, 0); // bit 7 clear
         assert_eq!(private_bytes[31] & 0b01000000, 0b01000000); // bit 6 set
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_wireguard_key_builtin_first_byte_clamping() -> Result<()> {
+        use base64::{Engine as _, engine::general_purpose};
+
+        // Generate multiple keys and verify first byte is always clamped
+        for _ in 0..10 {
+            let nix_expr = "(builtins.wireguardKey {}).secret";
+            let current_dir = current_dir()?;
+            let output = eval_nix_expression(nix_expr, &current_dir)?;
+            let private_key = value_to_string(output)?;
+            let private_bytes = general_purpose::STANDARD.decode(&private_key)?;
+
+            // First byte must have bits 0, 1, 2 clear
+            assert_eq!(private_bytes[0] & 0b00000111, 0);
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_wireguard_key_builtin_last_byte_clamping() -> Result<()> {
+        use base64::{Engine as _, engine::general_purpose};
+
+        // Generate multiple keys and verify last byte is always clamped
+        for _ in 0..10 {
+            let nix_expr = "(builtins.wireguardKey {}).secret";
+            let current_dir = current_dir()?;
+            let output = eval_nix_expression(nix_expr, &current_dir)?;
+            let private_key = value_to_string(output)?;
+            let private_bytes = general_purpose::STANDARD.decode(&private_key)?;
+
+            // Last byte must have bit 7 clear and bit 6 set
+            assert_eq!(private_bytes[31] & 0b10000000, 0);
+            assert_eq!(private_bytes[31] & 0b01000000, 0b01000000);
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_wireguard_key_builtin_returns_attrset() -> Result<()> {
+        let nix_expr = "builtins.wireguardKey {}";
+        let current_dir = current_dir()?;
+        let output = eval_nix_expression(nix_expr, &current_dir)?;
+
+        // Should return an attribute set
+        match output {
+            Value::Attrs(_) => {}
+            _ => panic!("Expected attribute set"),
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_wireguard_key_builtin_has_secret_field() -> Result<()> {
+        let nix_expr = "builtins.hasAttr \"secret\" (builtins.wireguardKey {})";
+        let current_dir = current_dir()?;
+        let output = eval_nix_expression(nix_expr, &current_dir)?;
+
+        match output {
+            Value::Bool(true) => {}
+            _ => panic!("Expected true"),
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_wireguard_key_builtin_has_public_field() -> Result<()> {
+        let nix_expr = "builtins.hasAttr \"public\" (builtins.wireguardKey {})";
+        let current_dir = current_dir()?;
+        let output = eval_nix_expression(nix_expr, &current_dir)?;
+
+        match output {
+            Value::Bool(true) => {}
+            _ => panic!("Expected true"),
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_wireguard_key_builtin_valid_base64() -> Result<()> {
+        use base64::{Engine as _, engine::general_purpose};
+
+        let nix_expr = "builtins.wireguardKey {}";
+        let current_dir = current_dir()?;
+        let output = eval_nix_expression(nix_expr, &current_dir)?;
+
+        let (private, public) = extract_keypair(output)?;
+
+        // Both should decode successfully
+        let private_bytes = general_purpose::STANDARD.decode(&private)?;
+        let public_bytes = general_purpose::STANDARD.decode(&public)?;
+
+        assert_eq!(private_bytes.len(), 32);
+        assert_eq!(public_bytes.len(), 32);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_wireguard_key_builtin_public_derived_from_private() -> Result<()> {
+        use base64::{Engine as _, engine::general_purpose};
+        use x25519_dalek::{PublicKey, StaticSecret};
+
+        let nix_expr = "builtins.wireguardKey {}";
+        let current_dir = current_dir()?;
+        let output = eval_nix_expression(nix_expr, &current_dir)?;
+
+        let (private, public) = extract_keypair(output)?;
+
+        // Decode both keys
+        let private_bytes = general_purpose::STANDARD.decode(&private)?;
+        let public_bytes = general_purpose::STANDARD.decode(&public)?;
+
+        // Derive public key from private key
+        let mut private_array = [0u8; 32];
+        private_array.copy_from_slice(&private_bytes);
+        let secret = StaticSecret::from(private_array);
+        let derived_public = PublicKey::from(&secret);
+
+        // They should match
+        assert_eq!(derived_public.as_bytes(), public_bytes.as_slice());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_wireguard_key_builtin_key_length_exactly_44() -> Result<()> {
+        // Test that keys are exactly 44 characters (base64 of 32 bytes)
+        for _ in 0..5 {
+            let nix_expr = "builtins.wireguardKey {}";
+            let current_dir = current_dir()?;
+            let output = eval_nix_expression(nix_expr, &current_dir)?;
+
+            let (private, public) = extract_keypair(output)?;
+
+            assert_eq!(
+                private.len(),
+                44,
+                "Private key must be exactly 44 characters"
+            );
+            assert_eq!(public.len(), 44, "Public key must be exactly 44 characters");
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_wireguard_key_builtin_no_newlines() -> Result<()> {
+        let nix_expr = "builtins.wireguardKey {}";
+        let current_dir = current_dir()?;
+        let output = eval_nix_expression(nix_expr, &current_dir)?;
+
+        let (private, public) = extract_keypair(output)?;
+
+        // Keys should not contain newlines
+        assert!(!private.contains('\n'));
+        assert!(!public.contains('\n'));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_wireguard_key_builtin_no_spaces() -> Result<()> {
+        let nix_expr = "builtins.wireguardKey {}";
+        let current_dir = current_dir()?;
+        let output = eval_nix_expression(nix_expr, &current_dir)?;
+
+        let (private, public) = extract_keypair(output)?;
+
+        // Keys should not contain spaces
+        assert!(!private.contains(' '));
+        assert!(!public.contains(' '));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_wireguard_key_builtin_accepts_empty_attrset() -> Result<()> {
+        let nix_expr = "builtins.wireguardKey {}";
+        let current_dir = current_dir()?;
+        let output = eval_nix_expression(nix_expr, &current_dir)?;
+
+        // Should succeed
+        let (private, public) = extract_keypair(output)?;
+        assert_eq!(private.len(), 44);
+        assert_eq!(public.len(), 44);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_wireguard_key_builtin_randomness() -> Result<()> {
+        // Generate 20 keys and ensure they're all different
+        let mut private_keys = std::collections::HashSet::new();
+        let mut public_keys = std::collections::HashSet::new();
+
+        for _ in 0..20 {
+            let nix_expr = "builtins.wireguardKey {}";
+            let current_dir = current_dir()?;
+            let output = eval_nix_expression(nix_expr, &current_dir)?;
+
+            let (private, public) = extract_keypair(output)?;
+            private_keys.insert(private);
+            public_keys.insert(public);
+        }
+
+        // All keys should be unique
+        assert_eq!(private_keys.len(), 20);
+        assert_eq!(public_keys.len(), 20);
 
         Ok(())
     }
