@@ -109,6 +109,7 @@ dependencies = [
  "serde_json",
  "snix-eval",
  "tempfile",
+ "x25519-dalek",
 ]
 
 [[package]]

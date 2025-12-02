@@ -204,6 +204,17 @@ pub mod impure_builtins {
         Ok(create_keypair_attrset(private_key, public_key))
     }
 
+    /// Generates a WireGuard keypair.
+    #[builtin("wgKey")]
+    async fn builtin_wg_key(co: GenCo, var: Value) -> Result<Value, ErrorKind> {
+        use crate::nix::keypair::generate_wireguard_keypair;
+        let _ = (co, var);
+        let (private_key, public_key) = generate_wireguard_keypair().map_err(|e| {
+            ErrorKind::Abort(format!("Failed to generate WireGuard keypair: {}", e))
+        })?;
+        Ok(create_keypair_attrset(private_key, public_key))
+    }
+
     /// Generates an RSA SSH keypair with configurable key size (2048, 3072, 4096).
     #[builtin("rsaKey")]
     async fn builtin_rsa_key(co: GenCo, var: Value) -> Result<Value, ErrorKind> {
@@ -373,6 +384,99 @@ mod tests {
         assert!(public2.starts_with("age1"));
         assert!(private1.starts_with("AGE-SECRET-KEY-1"));
         assert!(private2.starts_with("AGE-SECRET-KEY-1"));
+
+        Ok(())
+    }
+
+    // Tests for wgKey builtin
+    #[test]
+    fn test_wg_key_builtin() -> Result<()> {
+        // Test the wgKey builtin function
+        let nix_expr = "(builtins.wgKey {}).secret";
+        let current_dir = current_dir()?;
+        let output = eval_nix_expression(nix_expr, &current_dir)?;
+
+        let private_key = value_to_string(output)?;
+
+        // Verify it's a base64 encoded WireGuard private key (44 characters for 32 bytes)
+        assert_eq!(private_key.len(), 44);
+        assert!(
+            private_key
+                .chars()
+                .all(|c| c.is_alphanumeric() || c == '+' || c == '/' || c == '=')
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_wg_key_builtin_public_key() -> Result<()> {
+        // Test accessing the public key from the WireGuard key builtin
+        let nix_expr = "(builtins.wgKey {}).public";
+        let current_dir = current_dir()?;
+        let output = eval_nix_expression(nix_expr, &current_dir)?;
+
+        let public_key = value_to_string(output)?;
+
+        // Verify it's a base64 encoded WireGuard public key (44 characters for 32 bytes)
+        assert_eq!(public_key.len(), 44);
+        assert!(
+            public_key
+                .chars()
+                .all(|c| c.is_alphanumeric() || c == '+' || c == '/' || c == '=')
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_wg_key_builtin_consistency() -> Result<()> {
+        // Test that multiple calls generate different keys
+        let nix_expr1 = "builtins.wgKey {}";
+        let nix_expr2 = "builtins.wgKey {}";
+        let current_dir = current_dir()?;
+
+        let output1 = eval_nix_expression(nix_expr1, &current_dir)?;
+        let output2 = eval_nix_expression(nix_expr2, &current_dir)?;
+
+        let (private1, public1) = extract_keypair(output1)?;
+        let (private2, public2) = extract_keypair(output2)?;
+
+        // Keys should be different each time
+        assert_ne!(public1, public2);
+        assert_ne!(private1, private2);
+
+        // Both should be valid base64
+        assert_eq!(private1.len(), 44);
+        assert_eq!(private2.len(), 44);
+        assert_eq!(public1.len(), 44);
+        assert_eq!(public2.len(), 44);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_wg_key_builtin_key_clamping() -> Result<()> {
+        use base64::{Engine as _, engine::general_purpose};
+
+        // Test the wgKey builtin function
+        let nix_expr = "(builtins.wgKey {}).secret";
+        let current_dir = current_dir()?;
+        let output = eval_nix_expression(nix_expr, &current_dir)?;
+
+        let private_key = value_to_string(output)?;
+
+        // Decode the private key
+        let private_bytes = general_purpose::STANDARD.decode(&private_key)?;
+        assert_eq!(private_bytes.len(), 32);
+
+        // Verify WireGuard clamping requirements
+        // First byte: bits 0, 1, 2 must be clear
+        assert_eq!(private_bytes[0] & 0b00000111, 0);
+
+        // Last byte: bit 7 must be clear, bit 6 must be set
+        assert_eq!(private_bytes[31] & 0b10000000, 0); // bit 7 clear
+        assert_eq!(private_bytes[31] & 0b01000000, 0b01000000); // bit 6 set
 
         Ok(())
     }
