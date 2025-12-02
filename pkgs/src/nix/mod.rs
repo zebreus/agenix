@@ -351,6 +351,7 @@ pub struct GeneratorOutput {
 /// If no explicit generator is provided, automatically selects a generator based on the file ending:
 /// - Files ending with "ed25519", "ssh", or "ssh_key" use builtins.sshKey (SSH Ed25519 keypair)
 /// - Files ending with "x25519" use builtins.ageKey (age x25519 keypair)
+/// - Files ending with "_wg" or "_wireguard" use builtins.wireguardKey (WireGuard keypair)
 /// - Files ending with "password" or "passphrase" use builtins.randomString 32
 ///
 /// The `secrets_arg` parameter is a Nix expression that will be passed as the argument to the generator.
@@ -374,6 +375,8 @@ fn build_generator_nix_expression(rules_path: &str, file: &str, attempt_arg: &st
             then builtins.sshKey
             else if hasSuffix "x25519"
             then builtins.ageKey
+            else if hasSuffix "_wg" || hasSuffix "_wireguard"
+            then builtins.wireguardKey
             else if hasSuffix "password" || hasSuffix "passphrase"
             then (_: builtins.randomString 32)
             else null;
@@ -2107,6 +2110,62 @@ mod tests {
         assert!(output.public.is_some());
         let public = output.public.unwrap();
         assert!(public.starts_with("age1"));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_auto_generator_wg_ending() -> Result<()> {
+        let rules_content = r#"
+        {
+          "server_wg.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+          };
+        }
+        "#;
+        let temp_file = create_test_rules_file(rules_content)?;
+
+        let result =
+            generate_secret_with_public(temp_file.path().to_str().unwrap(), "server_wg.age")?;
+
+        assert!(result.is_some());
+        let output = result.unwrap();
+
+        // Should generate a WireGuard keypair automatically
+        let secret = output.secret.as_ref().unwrap();
+        assert_eq!(secret.len(), 44); // Base64 encoded 32 bytes
+        assert!(output.public.is_some());
+        let public = output.public.unwrap();
+        assert_eq!(public.len(), 44);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_auto_generator_wireguard_ending() -> Result<()> {
+        let rules_content = r#"
+        {
+          "client_wireguard.age" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+          };
+        }
+        "#;
+        let temp_file = create_test_rules_file(rules_content)?;
+
+        let result = generate_secret_with_public(
+            temp_file.path().to_str().unwrap(),
+            "client_wireguard.age",
+        )?;
+
+        assert!(result.is_some());
+        let output = result.unwrap();
+
+        // Should generate a WireGuard keypair automatically
+        let secret = output.secret.as_ref().unwrap();
+        assert_eq!(secret.len(), 44);
+        assert!(output.public.is_some());
+        let public = output.public.unwrap();
+        assert_eq!(public.len(), 44);
 
         Ok(())
     }

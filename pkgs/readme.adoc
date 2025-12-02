@@ -275,7 +275,7 @@ The following functions are provided by agenix and available as `builtins.*`:
 *builtins.ageKey {}*::
   age x25519 keypair. Returns `{ secret, public }`.
 
-*builtins.wgKey {}*::
+*builtins.wireguardKey {}*::
   WireGuard keypair. Returns `{ secret, public }` with base64-encoded Curve25519 keys.
 
 *builtins.blake2b* _STRING_::
@@ -300,6 +300,9 @@ When no explicit `generator` is specified, agenix selects one based on the filen
 
 |`*x25519.age`
 |`builtins.ageKey {}` (age keypair)
+
+|`*_wg.age`, `*_wireguard.age`
+|`builtins.wireguardKey {}` (WireGuard keypair)
 
 |`*password.age`, `*passphrase.age`
 |`builtins.randomString 32`
