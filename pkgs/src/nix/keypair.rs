@@ -59,6 +59,7 @@ pub fn generate_wireguard_keypair() -> Result<(String, String)> {
     use base64::{Engine as _, engine::general_purpose};
     use cosmian_crypto_core::CsRng;
     use cosmian_crypto_core::reexport::rand_core::{RngCore, SeedableRng};
+    use x25519_dalek::{PublicKey, StaticSecret};
 
     // Generate 32 random bytes for the private key
     let mut rng = CsRng::from_entropy();
@@ -73,8 +74,8 @@ pub fn generate_wireguard_keypair() -> Result<(String, String)> {
 
     // Compute the public key using curve25519 scalar multiplication
     // Use x25519-dalek which is already available through the age crate
-    let secret = x25519_dalek::StaticSecret::from(private_bytes);
-    let public = x25519_dalek::PublicKey::from(&secret);
+    let secret = StaticSecret::from(private_bytes);
+    let public = PublicKey::from(&secret);
 
     // Encode both keys in base64
     let private_key_base64 = general_purpose::STANDARD.encode(secret.to_bytes());
@@ -523,6 +524,7 @@ mod tests {
     #[test]
     fn test_wireguard_public_key_derivation() -> Result<()> {
         use base64::{Engine as _, engine::general_purpose};
+        use x25519_dalek::{PublicKey, StaticSecret};
 
         let (private_key, public_key) = generate_wireguard_keypair()?;
 
@@ -536,8 +538,8 @@ mod tests {
         // Verify that the public key can be derived from the private key
         let mut private_array = [0u8; 32];
         private_array.copy_from_slice(&private_bytes);
-        let secret = x25519_dalek::StaticSecret::from(private_array);
-        let derived_public = x25519_dalek::PublicKey::from(&secret);
+        let secret = StaticSecret::from(private_array);
+        let derived_public = PublicKey::from(&secret);
 
         assert_eq!(derived_public.as_bytes(), public_bytes.as_slice());
 
