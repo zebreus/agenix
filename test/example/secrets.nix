@@ -20,4 +20,16 @@ in
     publicKeys = [ user1 ];
     armor = true;
   };
+  "secret-with-public.age" = {
+    publicKeys = [
+      user1
+      system1
+    ];
+    generator =
+      { }:
+      {
+        secret = "my-secret-private-key";
+        public = "my-public-key-content";
+      };
+  };
 }
