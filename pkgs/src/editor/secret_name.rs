@@ -71,7 +71,7 @@ impl SecretName {
     pub fn validate_and_create(name: &str) -> Result<Self> {
         // Strip .age suffix if present to get the actual secret name
         let secret_name = name.strip_suffix(".age").unwrap_or(name);
-        
+
         // Validate that the name is not empty
         if secret_name.is_empty() {
             bail!("Secret name cannot be empty");
@@ -97,7 +97,9 @@ impl SecretName {
             );
         }
 
-        Ok(Self { name: secret_name.to_string() })
+        Ok(Self {
+            name: secret_name.to_string(),
+        })
     }
 
     /// Get the secret name (without .age suffix).

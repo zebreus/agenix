@@ -22,8 +22,7 @@ fn validate_secret_name(name: &str) -> Result<()> {
 /// Returns an error if any secret name is invalid (contains paths, etc.).
 fn validate_secret_names(names: &[String]) -> Result<()> {
     for name in names {
-        validate_secret_name(name)
-            .with_context(|| format!("Invalid secret name: {}", name))?;
+        validate_secret_name(name).with_context(|| format!("Invalid secret name: {}", name))?;
     }
     Ok(())
 }

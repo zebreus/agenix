@@ -31,16 +31,13 @@ fn agenix_bin() -> String {
 #[test]
 fn test_decrypt_public_reads_pub_file() {
     let temp_dir = tempdir().unwrap();
-    let secrets_nix_dir = temp_dir.path();
-
-    // Use simple name instead of path
-    let secret_name = "secret";
-    let secret_path = secrets_nix_dir.join(format!("{}.age", secret_name));
-    let pub_path = secrets_nix_dir.join(format!("{}.pub", secret_name));
+    let path = temp_dir.path().to_str().unwrap();
+    let secret_path = format!("{}/secret.age", path);
+    let pub_path = format!("{}/secret.age.pub", path);
 
     let rules = format!(
         r#"{{ "{}" = {{ publicKeys = [ "{}" ]; }}; }}"#,
-        secret_name, TEST_PUBKEY
+        secret_path, TEST_PUBKEY
     );
     let temp_rules = create_rules_file(&rules);
 
@@ -55,7 +52,7 @@ fn test_decrypt_public_reads_pub_file() {
             "--public",
             "--secrets-nix",
             temp_rules.path().to_str().unwrap(),
-            secret_name,
+            &secret_path,
         ])
         .output()
         .expect("Failed to execute agenix");
@@ -78,16 +75,13 @@ fn test_decrypt_public_reads_pub_file() {
 #[test]
 fn test_decrypt_public_short_flag() {
     let temp_dir = tempdir().unwrap();
-    let secrets_nix_dir = temp_dir.path();
-
-    // Use simple name instead of path
-    let secret_name = "secret";
-    let secret_path = secrets_nix_dir.join(format!("{}.age", secret_name));
-    let pub_path = secrets_nix_dir.join(format!("{}.pub", secret_name));
+    let path = temp_dir.path().to_str().unwrap();
+    let secret_path = format!("{}/secret.age", path);
+    let pub_path = format!("{}/secret.age.pub", path);
 
     let rules = format!(
         r#"{{ "{}" = {{ publicKeys = [ "{}" ]; }}; }}"#,
-        secret_name, TEST_PUBKEY
+        secret_path, TEST_PUBKEY
     );
     let temp_rules = create_rules_file(&rules);
 
@@ -102,7 +96,7 @@ fn test_decrypt_public_short_flag() {
             "-p",
             "--secrets-nix",
             temp_rules.path().to_str().unwrap(),
-            secret_name,
+            &secret_path,
         ])
         .output()
         .expect("Failed to execute agenix");
@@ -120,17 +114,14 @@ fn test_decrypt_public_short_flag() {
 #[test]
 fn test_decrypt_public_to_output_file() {
     let temp_dir = tempdir().unwrap();
-    let secrets_nix_dir = temp_dir.path();
-
-    // Use simple name instead of path
-    let secret_name = "secret";
-    let secret_path = secrets_nix_dir.join(format!("{}.age", secret_name));
-    let pub_path = secrets_nix_dir.join(format!("{}.pub", secret_name));
-    let output_path = secrets_nix_dir.join("output.txt");
+    let path = temp_dir.path().to_str().unwrap();
+    let secret_path = format!("{}/secret.age", path);
+    let pub_path = format!("{}/secret.age.pub", path);
+    let output_path = format!("{}/output.txt", path);
 
     let rules = format!(
         r#"{{ "{}" = {{ publicKeys = [ "{}" ]; }}; }}"#,
-        secret_name, TEST_PUBKEY
+        secret_path, TEST_PUBKEY
     );
     let temp_rules = create_rules_file(&rules);
 
@@ -144,10 +135,10 @@ fn test_decrypt_public_to_output_file() {
             "decrypt",
             "--public",
             "-o",
-            output_path.to_str().unwrap(),
+            &output_path,
             "--secrets-nix",
             temp_rules.path().to_str().unwrap(),
-            secret_name,
+            &secret_path,
         ])
         .output()
         .expect("Failed to execute agenix");
@@ -166,15 +157,12 @@ fn test_decrypt_public_to_output_file() {
 #[test]
 fn test_decrypt_public_fails_when_pub_file_missing() {
     let temp_dir = tempdir().unwrap();
-    let secrets_nix_dir = temp_dir.path();
-
-    // Use simple name instead of path
-    let secret_name = "secret";
-    let secret_path = secrets_nix_dir.join(format!("{}.age", secret_name));
+    let path = temp_dir.path().to_str().unwrap();
+    let secret_path = format!("{}/secret.age", path);
 
     let rules = format!(
         r#"{{ "{}" = {{ publicKeys = [ "{}" ]; }}; }}"#,
-        secret_name, TEST_PUBKEY
+        secret_path, TEST_PUBKEY
     );
     let temp_rules = create_rules_file(&rules);
 
@@ -187,7 +175,7 @@ fn test_decrypt_public_fails_when_pub_file_missing() {
             "--public",
             "--secrets-nix",
             temp_rules.path().to_str().unwrap(),
-            secret_name,
+            &secret_path,
         ])
         .output()
         .expect("Failed to execute agenix");
@@ -208,15 +196,12 @@ fn test_decrypt_public_fails_when_pub_file_missing() {
 #[test]
 fn test_decrypt_public_fails_for_nonexistent_secret() {
     let temp_dir = tempdir().unwrap();
-    let secrets_nix_dir = temp_dir.path();
-
-    // Use simple name instead of path
-    let secret_name = "nonexistent";
-    let _secret_path = secrets_nix_dir.join(format!("{}.age", secret_name));
+    let path = temp_dir.path().to_str().unwrap();
+    let secret_path = format!("{}/nonexistent.age", path);
 
     let rules = format!(
-        r#"{{ "other" = {{ publicKeys = [ "{}" ]; }}; }}"#,
-        TEST_PUBKEY
+        r#"{{ "{}/other.age" = {{ publicKeys = [ "{}" ]; }}; }}"#,
+        path, TEST_PUBKEY
     );
     let temp_rules = create_rules_file(&rules);
 
@@ -227,7 +212,7 @@ fn test_decrypt_public_fails_for_nonexistent_secret() {
             "--public",
             "--secrets-nix",
             temp_rules.path().to_str().unwrap(),
-            secret_name,
+            &secret_path,
         ])
         .output()
         .expect("Failed to execute agenix");
@@ -245,16 +230,13 @@ fn test_decrypt_public_fails_for_nonexistent_secret() {
 #[test]
 fn test_encrypt_public_writes_pub_file() {
     let temp_dir = tempdir().unwrap();
-    let secrets_nix_dir = temp_dir.path();
-
-    // Use simple name instead of path
-    let secret_name = "secret";
-    let secret_path = secrets_nix_dir.join(format!("{}.age", secret_name));
-    let pub_path = secrets_nix_dir.join(format!("{}.pub", secret_name));
+    let path = temp_dir.path().to_str().unwrap();
+    let secret_path = format!("{}/secret.age", path);
+    let pub_path = format!("{}/secret.age.pub", path);
 
     let rules = format!(
         r#"{{ "{}" = {{ publicKeys = [ "{}" ]; }}; }}"#,
-        secret_name, TEST_PUBKEY
+        secret_path, TEST_PUBKEY
     );
     let temp_rules = create_rules_file(&rules);
 
@@ -267,7 +249,7 @@ fn test_encrypt_public_writes_pub_file() {
             "--public",
             "--secrets-nix",
             temp_rules.path().to_str().unwrap(),
-            secret_name,
+            &secret_path,
         ])
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
@@ -289,7 +271,10 @@ fn test_encrypt_public_writes_pub_file() {
     );
 
     // Verify the public file was created with correct content
-    assert!(&pub_path.exists(), ".pub file should be created");
+    assert!(
+        std::path::Path::new(&pub_path).exists(),
+        ".pub file should be created"
+    );
     let file_content = fs::read_to_string(&pub_path).unwrap();
     assert_eq!(file_content, pub_content);
 }
@@ -297,16 +282,13 @@ fn test_encrypt_public_writes_pub_file() {
 #[test]
 fn test_encrypt_public_short_flag() {
     let temp_dir = tempdir().unwrap();
-    let secrets_nix_dir = temp_dir.path();
-
-    // Use simple name instead of path
-    let secret_name = "secret";
-    let secret_path = secrets_nix_dir.join(format!("{}.age", secret_name));
-    let pub_path = secrets_nix_dir.join(format!("{}.pub", secret_name));
+    let path = temp_dir.path().to_str().unwrap();
+    let secret_path = format!("{}/secret.age", path);
+    let pub_path = format!("{}/secret.age.pub", path);
 
     let rules = format!(
         r#"{{ "{}" = {{ publicKeys = [ "{}" ]; }}; }}"#,
-        secret_name, TEST_PUBKEY
+        secret_path, TEST_PUBKEY
     );
     let temp_rules = create_rules_file(&rules);
 
@@ -319,7 +301,7 @@ fn test_encrypt_public_short_flag() {
             "-p",
             "--secrets-nix",
             temp_rules.path().to_str().unwrap(),
-            secret_name,
+            &secret_path,
         ])
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
@@ -346,16 +328,13 @@ fn test_encrypt_public_short_flag() {
 #[test]
 fn test_encrypt_public_fails_without_force_when_exists() {
     let temp_dir = tempdir().unwrap();
-    let secrets_nix_dir = temp_dir.path();
-
-    // Use simple name instead of path
-    let secret_name = "secret";
-    let secret_path = secrets_nix_dir.join(format!("{}.age", secret_name));
-    let pub_path = secrets_nix_dir.join(format!("{}.pub", secret_name));
+    let path = temp_dir.path().to_str().unwrap();
+    let secret_path = format!("{}/secret.age", path);
+    let pub_path = format!("{}/secret.age.pub", path);
 
     let rules = format!(
         r#"{{ "{}" = {{ publicKeys = [ "{}" ]; }}; }}"#,
-        secret_name, TEST_PUBKEY
+        secret_path, TEST_PUBKEY
     );
     let temp_rules = create_rules_file(&rules);
 
@@ -368,7 +347,7 @@ fn test_encrypt_public_fails_without_force_when_exists() {
             "--public",
             "--secrets-nix",
             temp_rules.path().to_str().unwrap(),
-            secret_name,
+            &secret_path,
         ])
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
@@ -395,16 +374,13 @@ fn test_encrypt_public_fails_without_force_when_exists() {
 #[test]
 fn test_encrypt_public_with_force_overwrites() {
     let temp_dir = tempdir().unwrap();
-    let secrets_nix_dir = temp_dir.path();
-
-    // Use simple name instead of path
-    let secret_name = "secret";
-    let secret_path = secrets_nix_dir.join(format!("{}.age", secret_name));
-    let pub_path = secrets_nix_dir.join(format!("{}.pub", secret_name));
+    let path = temp_dir.path().to_str().unwrap();
+    let secret_path = format!("{}/secret.age", path);
+    let pub_path = format!("{}/secret.age.pub", path);
 
     let rules = format!(
         r#"{{ "{}" = {{ publicKeys = [ "{}" ]; }}; }}"#,
-        secret_name, TEST_PUBKEY
+        secret_path, TEST_PUBKEY
     );
     let temp_rules = create_rules_file(&rules);
 
@@ -420,7 +396,7 @@ fn test_encrypt_public_with_force_overwrites() {
             "--force",
             "--secrets-nix",
             temp_rules.path().to_str().unwrap(),
-            secret_name,
+            &secret_path,
         ])
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
@@ -448,16 +424,13 @@ fn test_encrypt_public_with_force_overwrites() {
 #[test]
 fn test_encrypt_public_dry_run_does_not_create_file() {
     let temp_dir = tempdir().unwrap();
-    let secrets_nix_dir = temp_dir.path();
-
-    // Use simple name instead of path
-    let secret_name = "secret";
-    let secret_path = secrets_nix_dir.join(format!("{}.age", secret_name));
-    let pub_path = secrets_nix_dir.join(format!("{}.pub", secret_name));
+    let path = temp_dir.path().to_str().unwrap();
+    let secret_path = format!("{}/secret.age", path);
+    let pub_path = format!("{}/secret.age.pub", path);
 
     let rules = format!(
         r#"{{ "{}" = {{ publicKeys = [ "{}" ]; }}; }}"#,
-        secret_name, TEST_PUBKEY
+        secret_path, TEST_PUBKEY
     );
     let temp_rules = create_rules_file(&rules);
 
@@ -468,7 +441,7 @@ fn test_encrypt_public_dry_run_does_not_create_file() {
             "--public",
             "--secrets-nix",
             temp_rules.path().to_str().unwrap(),
-            secret_name,
+            &secret_path,
         ])
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
@@ -490,7 +463,7 @@ fn test_encrypt_public_dry_run_does_not_create_file() {
 
     // Verify file was NOT created
     assert!(
-        !&pub_path.exists(),
+        !std::path::Path::new(&pub_path).exists(),
         ".pub file should NOT be created in dry-run mode"
     );
 }
@@ -498,17 +471,14 @@ fn test_encrypt_public_dry_run_does_not_create_file() {
 #[test]
 fn test_encrypt_public_with_input_file() {
     let temp_dir = tempdir().unwrap();
-    let secrets_nix_dir = temp_dir.path();
-
-    // Use simple name instead of path
-    let secret_name = "secret";
-    let secret_path = secrets_nix_dir.join(format!("{}.age", secret_name));
-    let pub_path = secrets_nix_dir.join(format!("{}.pub", secret_name));
-    let input_path = secrets_nix_dir.join("input.txt");
+    let path = temp_dir.path().to_str().unwrap();
+    let secret_path = format!("{}/secret.age", path);
+    let pub_path = format!("{}/secret.age.pub", path);
+    let input_path = format!("{}/input.txt", path);
 
     let rules = format!(
         r#"{{ "{}" = {{ publicKeys = [ "{}" ]; }}; }}"#,
-        secret_name, TEST_PUBKEY
+        secret_path, TEST_PUBKEY
     );
     let temp_rules = create_rules_file(&rules);
 
@@ -521,10 +491,10 @@ fn test_encrypt_public_with_input_file() {
             "encrypt",
             "--public",
             "--input",
-            input_path.to_str().unwrap(),
+            &input_path,
             "--secrets-nix",
             temp_rules.path().to_str().unwrap(),
-            secret_name,
+            &secret_path,
         ])
         .output()
         .expect("Failed to execute agenix");
@@ -546,16 +516,13 @@ fn test_encrypt_public_with_input_file() {
 #[test]
 fn test_edit_public_creates_new_file_with_force() {
     let temp_dir = tempdir().unwrap();
-    let secrets_nix_dir = temp_dir.path();
-
-    // Use simple name instead of path
-    let secret_name = "secret";
-    let secret_path = secrets_nix_dir.join(format!("{}.age", secret_name));
-    let pub_path = secrets_nix_dir.join(format!("{}.pub", secret_name));
+    let path = temp_dir.path().to_str().unwrap();
+    let secret_path = format!("{}/secret.age", path);
+    let pub_path = format!("{}/secret.age.pub", path);
 
     let rules = format!(
         r#"{{ "{}" = {{ publicKeys = [ "{}" ]; }}; }}"#,
-        secret_name, TEST_PUBKEY
+        secret_path, TEST_PUBKEY
     );
     let temp_rules = create_rules_file(&rules);
 
@@ -569,7 +536,7 @@ fn test_edit_public_creates_new_file_with_force() {
             "--force",
             "--secrets-nix",
             temp_rules.path().to_str().unwrap(),
-            secret_name,
+            &secret_path,
         ])
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
@@ -590,7 +557,10 @@ fn test_edit_public_creates_new_file_with_force() {
     );
 
     // Verify the public file was created with correct content
-    assert!(&pub_path.exists(), ".pub file should be created");
+    assert!(
+        std::path::Path::new(&pub_path).exists(),
+        ".pub file should be created"
+    );
     let file_content = fs::read_to_string(&pub_path).unwrap();
     assert_eq!(file_content, pub_content);
 }
@@ -598,16 +568,13 @@ fn test_edit_public_creates_new_file_with_force() {
 #[test]
 fn test_edit_public_modifies_existing_file() {
     let temp_dir = tempdir().unwrap();
-    let secrets_nix_dir = temp_dir.path();
-
-    // Use simple name instead of path
-    let secret_name = "secret";
-    let secret_path = secrets_nix_dir.join(format!("{}.age", secret_name));
-    let pub_path = secrets_nix_dir.join(format!("{}.pub", secret_name));
+    let path = temp_dir.path().to_str().unwrap();
+    let secret_path = format!("{}/secret.age", path);
+    let pub_path = format!("{}/secret.age.pub", path);
 
     let rules = format!(
         r#"{{ "{}" = {{ publicKeys = [ "{}" ]; }}; }}"#,
-        secret_name, TEST_PUBKEY
+        secret_path, TEST_PUBKEY
     );
     let temp_rules = create_rules_file(&rules);
 
@@ -623,7 +590,7 @@ fn test_edit_public_modifies_existing_file() {
             "--public",
             "--secrets-nix",
             temp_rules.path().to_str().unwrap(),
-            secret_name,
+            &secret_path,
         ])
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
@@ -651,16 +618,13 @@ fn test_edit_public_modifies_existing_file() {
 #[test]
 fn test_edit_public_short_flag() {
     let temp_dir = tempdir().unwrap();
-    let secrets_nix_dir = temp_dir.path();
-
-    // Use simple name instead of path
-    let secret_name = "secret";
-    let secret_path = secrets_nix_dir.join(format!("{}.age", secret_name));
-    let pub_path = secrets_nix_dir.join(format!("{}.pub", secret_name));
+    let path = temp_dir.path().to_str().unwrap();
+    let secret_path = format!("{}/secret.age", path);
+    let pub_path = format!("{}/secret.age.pub", path);
 
     let rules = format!(
         r#"{{ "{}" = {{ publicKeys = [ "{}" ]; }}; }}"#,
-        secret_name, TEST_PUBKEY
+        secret_path, TEST_PUBKEY
     );
     let temp_rules = create_rules_file(&rules);
 
@@ -676,7 +640,7 @@ fn test_edit_public_short_flag() {
             "-p",
             "--secrets-nix",
             temp_rules.path().to_str().unwrap(),
-            secret_name,
+            &secret_path,
         ])
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
@@ -703,16 +667,13 @@ fn test_edit_public_short_flag() {
 #[test]
 fn test_edit_public_dry_run_does_not_modify_file() {
     let temp_dir = tempdir().unwrap();
-    let secrets_nix_dir = temp_dir.path();
-
-    // Use simple name instead of path
-    let secret_name = "secret";
-    let secret_path = secrets_nix_dir.join(format!("{}.age", secret_name));
-    let pub_path = secrets_nix_dir.join(format!("{}.pub", secret_name));
+    let path = temp_dir.path().to_str().unwrap();
+    let secret_path = format!("{}/secret.age", path);
+    let pub_path = format!("{}/secret.age.pub", path);
 
     let rules = format!(
         r#"{{ "{}" = {{ publicKeys = [ "{}" ]; }}; }}"#,
-        secret_name, TEST_PUBKEY
+        secret_path, TEST_PUBKEY
     );
     let temp_rules = create_rules_file(&rules);
 
@@ -727,7 +688,7 @@ fn test_edit_public_dry_run_does_not_modify_file() {
             "--public",
             "--secrets-nix",
             temp_rules.path().to_str().unwrap(),
-            secret_name,
+            &secret_path,
         ])
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
@@ -758,16 +719,13 @@ fn test_edit_public_dry_run_does_not_modify_file() {
 #[test]
 fn test_edit_public_creates_new_pub_file_without_force() {
     let temp_dir = tempdir().unwrap();
-    let secrets_nix_dir = temp_dir.path();
-
-    // Use simple name instead of path
-    let secret_name = "secret";
-    let secret_path = secrets_nix_dir.join(format!("{}.age", secret_name));
-    let pub_path = secrets_nix_dir.join(format!("{}.pub", secret_name));
+    let path = temp_dir.path().to_str().unwrap();
+    let secret_path = format!("{}/secret.age", path);
+    let pub_path = format!("{}/secret.age.pub", path);
 
     let rules = format!(
         r#"{{ "{}" = {{ publicKeys = [ "{}" ]; }}; }}"#,
-        secret_name, TEST_PUBKEY
+        secret_path, TEST_PUBKEY
     );
     let temp_rules = create_rules_file(&rules);
 
@@ -779,7 +737,7 @@ fn test_edit_public_creates_new_pub_file_without_force() {
             "--public",
             "--secrets-nix",
             temp_rules.path().to_str().unwrap(),
-            secret_name,
+            &secret_path,
         ])
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
@@ -800,7 +758,10 @@ fn test_edit_public_creates_new_pub_file_without_force() {
     );
 
     // Verify new .pub file was created with content
-    assert!(&pub_path.exists(), "Should create new .pub file");
+    assert!(
+        std::path::Path::new(&pub_path).exists(),
+        "Should create new .pub file"
+    );
     let content = fs::read_to_string(&pub_path).unwrap();
     assert_eq!(
         content, "new-content",
@@ -811,16 +772,13 @@ fn test_edit_public_creates_new_pub_file_without_force() {
 #[test]
 fn test_edit_public_produces_dry_run_output() {
     let temp_dir = tempdir().unwrap();
-    let secrets_nix_dir = temp_dir.path();
-
-    // Use simple name instead of path
-    let secret_name = "secret";
-    let secret_path = secrets_nix_dir.join(format!("{}.age", secret_name));
-    let pub_path = secrets_nix_dir.join(format!("{}.pub", secret_name));
+    let path = temp_dir.path().to_str().unwrap();
+    let secret_path = format!("{}/secret.age", path);
+    let pub_path = format!("{}/secret.age.pub", path);
 
     let rules = format!(
         r#"{{ "{}" = {{ publicKeys = [ "{}" ]; }}; }}"#,
-        secret_name, TEST_PUBKEY
+        secret_path, TEST_PUBKEY
     );
     let temp_rules = create_rules_file(&rules);
 
@@ -834,7 +792,7 @@ fn test_edit_public_produces_dry_run_output() {
             "--public",
             "--secrets-nix",
             temp_rules.path().to_str().unwrap(),
-            secret_name,
+            &secret_path,
         ])
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
@@ -863,17 +821,14 @@ fn test_edit_public_produces_dry_run_output() {
 #[test]
 fn test_encrypt_public_works_with_empty_public_keys() {
     let temp_dir = tempdir().unwrap();
-    let secrets_nix_dir = temp_dir.path();
-
-    // Use simple name instead of path
-    let secret_name = "public-only";
-    let secret_path = secrets_nix_dir.join(format!("{}.age", secret_name));
-    let pub_path = secrets_nix_dir.join("public-only.pub");
+    let path = temp_dir.path().to_str().unwrap();
+    let secret_path = format!("{}/public-only.age", path);
+    let pub_path = format!("{}/public-only.age.pub", path);
 
     // Create rules file with empty publicKeys (public-only secret)
     let rules = format!(
         r#"{{ "{}" = {{ publicKeys = []; hasSecret = false; hasPublic = true; }}; }}"#,
-        secret_name
+        secret_path
     );
     let temp_rules = create_rules_file(&rules);
 
@@ -886,7 +841,7 @@ fn test_encrypt_public_works_with_empty_public_keys() {
             "--public",
             "--secrets-nix",
             temp_rules.path().to_str().unwrap(),
-            secret_name,
+            &secret_path,
         ])
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
@@ -914,17 +869,14 @@ fn test_encrypt_public_works_with_empty_public_keys() {
 #[test]
 fn test_decrypt_public_works_with_empty_public_keys() {
     let temp_dir = tempdir().unwrap();
-    let secrets_nix_dir = temp_dir.path();
-
-    // Use simple name instead of path
-    let secret_name = "public-only";
-    let _secret_path = secrets_nix_dir.join(format!("{}.age", secret_name));
-    let pub_path = secrets_nix_dir.join("public-only.pub");
+    let path = temp_dir.path().to_str().unwrap();
+    let secret_path = format!("{}/public-only.age", path);
+    let pub_path = format!("{}/public-only.age.pub", path);
 
     // Create rules file with empty publicKeys
     let rules = format!(
         r#"{{ "{}" = {{ publicKeys = []; hasSecret = false; hasPublic = true; }}; }}"#,
-        secret_name
+        secret_path
     );
     let temp_rules = create_rules_file(&rules);
 
@@ -939,7 +891,7 @@ fn test_decrypt_public_works_with_empty_public_keys() {
             "--public",
             "--secrets-nix",
             temp_rules.path().to_str().unwrap(),
-            secret_name,
+            &secret_path,
         ])
         .output()
         .expect("Failed to execute agenix");
@@ -957,17 +909,14 @@ fn test_decrypt_public_works_with_empty_public_keys() {
 #[test]
 fn test_edit_public_works_with_empty_public_keys() {
     let temp_dir = tempdir().unwrap();
-    let secrets_nix_dir = temp_dir.path();
-
-    // Use simple name instead of path
-    let secret_name = "public-only";
-    let _secret_path = secrets_nix_dir.join(format!("{}.age", secret_name));
-    let pub_path = secrets_nix_dir.join("public-only.pub");
+    let path = temp_dir.path().to_str().unwrap();
+    let secret_path = format!("{}/public-only.age", path);
+    let pub_path = format!("{}/public-only.age.pub", path);
 
     // Create rules file with empty publicKeys
     let rules = format!(
         r#"{{ "{}" = {{ publicKeys = []; hasSecret = false; hasPublic = true; }}; }}"#,
-        secret_name
+        secret_path
     );
     let temp_rules = create_rules_file(&rules);
 
@@ -983,7 +932,7 @@ fn test_edit_public_works_with_empty_public_keys() {
             "--public",
             "--secrets-nix",
             temp_rules.path().to_str().unwrap(),
-            secret_name,
+            &secret_path,
         ])
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
@@ -1013,15 +962,12 @@ fn test_public_operations_work_with_minimal_config() {
     // This test uses just publicKeys = [] without hasSecret/hasPublic attributes
     // to verify the minimal configuration case works
     let temp_dir = tempdir().unwrap();
-    let secrets_nix_dir = temp_dir.path();
-
-    // Use simple name instead of path
-    let secret_name = "minimal";
-    let secret_path = secrets_nix_dir.join(format!("{}.age", secret_name));
-    let pub_path = secrets_nix_dir.join("minimal.pub");
+    let path = temp_dir.path().to_str().unwrap();
+    let secret_path = format!("{}/minimal.age", path);
+    let pub_path = format!("{}/minimal.age.pub", path);
 
     // Create rules file with only empty publicKeys (no hasSecret/hasPublic attributes)
-    let rules = format!(r#"{{ "{}" = {{ publicKeys = []; }}; }}"#, secret_name);
+    let rules = format!(r#"{{ "{}" = {{ publicKeys = []; }}; }}"#, secret_path);
     let temp_rules = create_rules_file(&rules);
 
     let pub_content = "minimal-config-public-key";
@@ -1033,7 +979,7 @@ fn test_public_operations_work_with_minimal_config() {
             "--public",
             "--secrets-nix",
             temp_rules.path().to_str().unwrap(),
-            secret_name,
+            &secret_path,
         ])
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())

@@ -32,12 +32,15 @@ fn agenix_bin() -> String {
 #[test]
 fn test_generate_dry_run_does_not_create_files() {
     let temp_dir = tempdir().unwrap();
-    let path = temp_dir.path().to_str().unwrap();
-    let secret_path = format!("{}/new-secret.age", path);
+    let secrets_nix_dir = temp_dir.path();
+
+    // Use simple name instead of path
+    let secret_name = "new-secret";
+    let secret_path = secrets_nix_dir.join(format!("{}.age", secret_name));
 
     let rules = format!(
         r#"{{ "{}" = {{ publicKeys = [ "{}" ]; generator = {{ }}: "test-content"; }}; }}"#,
-        secret_path, TEST_PUBKEY
+        secret_name, TEST_PUBKEY
     );
     let temp_rules = create_rules_file(&rules);
 
@@ -56,20 +59,21 @@ fn test_generate_dry_run_does_not_create_files() {
 
     // Verify file was NOT created
     assert!(
-        !std::path::Path::new(&secret_path).exists(),
+        !secret_path.exists(),
         "File should NOT be created in dry-run mode"
     );
 }
 
 #[test]
 fn test_generate_dry_run_produces_same_output_as_normal() {
-    let temp_dir = tempdir().unwrap();
-    let path = temp_dir.path().to_str().unwrap();
-    let secret_path = format!("{}/test-secret.age", path);
+    let _temp_dir = tempdir().unwrap();
+
+    // Use simple name instead of path
+    let secret_name = "test-secret";
 
     let rules = format!(
         r#"{{ "{}" = {{ publicKeys = [ "{}" ]; generator = {{ }}: "test-content"; }}; }}"#,
-        secret_path, TEST_PUBKEY
+        secret_name, TEST_PUBKEY
     );
     let temp_rules = create_rules_file(&rules);
 
@@ -102,13 +106,17 @@ fn test_generate_dry_run_produces_same_output_as_normal() {
 #[test]
 fn test_generate_dry_run_with_public_key_output() {
     let temp_dir = tempdir().unwrap();
-    let path = temp_dir.path().to_str().unwrap();
-    let secret_path = format!("{}/ssh-key.age", path);
+    let secrets_nix_dir = temp_dir.path();
+
+    // Use simple name instead of path
+    let secret_name = "ssh-key";
+    let secret_path = secrets_nix_dir.join(format!("{}.age", secret_name));
+    let pub_path = secrets_nix_dir.join(format!("{}.pub", secret_name));
 
     // Use sshKey generator which produces a public key
     let rules = format!(
         r#"{{ "{}" = {{ publicKeys = [ "{}" ]; generator = builtins.sshKey; }}; }}"#,
-        secret_path, TEST_PUBKEY
+        secret_name, TEST_PUBKEY
     );
     let temp_rules = create_rules_file(&rules);
 
@@ -134,12 +142,11 @@ fn test_generate_dry_run_with_public_key_output() {
 
     // Verify neither file was created
     assert!(
-        !std::path::Path::new(&secret_path).exists(),
+        !secret_path.exists(),
         "Secret file should NOT be created in dry-run mode"
     );
-    let pub_path = format!("{}.pub", secret_path);
     assert!(
-        !std::path::Path::new(&pub_path).exists(),
+        !pub_path.exists(),
         "Public file should NOT be created in dry-run mode"
     );
 }
@@ -151,13 +158,16 @@ fn test_generate_dry_run_with_public_key_output() {
 #[test]
 fn test_rekey_dry_run_does_not_modify_files() {
     let temp_dir = tempdir().unwrap();
-    let path = temp_dir.path().to_str().unwrap();
-    let secret_path = format!("{}/secret.age", path);
+    let secrets_nix_dir = temp_dir.path();
+
+    // Use simple name instead of path
+    let secret_name = "secret";
+    let secret_path = secrets_nix_dir.join(format!("{}.age", secret_name));
 
     // Create rules
     let rules = format!(
         r#"{{ "{}" = {{ publicKeys = [ "{}" ]; }}; }}"#,
-        secret_path, TEST_PUBKEY
+        secret_name, TEST_PUBKEY
     );
     let temp_rules = create_rules_file(&rules);
 
@@ -190,12 +200,15 @@ fn test_rekey_dry_run_does_not_modify_files() {
 #[test]
 fn test_rekey_dry_run_produces_output() {
     let temp_dir = tempdir().unwrap();
-    let path = temp_dir.path().to_str().unwrap();
-    let secret_path = format!("{}/secret.age", path);
+    let secrets_nix_dir = temp_dir.path();
+
+    // Use simple name instead of path
+    let secret_name = "secret";
+    let secret_path = secrets_nix_dir.join(format!("{}.age", secret_name));
 
     let rules = format!(
         r#"{{ "{}" = {{ publicKeys = [ "{}" ]; }}; }}"#,
-        secret_path, TEST_PUBKEY
+        secret_name, TEST_PUBKEY
     );
     let temp_rules = create_rules_file(&rules);
 
@@ -229,12 +242,15 @@ fn test_rekey_dry_run_produces_output() {
 #[test]
 fn test_encrypt_dry_run_does_not_create_file() {
     let temp_dir = tempdir().unwrap();
-    let path = temp_dir.path().to_str().unwrap();
-    let secret_path = format!("{}/new-secret.age", path);
+    let secrets_nix_dir = temp_dir.path();
+
+    // Use simple name instead of path
+    let secret_name = "new-secret";
+    let secret_path = secrets_nix_dir.join(format!("{}.age", secret_name));
 
     let rules = format!(
         r#"{{ "{}" = {{ publicKeys = [ "{}" ]; }}; }}"#,
-        secret_path, TEST_PUBKEY
+        secret_name, TEST_PUBKEY
     );
     let temp_rules = create_rules_file(&rules);
 
@@ -245,7 +261,7 @@ fn test_encrypt_dry_run_does_not_create_file() {
             "--dry-run",
             "--secrets-nix",
             temp_rules.path().to_str().unwrap(),
-            &secret_path,
+            secret_name,
         ])
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
@@ -268,20 +284,21 @@ fn test_encrypt_dry_run_does_not_create_file() {
 
     // Verify file was NOT created
     assert!(
-        !std::path::Path::new(&secret_path).exists(),
+        !secret_path.exists(),
         "File should NOT be created in dry-run mode"
     );
 }
 
 #[test]
 fn test_encrypt_dry_run_produces_output() {
-    let temp_dir = tempdir().unwrap();
-    let path = temp_dir.path().to_str().unwrap();
-    let secret_path = format!("{}/new-secret.age", path);
+    let _temp_dir = tempdir().unwrap();
+
+    // Use simple name instead of path
+    let secret_name = "new-secret";
 
     let rules = format!(
         r#"{{ "{}" = {{ publicKeys = [ "{}" ]; }}; }}"#,
-        secret_path, TEST_PUBKEY
+        secret_name, TEST_PUBKEY
     );
     let temp_rules = create_rules_file(&rules);
 
@@ -291,7 +308,7 @@ fn test_encrypt_dry_run_produces_output() {
             "--dry-run",
             "--secrets-nix",
             temp_rules.path().to_str().unwrap(),
-            &secret_path,
+            secret_name,
         ])
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
@@ -321,12 +338,15 @@ fn test_encrypt_dry_run_produces_output() {
 #[test]
 fn test_generate_dry_run_short_flag() {
     let temp_dir = tempdir().unwrap();
-    let path = temp_dir.path().to_str().unwrap();
-    let secret_path = format!("{}/test.age", path);
+    let secrets_nix_dir = temp_dir.path();
+
+    // Use simple name instead of path
+    let secret_name = "test";
+    let secret_path = secrets_nix_dir.join(format!("{}.age", secret_name));
 
     let rules = format!(
         r#"{{ "{}" = {{ publicKeys = [ "{}" ]; generator = {{ }}: "test"; }}; }}"#,
-        secret_path, TEST_PUBKEY
+        secret_name, TEST_PUBKEY
     );
     let temp_rules = create_rules_file(&rules);
 
@@ -345,20 +365,21 @@ fn test_generate_dry_run_short_flag() {
 
     // File should not exist
     assert!(
-        !std::path::Path::new(&secret_path).exists(),
+        !secret_path.exists(),
         "File should NOT be created with -n flag"
     );
 }
 
 #[test]
 fn test_rekey_dry_run_short_flag() {
-    let temp_dir = tempdir().unwrap();
-    let path = temp_dir.path().to_str().unwrap();
-    let secret_path = format!("{}/test.age", path);
+    let _temp_dir = tempdir().unwrap();
+
+    // Use simple name instead of path
+    let secret_name = "test";
 
     let rules = format!(
         r#"{{ "{}" = {{ publicKeys = [ "{}" ]; }}; }}"#,
-        secret_path, TEST_PUBKEY
+        secret_name, TEST_PUBKEY
     );
     let temp_rules = create_rules_file(&rules);
 
@@ -380,12 +401,15 @@ fn test_rekey_dry_run_short_flag() {
 #[test]
 fn test_encrypt_dry_run_short_flag() {
     let temp_dir = tempdir().unwrap();
-    let path = temp_dir.path().to_str().unwrap();
-    let secret_path = format!("{}/test.age", path);
+    let secrets_nix_dir = temp_dir.path();
+
+    // Use simple name instead of path
+    let secret_name = "test";
+    let secret_path = secrets_nix_dir.join(format!("{}.age", secret_name));
 
     let rules = format!(
         r#"{{ "{}" = {{ publicKeys = [ "{}" ]; }}; }}"#,
-        secret_path, TEST_PUBKEY
+        secret_name, TEST_PUBKEY
     );
     let temp_rules = create_rules_file(&rules);
 
@@ -395,7 +419,7 @@ fn test_encrypt_dry_run_short_flag() {
             "-n",
             "--secrets-nix",
             temp_rules.path().to_str().unwrap(),
-            &secret_path,
+            secret_name,
         ])
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
@@ -417,7 +441,7 @@ fn test_encrypt_dry_run_short_flag() {
 
     // File should not exist
     assert!(
-        !std::path::Path::new(&secret_path).exists(),
+        !secret_path.exists(),
         "File should NOT be created with -n flag"
     );
 }
@@ -429,12 +453,15 @@ fn test_encrypt_dry_run_short_flag() {
 #[test]
 fn test_edit_dry_run_does_not_create_file() {
     let temp_dir = tempdir().unwrap();
-    let path = temp_dir.path().to_str().unwrap();
-    let secret_path = format!("{}/new-secret.age", path);
+    let secrets_nix_dir = temp_dir.path();
+
+    // Use simple name instead of path
+    let secret_name = "new-secret";
+    let secret_path = secrets_nix_dir.join(format!("{}.age", secret_name));
 
     let rules = format!(
         r#"{{ "{}" = {{ publicKeys = [ "{}" ]; }}; }}"#,
-        secret_path, TEST_PUBKEY
+        secret_name, TEST_PUBKEY
     );
     let temp_rules = create_rules_file(&rules);
 
@@ -445,7 +472,7 @@ fn test_edit_dry_run_does_not_create_file() {
             "--dry-run",
             "--secrets-nix",
             temp_rules.path().to_str().unwrap(),
-            &secret_path,
+            secret_name,
         ])
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
@@ -468,7 +495,7 @@ fn test_edit_dry_run_does_not_create_file() {
 
     // Verify file was NOT created
     assert!(
-        !std::path::Path::new(&secret_path).exists(),
+        !secret_path.exists(),
         "File should NOT be created in dry-run mode"
     );
 }
@@ -476,12 +503,15 @@ fn test_edit_dry_run_does_not_create_file() {
 #[test]
 fn test_edit_dry_run_does_not_modify_existing_file() {
     let temp_dir = tempdir().unwrap();
-    let path = temp_dir.path().to_str().unwrap();
-    let secret_path = format!("{}/existing-secret.age", path);
+    let secrets_nix_dir = temp_dir.path();
+
+    // Use simple name instead of path
+    let secret_name = "existing-secret";
+    let secret_path = secrets_nix_dir.join(format!("{}.age", secret_name));
 
     let rules = format!(
         r#"{{ "{}" = {{ publicKeys = [ "{}" ]; }}; }}"#,
-        secret_path, TEST_PUBKEY
+        secret_name, TEST_PUBKEY
     );
     let temp_rules = create_rules_file(&rules);
 
@@ -497,7 +527,7 @@ fn test_edit_dry_run_does_not_modify_existing_file() {
             "--force", // Force to allow starting with empty content since we can't decrypt
             "--secrets-nix",
             temp_rules.path().to_str().unwrap(),
-            &secret_path,
+            secret_name,
         ])
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
@@ -529,13 +559,14 @@ fn test_edit_dry_run_does_not_modify_existing_file() {
 
 #[test]
 fn test_edit_dry_run_produces_output() {
-    let temp_dir = tempdir().unwrap();
-    let path = temp_dir.path().to_str().unwrap();
-    let secret_path = format!("{}/test.age", path);
+    let _temp_dir = tempdir().unwrap();
+
+    // Use simple name instead of path
+    let secret_name = "test";
 
     let rules = format!(
         r#"{{ "{}" = {{ publicKeys = [ "{}" ]; }}; }}"#,
-        secret_path, TEST_PUBKEY
+        secret_name, TEST_PUBKEY
     );
     let temp_rules = create_rules_file(&rules);
 
@@ -545,7 +576,7 @@ fn test_edit_dry_run_produces_output() {
             "--dry-run",
             "--secrets-nix",
             temp_rules.path().to_str().unwrap(),
-            &secret_path,
+            secret_name,
         ])
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
@@ -577,12 +608,15 @@ fn test_edit_dry_run_produces_output() {
 #[test]
 fn test_edit_dry_run_short_flag() {
     let temp_dir = tempdir().unwrap();
-    let path = temp_dir.path().to_str().unwrap();
-    let secret_path = format!("{}/test.age", path);
+    let secrets_nix_dir = temp_dir.path();
+
+    // Use simple name instead of path
+    let secret_name = "test";
+    let secret_path = secrets_nix_dir.join(format!("{}.age", secret_name));
 
     let rules = format!(
         r#"{{ "{}" = {{ publicKeys = [ "{}" ]; }}; }}"#,
-        secret_path, TEST_PUBKEY
+        secret_name, TEST_PUBKEY
     );
     let temp_rules = create_rules_file(&rules);
 
@@ -593,7 +627,7 @@ fn test_edit_dry_run_short_flag() {
             "-n",
             "--secrets-nix",
             temp_rules.path().to_str().unwrap(),
-            &secret_path,
+            secret_name,
         ])
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
@@ -615,7 +649,7 @@ fn test_edit_dry_run_short_flag() {
 
     // File should not exist
     assert!(
-        !std::path::Path::new(&secret_path).exists(),
+        !secret_path.exists(),
         "File should NOT be created with -n flag"
     );
 }
