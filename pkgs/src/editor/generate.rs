@@ -153,17 +153,8 @@ fn encrypt_secret(
     let armor = should_armor(rules_path, file)?;
 
     if public_keys.is_empty() {
-        log!(
-            "Error: Cannot encrypt secret '{}': no public keys defined.",
-            file
-        );
-        log!("To fix this:");
-        log!("  1. Add at least one recipient to the 'publicKeys' array, or");
-        log!("  2. Set hasSecret=false if this should be a public-only entry");
-        return Err(anyhow!(
-            "Secret '{}' has no public keys defined for encryption. Add recipients to publicKeys[] or set hasSecret=false for public-only entries.",
-            file
-        ));
+        log!("Warning: No public keys found for {file}, skipping");
+        return Ok(ProcessResult::NoPublicKeys);
     }
 
     // Skip actual encryption in dry-run mode
@@ -204,7 +195,10 @@ fn run_generator(
         Err(err) => {
             // Check if this might be a dependency-related error
             let err_str = err.to_string();
-            if !deps.is_empty() && (err_str.contains("attribute") || err_str.contains("not found"))
+            if !deps.is_empty()
+                && (err_str.contains("attribute")
+                    || err_str.contains("not found")
+                    || err_str.contains("Unexpected argument"))
             {
                 // Get dependency availability info to provide better error context
                 let dep_info = resolver.get_dependency_availability_info(deps);
@@ -3123,28 +3117,29 @@ mod tests {
         Ok(())
     }
 
-    // ===========================================
-    // ERROR MESSAGE IMPROVEMENT TESTS
-    // ===========================================
-
     #[test]
-    fn test_no_public_keys_better_error_message() -> Result<()> {
+    fn test_dependency_missing_public_output_error_message() -> Result<()> {
         use std::io::Write;
         use tempfile::NamedTempFile;
 
         let temp_dir = tempdir()?;
 
-        // Create rules with hasSecret=false but no hasPublic set and empty publicKeys
+        // Create a scenario where key1 has hasSecret=false but no generator/public output
+        // and key2 depends on key1's public output
         let rules_content = format!(
             r#"
     {{
-      "{}/broken-secret.age" = {{
+      "{}/key1.age" = {{
         publicKeys = [ ];
         hasSecret = false;
-        generator = {{ }}: "test-value";
+      }};
+      "{}/key2.age" = {{
+        publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+        generator = {{ publics }}: publics."key1";
       }};
     }}
     "#,
+            temp_dir.path().to_str().unwrap(),
             temp_dir.path().to_str().unwrap()
         );
 
@@ -3152,7 +3147,6 @@ mod tests {
         writeln!(temp_rules, "{}", rules_content)?;
         temp_rules.flush()?;
 
-        // Try to generate - should fail with a helpful error
         let args = vec![
             "agenix".to_string(),
             "generate".to_string(),
@@ -3162,70 +3156,25 @@ mod tests {
 
         let result = crate::run(args);
 
+        // Should fail with helpful error message
         assert!(
             result.is_err(),
-            "Generation should fail with hasSecret=false and hasPublic not set"
+            "Should fail when dependency has no public output"
         );
 
         let err_msg = format!("{:?}", result.unwrap_err());
 
-        // Check that the error message mentions the configuration issue
+        // Check that error mentions the dependency issue
         assert!(
-            err_msg.contains("hasSecret") || err_msg.contains("hasPublic"),
-            "Error message should mention hasSecret/hasPublic: {}",
+            err_msg.contains("Dependency 'key1'") || err_msg.contains("dependency"),
+            "Error should mention dependency issue: {}",
             err_msg
         );
 
-        Ok(())
-    }
-
-    #[test]
-    fn test_generator_produces_secret_without_public_keys_error() -> Result<()> {
-        use std::io::Write;
-        use tempfile::NamedTempFile;
-
-        let temp_dir = tempdir()?;
-
-        // Create rules where generator produces a secret but publicKeys is empty
-        let rules_content = format!(
-            r#"
-    {{
-      "{}/secret-no-recipients.age" = {{
-        publicKeys = [ ];
-        generator = {{ }}: "my-secret-value";
-      }};
-    }}
-    "#,
-            temp_dir.path().to_str().unwrap()
-        );
-
-        let mut temp_rules = NamedTempFile::new()?;
-        writeln!(temp_rules, "{}", rules_content)?;
-        temp_rules.flush()?;
-
-        // Try to generate - should fail with a clear error
-        let args = vec![
-            "agenix".to_string(),
-            "generate".to_string(),
-            "--secrets-nix".to_string(),
-            temp_rules.path().to_str().unwrap().to_string(),
-        ];
-
-        let result = crate::run(args);
-
+        // Check that error provides helpful guidance
         assert!(
-            result.is_err(),
-            "Should fail when trying to encrypt without public keys"
-        );
-
-        let err_msg = format!("{:?}", result.unwrap_err());
-
-        // Check that error message is helpful
-        assert!(
-            err_msg.contains("public keys")
-                || err_msg.contains("recipients")
-                || err_msg.contains("publicKeys"),
-            "Error should mention public keys/recipients: {}",
+            err_msg.contains("generator") || err_msg.contains("hasPublic"),
+            "Error should mention generator or hasPublic: {}",
             err_msg
         );
 

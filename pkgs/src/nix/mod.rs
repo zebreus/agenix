@@ -177,8 +177,7 @@ pub struct SecretOutputInfo {
 }
 
 /// Validate that the output info is valid (at least one of hasSecret or hasPublic must be true)
-/// Also validates that if hasSecret is true, there are public keys to encrypt to
-fn validate_output_info(info: &SecretOutputInfo, file: &str, rules_path: &str) -> Result<()> {
+fn validate_output_info(info: &SecretOutputInfo, file: &str) -> Result<()> {
     if !info.has_secret && !info.has_public {
         return Err(anyhow::anyhow!(
             "Secret '{}' has both hasSecret=false and hasPublic=false. \
@@ -187,26 +186,6 @@ fn validate_output_info(info: &SecretOutputInfo, file: &str, rules_path: &str) -
             file
         ));
     }
-
-    // If hasSecret is true (or default), we need public keys to encrypt to
-    if info.has_secret {
-        let public_keys = get_public_keys(rules_path, file)?;
-        if public_keys.is_empty() {
-            return Err(anyhow::anyhow!(
-                "Secret '{}' has no public keys defined for encryption. \
-                 \n\nTo fix this:\
-                 \n  1. Add at least one recipient to the 'publicKeys' array (age or SSH public keys), or\
-                 \n  2. Set hasSecret=false if this is a public-only entry (e.g., SSH public key metadata)\
-                 \n\nExample:\
-                 \n  \"{}\" = {{\
-                 \n    publicKeys = [ \"age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p\" ];\
-                 \n  }};",
-                file,
-                file
-            ));
-        }
-    }
-
     Ok(())
 }
 
@@ -224,13 +203,13 @@ pub fn get_secret_output_info(rules_path: &str, file: &str) -> Result<SecretOutp
     // First check for explicit attributes in secrets.nix
     let explicit_info = get_explicit_output_info(rules_path, file)?;
     if let Some(info) = explicit_info {
-        validate_output_info(&info, file, rules_path)?;
+        validate_output_info(&info, file)?;
         return Ok(info);
     }
 
     // Try to infer from generator if present
     if let Some(info) = infer_output_info_from_generator(rules_path, file)? {
-        validate_output_info(&info, file, rules_path)?;
+        validate_output_info(&info, file)?;
         return Ok(info);
     }
 
