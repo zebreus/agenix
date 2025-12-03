@@ -96,12 +96,11 @@ fn check_missing_dependencies(
 
             // Check if .pub file exists for this dependency
             let dep_name = SecretName::new(dep);
-            let base_name = dep_name.normalized();
+            let name = dep_name.name();
 
             let pub_paths = [
                 std::path::PathBuf::from(format!("{}.pub", dep)),
-                ctx.rules_dir().join(format!("{}.pub", base_name)),
-                ctx.rules_dir().join(format!("{}.age.pub", base_name)),
+                ctx.rules_dir().join(format!("{}.pub", name)),
             ];
 
             !pub_paths.iter().any(|p| p.exists())

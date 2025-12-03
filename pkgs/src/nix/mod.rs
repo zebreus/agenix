@@ -46,28 +46,23 @@ pub(crate) fn resolve_public_key(rules_dir: &Path, key_str: &str) -> Result<Stri
     }
 
     // Try to resolve as a secret reference
-    // Remove .age suffix if present to get the base secret name
-    let secret_name = key_str.strip_suffix(".age").unwrap_or(key_str);
+    // The secret name is used directly (no .age suffix in secrets.nix)
+    let secret_name = key_str;
 
-    // Try both with and without .age suffix for the pub file
-    let pub_file_paths = [
-        rules_dir.join(format!("{}.age.pub", secret_name)),
-        rules_dir.join(format!("{}.pub", secret_name)),
-    ];
+    // Public file is now <secret_name>.pub in the same directory
+    let pub_file_path = rules_dir.join(format!("{}.pub", secret_name));
 
-    for pub_file_path in &pub_file_paths {
-        if pub_file_path.exists() {
-            let public_key = std::fs::read_to_string(pub_file_path)
-                .with_context(|| {
-                    format!(
-                        "Failed to read public key file: {}",
-                        pub_file_path.display()
-                    )
-                })?
-                .trim()
-                .to_string();
-            return Ok(public_key);
-        }
+    if pub_file_path.exists() {
+        let public_key = std::fs::read_to_string(&pub_file_path)
+            .with_context(|| {
+                format!(
+                    "Failed to read public key file: {}",
+                    pub_file_path.display()
+                )
+            })?
+            .trim()
+            .to_string();
+        return Ok(public_key);
     }
 
     // If no .pub file found, return the original string (might be a public key we don't recognize)
@@ -114,7 +109,7 @@ fn get_raw_public_keys(rules_path: &str, file: &str) -> Result<Vec<String>> {
 }
 
 /// Get the secret references from a secret's publicKeys array.
-/// Returns a list of secret basenames that are referenced as recipients.
+/// Returns a list of secret names that are referenced as recipients.
 /// Only returns references that look like secret names (not actual public keys).
 pub fn get_public_key_references(
     rules_path: &str,
@@ -133,25 +128,13 @@ pub fn get_public_key_references(
             continue;
         }
 
-        // This looks like a secret reference
-        // Normalize the reference to a basename (remove .age suffix if present)
-        let secret_ref = key.strip_suffix(".age").unwrap_or(&key);
+        // This looks like a secret reference (a secret name)
+        // Secret names are used directly in secrets.nix (no .age suffix)
+        let secret_ref = &key;
 
         // Check if this matches any secret in all_files
-        let basename = std::path::Path::new(secret_ref)
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or(secret_ref);
-
-        for f in all_files {
-            let f_basename = std::path::Path::new(f.strip_suffix(".age").unwrap_or(f))
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or(f);
-
-            if f_basename == basename && !refs.contains(&basename.to_string()) {
-                refs.push(basename.to_string());
-            }
+        if all_files.contains(secret_ref) && !refs.contains(secret_ref) {
+            refs.push(secret_ref.to_string());
         }
     }
 
@@ -222,14 +205,9 @@ pub fn get_secret_output_info(rules_path: &str, file: &str) -> Result<SecretOutp
         .parent()
         .unwrap_or_else(|| std::path::Path::new("."));
 
-    // Normalize file path to check for .pub files
-    let file_basename = file.strip_suffix(".age").unwrap_or(file);
-    let pub_paths = [
-        rules_dir.join(format!("{}.age.pub", file_basename)),
-        rules_dir.join(format!("{}.pub", file_basename)),
-    ];
-
-    let has_public = pub_paths.iter().any(|p| p.exists());
+    // Public file is now <secret_name>.pub in the same directory as secrets.nix
+    let pub_path = rules_dir.join(format!("{}.pub", file));
+    let has_public = pub_path.exists();
 
     // For files without explicit config, assume hasSecret = true (default behavior)
     // This is always valid since has_secret=true
@@ -372,7 +350,7 @@ fn build_generator_nix_expression(rules_path: &str, file: &str, attempt_arg: &st
         r#"(let 
           rules = import {rules_path};
           name = builtins.replaceStrings ["A" "B" "C" "D" "E" "F" "G" "H" "I" "J" "K" "L" "M" "N" "O" "P" "Q" "R" "S" "T" "U" "V" "W" "X" "Y" "Z"] ["a" "b" "c" "d" "e" "f" "g" "h" "i" "j" "k" "l" "m" "n" "o" "p" "q" "r" "s" "t" "u" "v" "w" "x" "y" "z"] "{file}";
-          hasSuffix = s: builtins.match ".*${{s}}(\.age)?$" name != null;
+          hasSuffix = s: builtins.match ".*${{s}}$" name != null;
           auto = 
             if hasSuffix "ed25519" || hasSuffix "ssh" || hasSuffix "ssh_key" 
             then builtins.sshKey

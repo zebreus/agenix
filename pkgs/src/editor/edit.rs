@@ -4,16 +4,25 @@
 //! encrypting files from stdin, and decrypting files to stdout or another location.
 
 use anyhow::{Context, Result, anyhow};
-use std::ffi::OsStr;
 use std::fs;
 use std::io::{self, IsTerminal, Read};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use tempfile::TempDir;
 
 use crate::crypto::{self, encrypt_from_file, files_equal};
+use crate::editor::secret_name::SecretName;
 use crate::nix::{get_all_files, get_public_keys, should_armor};
 use crate::{log, verbose};
+
+/// Get the rules directory from a rules file path
+fn get_rules_dir(rules_path: &str) -> PathBuf {
+    let path = Path::new(rules_path);
+    path.parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."))
+        .to_path_buf()
+}
 
 /// Context for encryption operations, containing validated settings from the rules file.
 struct EncryptionContext {
@@ -23,13 +32,17 @@ struct EncryptionContext {
 
 impl EncryptionContext {
     /// Load encryption settings from rules file for a given secret.
-    fn new(rules_path: &str, file: &str) -> Result<Self> {
-        let public_keys = get_public_keys(rules_path, file)?;
+    /// The secret_name is the name as it appears in secrets.nix (without .age suffix).
+    fn new(rules_path: &str, secret_name: &str) -> Result<Self> {
+        let public_keys = get_public_keys(rules_path, secret_name)?;
         if public_keys.is_empty() {
-            return Err(anyhow!("No public keys found for file: {file}"));
+            return Err(anyhow!("No public keys found for secret: {secret_name}"));
         }
-        let armor = should_armor(rules_path, file)?;
-        Ok(Self { public_keys, armor })
+        let armor = should_armor(rules_path, secret_name)?;
+        Ok(Self {
+            public_keys,
+            armor,
+        })
     }
 
     /// Encrypt a cleartext file to the output path.
@@ -38,17 +51,16 @@ impl EncryptionContext {
     }
 }
 
-/// Get the filename component from a path with proper error handling.
-fn get_filename(file: &str) -> Result<&OsStr> {
-    Path::new(file)
-        .file_name()
-        .ok_or_else(|| anyhow!("Invalid file path: {file}"))
+/// Get the filename component for creating temporary files.
+fn get_temp_filename(secret_name: &str) -> Result<String> {
+    // Use just the secret name for the temp file
+    Ok(secret_name.to_string())
 }
 
 /// Create a temporary directory with a cleartext file inside.
-fn create_temp_cleartext(filename: &OsStr) -> Result<(TempDir, std::path::PathBuf)> {
+fn create_temp_cleartext(secret_name: &str) -> Result<(TempDir, std::path::PathBuf)> {
     let temp_dir = TempDir::new().context("Failed to create temporary directory")?;
-    let cleartext_file = temp_dir.path().join(filename);
+    let cleartext_file = temp_dir.path().join(secret_name);
     Ok((temp_dir, cleartext_file))
 }
 
@@ -88,6 +100,9 @@ enum EditorChoice {
 
 /// Edit a secret file with an editor.
 ///
+/// The `secret_name` parameter is the name as it appears in secrets.nix (without .age suffix).
+/// The actual secret file path will be constructed as <rules_dir>/<secret_name>.age
+///
 /// If the file exists, it will be decrypted to a temporary location, opened in the
 /// specified editor, and re-encrypted when the editor exits. If the file doesn't exist,
 /// a new encrypted file will be created.
@@ -99,30 +114,41 @@ enum EditorChoice {
 /// the encrypted file is not actually updated.
 pub fn edit_file(
     rules_path: &str,
-    file: &str,
+    secret_name: &str,
     editor_cmd: Option<&str>,
     identities: &[String],
     no_system_identities: bool,
     force: bool,
     dry_run: bool,
 ) -> Result<()> {
-    let ctx = EncryptionContext::new(rules_path, file)?;
-    let filename = get_filename(file)?;
-    let (_temp_dir, cleartext_file) = create_temp_cleartext(filename)?;
+    // Normalize the secret name (strip .age if provided for backwards compatibility)
+    let sname = SecretName::new(secret_name);
+    let secret_name = sname.name();
+    
+    // Construct the actual secret file path
+    let rules_dir = get_rules_dir(rules_path);
+    let secret_file = rules_dir.join(sname.secret_file());
+    let secret_file_str = secret_file
+        .to_str()
+        .ok_or_else(|| anyhow!("Invalid path encoding"))?;
 
-    verbose!("Editing secret: {}", file);
+    let ctx = EncryptionContext::new(rules_path, secret_name)?;
+    let temp_filename = get_temp_filename(secret_name)?;
+    let (_temp_dir, cleartext_file) = create_temp_cleartext(&temp_filename)?;
+
+    verbose!("Editing secret: {}", secret_name);
 
     // Decrypt existing file if present
-    if Path::new(file).exists() {
-        verbose!("Decrypting existing file: {}", file);
+    if secret_file.exists() {
+        verbose!("Decrypting existing file: {}", secret_file.display());
         if let Err(e) =
-            crypto::decrypt_to_file(file, &cleartext_file, identities, no_system_identities)
+            crypto::decrypt_to_file(secret_file_str, &cleartext_file, identities, no_system_identities)
         {
             if force {
-                log!("Warning: Could not decrypt {file}, starting with empty content: {e:#}");
+                log!("Warning: Could not decrypt {secret_name}, starting with empty content: {e:#}");
             } else {
                 return Err(e).with_context(|| {
-                    format!("Failed to decrypt {file}. Use --force to start with empty content")
+                    format!("Failed to decrypt {secret_name}. Use --force to start with empty content")
                 });
             }
         }
@@ -179,7 +205,7 @@ pub fn edit_file(
 
     // Handle case where editor didn't create the file
     if !cleartext_file.exists() {
-        log!("Warning: {file} wasn't created");
+        log!("Warning: {secret_name} wasn't created");
         return Ok(());
     }
 
@@ -188,22 +214,25 @@ pub fn edit_file(
         && Path::new(&backup_file).exists()
         && files_equal(&backup_file, &cleartext_file.to_string_lossy())?
     {
-        log!("Warning: {file} wasn't changed, skipping re-encryption");
+        log!("Warning: {secret_name} wasn't changed, skipping re-encryption");
         return Ok(());
     }
 
-    log!("Encrypting to: {}", file);
+    log!("Encrypting to: {}", secret_file.display());
 
     // In dry-run mode, skip the actual encryption to disk
     if dry_run {
-        log!("Dry-run mode: not saving changes to {}", file);
+        log!("Dry-run mode: not saving changes to {}", secret_name);
         return Ok(());
     }
 
-    ctx.encrypt(&cleartext_file.to_string_lossy(), file)
+    ctx.encrypt(&cleartext_file.to_string_lossy(), secret_file_str)
 }
 
 /// Encrypt content from stdin or a file to a secret file.
+///
+/// The `secret_name` parameter is the name as it appears in secrets.nix (without .age suffix).
+/// The actual secret file path will be constructed as <rules_dir>/<secret_name>.age
 ///
 /// Reads from stdin (or the specified input file) and encrypts the content to the specified file.
 /// Does not require an editor or decryption capabilities.
@@ -211,24 +240,35 @@ pub fn edit_file(
 /// In dry-run mode, the content is read and validated but not encrypted to disk.
 pub fn encrypt_file(
     rules_path: &str,
-    file: &str,
+    secret_name: &str,
     input: Option<&str>,
     force: bool,
     dry_run: bool,
 ) -> Result<()> {
+    // Normalize the secret name (strip .age if provided for backwards compatibility)
+    let sname = SecretName::new(secret_name);
+    let secret_name = sname.name();
+    
+    // Construct the actual secret file path
+    let rules_dir = get_rules_dir(rules_path);
+    let secret_file = rules_dir.join(sname.secret_file());
+    let secret_file_str = secret_file
+        .to_str()
+        .ok_or_else(|| anyhow!("Invalid path encoding"))?;
+
     // Check if file exists before doing any work
-    if Path::new(file).exists() && !force {
+    if secret_file.exists() && !force {
         return Err(anyhow!(
             "Secret file already exists: {}\nUse --force to overwrite or 'agenix edit' to edit the existing secret",
-            file
+            secret_file.display()
         ));
     }
 
-    verbose!("Encrypting secret: {}", file);
+    verbose!("Encrypting secret: {}", secret_name);
 
-    let ctx = EncryptionContext::new(rules_path, file)?;
-    let filename = get_filename(file)?;
-    let (_temp_dir, cleartext_file) = create_temp_cleartext(filename)?;
+    let ctx = EncryptionContext::new(rules_path, secret_name)?;
+    let temp_filename = get_temp_filename(secret_name)?;
+    let (_temp_dir, cleartext_file) = create_temp_cleartext(&temp_filename)?;
 
     // Read content from input file or stdin
     let content = match input {
@@ -260,70 +300,79 @@ pub fn encrypt_file(
     // Write content to temp file (same code path for both modes)
     fs::write(&cleartext_file, content).context("Failed to write content to file")?;
 
-    log!("Encrypting to: {}", file);
+    log!("Encrypting to: {}", secret_file.display());
 
     // In dry-run mode, skip only the final file write
     if dry_run {
         return Ok(());
     }
 
-    ctx.encrypt(&cleartext_file.to_string_lossy(), file)
+    ctx.encrypt(&cleartext_file.to_string_lossy(), secret_file_str)
 }
 
 /// Decrypt a file to stdout or another location.
+///
+/// The `secret_name` parameter is the name as it appears in secrets.nix (without .age suffix).
+/// The actual secret file path will be constructed as <rules_dir>/<secret_name>.age
 ///
 /// Validates the secret exists in rules before decrypting.
 /// Note: Decryption only requires identity (private key), not publicKeys.
 pub fn decrypt_file(
     rules_path: &str,
-    file: &str,
+    secret_name: &str,
     output: Option<&str>,
     identities: &[String],
     no_system_identities: bool,
 ) -> Result<()> {
-    validate_secret_exists(rules_path, file)?;
+    // Normalize the secret name (strip .age if provided for backwards compatibility)
+    let sname = SecretName::new(secret_name);
+    let secret_name = sname.name();
+    
+    validate_secret_exists(rules_path, secret_name)?;
 
-    verbose!("Decrypting secret: {}", file);
+    // Construct the actual secret file path
+    let rules_dir = get_rules_dir(rules_path);
+    let secret_file = rules_dir.join(sname.secret_file());
+    let secret_file_str = secret_file
+        .to_str()
+        .ok_or_else(|| anyhow!("Invalid path encoding"))?;
+
+    verbose!("Decrypting secret: {}", secret_name);
     let output_path = output.unwrap_or("/dev/stdout");
     verbose!("Decrypting to: {}", output_path);
 
     crypto::decrypt_to_file(
-        file,
+        secret_file_str,
         Path::new(output_path),
         identities,
         no_system_identities,
     )
 }
 
-/// Get the public file path for a secret (appends `.pub` suffix).
-fn public_file_path(file: &str) -> String {
-    format!("{}.pub", file)
-}
-
 /// Validate that a secret exists in the rules file (without requiring publicKeys).
 ///
 /// This is used for --public operations where we only need to verify the secret
 /// is defined in secrets.nix, but don't need publicKeys since we're not encrypting.
-fn validate_secret_exists(rules_path: &str, file: &str) -> Result<()> {
+fn validate_secret_exists(rules_path: &str, secret_name: &str) -> Result<()> {
     let all_files = get_all_files(rules_path)?;
-    if all_files.iter().any(|f| f == file) {
+    if all_files.iter().any(|f| f == secret_name) {
         Ok(())
     } else {
-        Err(anyhow!("Secret not found in rules: {file}"))
+        Err(anyhow!("Secret not found in rules: {secret_name}"))
     }
 }
 
 /// Run an editor workflow on a file, handling stdin, change detection, and dry-run.
 fn run_editor_workflow(
-    target_file: &str,
+    secret_name: &str,
     editor_cmd: Option<&str>,
     force: bool,
     dry_run: bool,
     load_content: impl FnOnce() -> Result<Option<String>>,
     save_content: impl FnOnce(&str) -> Result<()>,
 ) -> Result<()> {
-    let filename = get_filename(target_file)?;
-    let (_temp_dir, temp_file) = create_temp_cleartext(filename)?;
+    let temp_filename = get_temp_filename(secret_name)?;
+    let (_temp_dir, temp_file) = create_temp_cleartext(&temp_filename)?;
 
     // Load existing content if file exists, otherwise start with empty content
     match load_content() {
@@ -337,14 +386,14 @@ fn run_editor_workflow(
             if force {
                 log!(
                     "Warning: Could not read {}, starting with empty content: {:#}",
-                    target_file,
+                    secret_name,
                     e
                 );
             } else {
                 return Err(e).with_context(|| {
                     format!(
                         "Failed to read {}. Use --force to start with empty content",
-                        target_file
+                        secret_name
                     )
                 });
             }
@@ -362,7 +411,7 @@ fn run_editor_workflow(
 
     // Handle case where editor didn't create the file
     if !temp_file.exists() {
-        log!("Warning: {} wasn't created", target_file);
+        log!("Warning: {} wasn't created", secret_name);
         return Ok(());
     }
 
@@ -371,14 +420,14 @@ fn run_editor_workflow(
         && Path::new(&backup_file).exists()
         && files_equal(&backup_file, &temp_file.to_string_lossy())?
     {
-        log!("Warning: {} wasn't changed, skipping save", target_file);
+        log!("Warning: {} wasn't changed, skipping save", secret_name);
         return Ok(());
     }
 
-    log!("Saving to: {}", target_file);
+    log!("Saving to: {}", secret_name);
 
     if dry_run {
-        log!("Dry-run mode: not saving changes to {}", target_file);
+        log!("Dry-run mode: not saving changes to {}", secret_name);
         return Ok(());
     }
 
@@ -438,38 +487,58 @@ fn read_input(input: Option<&str>) -> Result<String> {
 }
 
 /// Read the public file associated with a secret to stdout or a file.
-pub fn read_public_file(rules_path: &str, file: &str, output: Option<&str>) -> Result<()> {
-    validate_secret_exists(rules_path, file)?;
-    let pub_file = public_file_path(file);
+///
+/// The `secret_name` parameter is the name as it appears in secrets.nix (without .age suffix).
+/// The public file path will be constructed as <rules_dir>/<secret_name>.pub
+pub fn read_public_file(rules_path: &str, secret_name: &str, output: Option<&str>) -> Result<()> {
+    // Normalize the secret name
+    let sname = SecretName::new(secret_name);
+    let secret_name = sname.name();
+    
+    validate_secret_exists(rules_path, secret_name)?;
+    
+    // Construct the public file path
+    let rules_dir = get_rules_dir(rules_path);
+    let pub_file = rules_dir.join(sname.public_file());
 
-    if !Path::new(&pub_file).exists() {
+    if !pub_file.exists() {
         return Err(anyhow!(
             "Public file does not exist: {}\nHint: Generate the secret first with 'agenix generate'",
-            pub_file
+            pub_file.display()
         ));
     }
 
     let content =
-        fs::read_to_string(&pub_file).with_context(|| format!("Failed to read: {}", pub_file))?;
+        fs::read_to_string(&pub_file).with_context(|| format!("Failed to read: {}", pub_file.display()))?;
     let output_path = output.unwrap_or("/dev/stdout");
     fs::write(output_path, content).with_context(|| format!("Failed to write to: {}", output_path))
 }
 
 /// Write content to the public file associated with a secret.
+///
+/// The `secret_name` parameter is the name as it appears in secrets.nix (without .age suffix).
+/// The public file path will be constructed as <rules_dir>/<secret_name>.pub
 pub fn write_public_file(
     rules_path: &str,
-    file: &str,
+    secret_name: &str,
     input: Option<&str>,
     force: bool,
     dry_run: bool,
 ) -> Result<()> {
-    validate_secret_exists(rules_path, file)?;
-    let pub_file = public_file_path(file);
+    // Normalize the secret name
+    let sname = SecretName::new(secret_name);
+    let secret_name = sname.name();
+    
+    validate_secret_exists(rules_path, secret_name)?;
+    
+    // Construct the public file path
+    let rules_dir = get_rules_dir(rules_path);
+    let pub_file = rules_dir.join(sname.public_file());
 
-    if Path::new(&pub_file).exists() && !force {
+    if pub_file.exists() && !force {
         return Err(anyhow!(
             "Public file already exists: {}\nUse --force to overwrite",
-            pub_file
+            pub_file.display()
         ));
     }
 
@@ -479,40 +548,50 @@ pub fn write_public_file(
     }
 
     if dry_run {
-        log!("Dry-run: would write to {}", pub_file);
+        log!("Dry-run: would write to {}", pub_file.display());
         return Ok(());
     }
 
-    fs::write(&pub_file, content).with_context(|| format!("Failed to write: {}", pub_file))
+    fs::write(&pub_file, content).with_context(|| format!("Failed to write: {}", pub_file.display()))
 }
 
 /// Edit the public file associated with a secret using an editor.
+///
+/// The `secret_name` parameter is the name as it appears in secrets.nix (without .age suffix).
+/// The public file path will be constructed as <rules_dir>/<secret_name>.pub
 pub fn edit_public_file(
     rules_path: &str,
-    file: &str,
+    secret_name: &str,
     editor_cmd: Option<&str>,
     force: bool,
     dry_run: bool,
 ) -> Result<()> {
-    validate_secret_exists(rules_path, file)?;
-    let pub_file = public_file_path(file);
+    // Normalize the secret name
+    let sname = SecretName::new(secret_name);
+    let secret_name = sname.name();
+    
+    validate_secret_exists(rules_path, secret_name)?;
+    
+    // Construct the public file path
+    let rules_dir = get_rules_dir(rules_path);
+    let pub_file = rules_dir.join(sname.public_file());
 
     run_editor_workflow(
-        &pub_file,
+        secret_name,
         editor_cmd,
         force,
         dry_run,
         || {
-            if Path::new(&pub_file).exists() {
+            if pub_file.exists() {
                 fs::read_to_string(&pub_file)
                     .map(Some)
-                    .with_context(|| format!("Failed to read: {}", pub_file))
+                    .with_context(|| format!("Failed to read: {}", pub_file.display()))
             } else {
                 Ok(None)
             }
         },
         |content| {
-            fs::write(&pub_file, content).with_context(|| format!("Failed to write: {}", pub_file))
+            fs::write(&pub_file, content).with_context(|| format!("Failed to write: {}", pub_file.display()))
         },
     )
 }

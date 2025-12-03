@@ -1,88 +1,59 @@
 //! Secret name normalization and handling.
 //!
-//! This module provides a `SecretName` newtype that encapsulates the various
-//! forms a secret name can take (full path, basename, with/without .age suffix)
-//! and provides consistent normalization.
+//! This module provides a `SecretName` newtype that handles secret names
+//! which are used in secrets.nix (without .age suffix) and provides
+//! methods to construct file paths.
 
-use std::path::Path;
-
-/// A normalized secret name that provides consistent comparison and formatting.
+/// A secret name from secrets.nix that can be used to construct file paths.
 ///
-/// Secret names can appear in various forms:
-/// - Full path: `/path/to/secret.age`
-/// - Relative path: `secrets/secret.age`
-/// - Basename: `secret.age`
-/// - Without suffix: `secret`
+/// Secret names appear in secrets.nix without .age suffix:
+/// - In secrets.nix: `cool_key_ed25519`
+/// - Secret file path: `cool_key_ed25519.age`
+/// - Public file path: `cool_key_ed25519.pub`
 ///
-/// `SecretName` normalizes these to enable consistent matching and comparison.
+/// `SecretName` provides methods to work with both the name and derived paths.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct SecretName {
-    /// The original name as provided
-    original: String,
-    /// The basename without path (e.g., "secret.age")
-    basename: String,
-    /// The normalized name without .age suffix (e.g., "secret")
-    normalized: String,
+    /// The secret name as it appears in secrets.nix (without .age)
+    name: String,
 }
 
 impl SecretName {
-    /// Create a new SecretName from any string representation.
+    /// Create a new SecretName from a string.
+    /// 
+    /// If the input has .age suffix, it will be stripped to get the secret name.
+    /// This allows the CLI to accept both forms for backwards compatibility.
     pub fn new(name: &str) -> Self {
-        let basename = Path::new(name)
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or(name)
-            .to_string();
+        // Strip .age suffix if present to get the actual secret name
+        let secret_name = name.strip_suffix(".age").unwrap_or(name).to_string();
 
-        let normalized = basename
-            .strip_suffix(".age")
-            .unwrap_or(&basename)
-            .to_string();
-
-        Self {
-            original: name.to_string(),
-            basename,
-            normalized,
-        }
+        Self { name: secret_name }
     }
 
-    /// Get the basename (filename without path).
-    pub fn basename(&self) -> &str {
-        &self.basename
+    /// Get the secret name (without .age suffix).
+    pub fn name(&self) -> &str {
+        &self.name
     }
 
-    /// Get the normalized name (basename without .age suffix).
-    pub fn normalized(&self) -> &str {
-        &self.normalized
+    /// Get the secret file path (with .age suffix).
+    pub fn secret_file(&self) -> String {
+        format!("{}.age", self.name)
     }
 
-    /// Get the name with .age suffix guaranteed.
-    pub fn with_age_suffix(&self) -> String {
-        if self.basename.ends_with(".age") {
-            self.basename.clone()
-        } else {
-            format!("{}.age", self.basename)
-        }
+    /// Get the public file path (with .pub suffix).
+    pub fn public_file(&self) -> String {
+        format!("{}.pub", self.name)
     }
 
-    /// Check if this secret name matches another (using normalized comparison).
+    /// Check if this secret name matches another.
     pub fn matches(&self, other: &SecretName) -> bool {
-        self.normalized == other.normalized
-    }
-
-    /// Strip .age suffix from a string if present.
-    ///
-    /// This is a convenience method for stripping .age suffix without creating
-    /// a full SecretName instance.
-    #[inline]
-    pub fn strip_age_suffix(name: &str) -> &str {
-        name.strip_suffix(".age").unwrap_or(name)
+        self.name == other.name
     }
 }
 
 impl std::fmt::Display for SecretName {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.original)
+        write!(f, "{}", self.name)
     }
 }
 
@@ -100,21 +71,7 @@ impl From<String> for SecretName {
 
 impl AsRef<str> for SecretName {
     fn as_ref(&self) -> &str {
-        &self.original
-    }
-}
-
-#[cfg(test)]
-impl SecretName {
-    /// Get the original name as provided.
-    pub fn original(&self) -> &str {
-        &self.original
-    }
-
-    /// Check if this secret name matches a string (using normalized comparison).
-    pub fn matches_str(&self, other: &str) -> bool {
-        let other_name = SecretName::new(other);
-        self.matches(&other_name)
+        &self.name
     }
 }
 
@@ -123,56 +80,36 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_secret_name_full_path() {
-        let name = SecretName::new("/path/to/secret.age");
-        assert_eq!(name.original(), "/path/to/secret.age");
-        assert_eq!(name.basename(), "secret.age");
-        assert_eq!(name.normalized(), "secret");
-    }
-
-    #[test]
-    fn test_secret_name_basename_only() {
-        let name = SecretName::new("secret.age");
-        assert_eq!(name.original(), "secret.age");
-        assert_eq!(name.basename(), "secret.age");
-        assert_eq!(name.normalized(), "secret");
-    }
-
-    #[test]
     fn test_secret_name_without_suffix() {
-        let name = SecretName::new("secret");
-        assert_eq!(name.original(), "secret");
-        assert_eq!(name.basename(), "secret");
-        assert_eq!(name.normalized(), "secret");
-    }
-
-    #[test]
-    fn test_secret_name_matches() {
-        let name1 = SecretName::new("/path/to/secret.age");
-        let name2 = SecretName::new("secret.age");
-        let name3 = SecretName::new("secret");
-
-        assert!(name1.matches(&name2));
-        assert!(name1.matches(&name3));
-        assert!(name2.matches(&name3));
+        let name = SecretName::new("cool_key_ed25519");
+        assert_eq!(name.name(), "cool_key_ed25519");
+        assert_eq!(name.secret_file(), "cool_key_ed25519.age");
+        assert_eq!(name.public_file(), "cool_key_ed25519.pub");
     }
 
     #[test]
     fn test_secret_name_with_age_suffix() {
-        let name1 = SecretName::new("secret");
-        let name2 = SecretName::new("secret.age");
-
-        assert_eq!(name1.with_age_suffix(), "secret.age");
-        assert_eq!(name2.with_age_suffix(), "secret.age");
+        // For backwards compatibility, strip .age if provided
+        let name = SecretName::new("cool_key_ed25519.age");
+        assert_eq!(name.name(), "cool_key_ed25519");
+        assert_eq!(name.secret_file(), "cool_key_ed25519.age");
+        assert_eq!(name.public_file(), "cool_key_ed25519.pub");
     }
 
     #[test]
-    fn test_secret_name_matches_str() {
-        let name = SecretName::new("/path/to/secret.age");
+    fn test_secret_name_matches() {
+        let name1 = SecretName::new("cool_key_ed25519");
+        let name2 = SecretName::new("cool_key_ed25519.age");
+        let name3 = SecretName::new("other_key");
 
-        assert!(name.matches_str("secret"));
-        assert!(name.matches_str("secret.age"));
-        assert!(name.matches_str("/other/path/secret.age"));
-        assert!(!name.matches_str("other-secret"));
+        assert!(name1.matches(&name2));
+        assert!(name2.matches(&name1));
+        assert!(!name1.matches(&name3));
+    }
+
+    #[test]
+    fn test_secret_name_display() {
+        let name = SecretName::new("my_secret");
+        assert_eq!(name.to_string(), "my_secret");
     }
 }
