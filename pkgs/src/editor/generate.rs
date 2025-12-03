@@ -179,8 +179,13 @@ fn encrypt_secret(
     let secret_file_path = secret_name.secret_file();
 
     // Encrypt the generated secret content to the actual file path
-    encrypt_from_file(&temp_file.to_string_lossy(), &secret_file_path, &public_keys, armor)
-        .with_context(|| format!("Failed to encrypt generated secret {file}"))?;
+    encrypt_from_file(
+        &temp_file.to_string_lossy(),
+        &secret_file_path,
+        &public_keys,
+        armor,
+    )
+    .with_context(|| format!("Failed to encrypt generated secret {file}"))?;
 
     Ok(ProcessResult::Generated)
 }
@@ -268,8 +273,10 @@ fn process_single_secret(
         return Ok(ProcessResult::AlreadyProcessed);
     }
 
-    // Skip if the file already exists (unless force is set)
-    if Path::new(file).exists() && !force {
+    // Check if the encrypted file already exists (unless force is set)
+    let secret_name = SecretName::new(file);
+    let secret_file_path = secret_name.secret_file();
+    if Path::new(&secret_file_path).exists() && !force {
         // Try to check if generator exists, but don't fail on evaluation errors
         // (the generator might have dependencies that aren't available)
         if let Ok(Some(_)) = generate_secret_with_public(ctx.rules_path(), file) {
@@ -555,11 +562,11 @@ mod tests {
         let rules_content_with_abs_paths = format!(
             r#"
     {{
-      "{}/ssh-key.age" = {{
+      "{}/ssh-key" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = builtins.sshKey;
       }};
-      "{}/authorized-keys.age" = {{
+      "{}/authorized-keys" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     dependencies = [ "ssh-key" ];
     generator = {{ publics }}: "ssh-key-pub: " + publics."ssh-key";
@@ -3192,7 +3199,7 @@ mod tests {
         let rules_content = format!(
             r#"
     {{
-      "{}/my_key_ed25519.age" = {{
+      "{}/my_key_ed25519" = {{
         hasSecret = false;
       }};
     }}
