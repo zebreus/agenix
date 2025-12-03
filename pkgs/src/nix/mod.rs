@@ -1923,7 +1923,7 @@ mod tests {
     fn test_auto_generator_ed25519_ending() -> Result<()> {
         let rules_content = r#"
         {
-          "my-key-ed25519.age" = {
+          "my-key-ed25519" = {
           publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
           };
         }
@@ -1931,7 +1931,7 @@ mod tests {
         let temp_file = create_test_rules_file(rules_content)?;
 
         let result =
-            generate_secret_with_public(temp_file.path().to_str().unwrap(), "my-key-ed25519.age")?;
+            generate_secret_with_public(temp_file.path().to_str().unwrap(), "my-key-ed25519")?;
 
         assert!(result.is_some());
         let output = result.unwrap();
@@ -2018,7 +2018,7 @@ mod tests {
     fn test_auto_generator_ssh_ending() -> Result<()> {
         let rules_content = r#"
         {
-          "deployment-ssh.age" = {
+          "deployment-ssh" = {
             publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
           };
         }
@@ -2026,7 +2026,7 @@ mod tests {
         let temp_file = create_test_rules_file(rules_content)?;
 
         let result =
-            generate_secret_with_public(temp_file.path().to_str().unwrap(), "deployment-ssh.age")?;
+            generate_secret_with_public(temp_file.path().to_str().unwrap(), "deployment-ssh")?;
 
         assert!(result.is_some());
         let output = result.unwrap();
@@ -2045,7 +2045,7 @@ mod tests {
     fn test_auto_generator_ssh_key_ending() -> Result<()> {
         let rules_content = r#"
         {
-          "server_ssh_key.age" = {
+          "server_ssh_key" = {
             publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
           };
         }
@@ -2053,7 +2053,7 @@ mod tests {
         let temp_file = create_test_rules_file(rules_content)?;
 
         let result =
-            generate_secret_with_public(temp_file.path().to_str().unwrap(), "server_ssh_key.age")?;
+            generate_secret_with_public(temp_file.path().to_str().unwrap(), "server_ssh_key")?;
 
         assert!(result.is_some());
         let output = result.unwrap();
@@ -2072,7 +2072,7 @@ mod tests {
     fn test_auto_generator_x25519_ending() -> Result<()> {
         let rules_content = r#"
         {
-          "identity-x25519.age" = {
+          "identity-x25519" = {
             publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
           };
         }
@@ -2080,7 +2080,7 @@ mod tests {
         let temp_file = create_test_rules_file(rules_content)?;
 
         let result =
-            generate_secret_with_public(temp_file.path().to_str().unwrap(), "identity-x25519.age")?;
+            generate_secret_with_public(temp_file.path().to_str().unwrap(), "identity-x25519")?;
 
         assert!(result.is_some());
         let output = result.unwrap();
@@ -2099,15 +2099,14 @@ mod tests {
     fn test_auto_generator_wg_ending() -> Result<()> {
         let rules_content = r#"
         {
-          "server_wg.age" = {
+          "server_wg" = {
             publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
           };
         }
         "#;
         let temp_file = create_test_rules_file(rules_content)?;
 
-        let result =
-            generate_secret_with_public(temp_file.path().to_str().unwrap(), "server_wg.age")?;
+        let result = generate_secret_with_public(temp_file.path().to_str().unwrap(), "server_wg")?;
 
         assert!(result.is_some());
         let output = result.unwrap();
@@ -2126,17 +2125,15 @@ mod tests {
     fn test_auto_generator_wireguard_ending() -> Result<()> {
         let rules_content = r#"
         {
-          "client_wireguard.age" = {
+          "client_wireguard" = {
             publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
           };
         }
         "#;
         let temp_file = create_test_rules_file(rules_content)?;
 
-        let result = generate_secret_with_public(
-            temp_file.path().to_str().unwrap(),
-            "client_wireguard.age",
-        )?;
+        let result =
+            generate_secret_with_public(temp_file.path().to_str().unwrap(), "client_wireguard")?;
 
         assert!(result.is_some());
         let output = result.unwrap();
@@ -2155,17 +2152,15 @@ mod tests {
     fn test_auto_generator_password_ending() -> Result<()> {
         let rules_content = r#"
         {
-          "database-password.age" = {
+          "database-password" = {
             publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
           };
         }
         "#;
         let temp_file = create_test_rules_file(rules_content)?;
 
-        let result = generate_secret_with_public(
-            temp_file.path().to_str().unwrap(),
-            "database-password.age",
-        )?;
+        let result =
+            generate_secret_with_public(temp_file.path().to_str().unwrap(), "database-password")?;
 
         assert!(result.is_some());
         let output = result.unwrap();
@@ -2182,17 +2177,15 @@ mod tests {
     fn test_auto_generator_passphrase_ending() -> Result<()> {
         let rules_content = r#"
         {
-          "backup-passphrase.age" = {
+          "backup-passphrase" = {
             publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
           };
         }
         "#;
         let temp_file = create_test_rules_file(rules_content)?;
 
-        let result = generate_secret_with_public(
-            temp_file.path().to_str().unwrap(),
-            "backup-passphrase.age",
-        )?;
+        let result =
+            generate_secret_with_public(temp_file.path().to_str().unwrap(), "backup-passphrase")?;
 
         assert!(result.is_some());
         let output = result.unwrap();
@@ -2209,10 +2202,10 @@ mod tests {
     fn test_auto_generator_case_insensitive() -> Result<()> {
         let rules_content = r#"
         {
-          "MyKey-ED25519.age" = {
+          "MyKey-ED25519" = {
             publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
           };
-          "Database-PASSWORD.age" = {
+          "Database-PASSWORD" = {
             publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
           };
         }
@@ -2221,7 +2214,7 @@ mod tests {
 
         // Test uppercase ED25519
         let result1 =
-            generate_secret_with_public(temp_file.path().to_str().unwrap(), "MyKey-ED25519.age")?;
+            generate_secret_with_public(temp_file.path().to_str().unwrap(), "MyKey-ED25519")?;
         assert!(result1.is_some());
         let output1 = result1.unwrap();
         let secret1 = output1.secret.as_ref().unwrap();
@@ -2229,10 +2222,8 @@ mod tests {
         assert!(output1.public.is_some());
 
         // Test uppercase PASSWORD
-        let result2 = generate_secret_with_public(
-            temp_file.path().to_str().unwrap(),
-            "Database-PASSWORD.age",
-        )?;
+        let result2 =
+            generate_secret_with_public(temp_file.path().to_str().unwrap(), "Database-PASSWORD")?;
         assert!(result2.is_some());
         let output2 = result2.unwrap();
         let secret2 = output2.secret.as_ref().unwrap();
@@ -2520,12 +2511,12 @@ mod tests {
         let rules_dir = temp_dir.path();
 
         // Create a .pub file for the secret
-        let pub_file = rules_dir.join("my-ssh-key.age.pub");
+        let pub_file = rules_dir.join("my-ssh-key.pub");
         let public_key =
             "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqiXi9DyVJGcL8pE4+bKqe3FP8";
         std::fs::write(&pub_file, format!("{}\n", public_key))?;
 
-        // Reference with .age suffix
+        // Reference with .age suffix (backwards compatibility - should strip it)
         let result = resolve_public_key(rules_dir, "my-ssh-key.age")?;
 
         // Should resolve to the public key
@@ -2539,7 +2530,7 @@ mod tests {
         let rules_dir = temp_dir.path();
 
         // Create a .pub file for the secret
-        let pub_file = rules_dir.join("my-ssh-key.age.pub");
+        let pub_file = rules_dir.join("my-ssh-key.pub");
         let public_key =
             "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqiXi9DyVJGcL8pE4+bKqe3FP8";
         std::fs::write(&pub_file, format!("{}\n", public_key))?;
@@ -2570,7 +2561,7 @@ mod tests {
         let temp_dir = TempDir::new()?;
 
         // Create a public key file
-        let pub_file = temp_dir.path().join("deploy-key.age.pub");
+        let pub_file = temp_dir.path().join("deploy-key.pub");
         let deploy_public_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDeployKeyPublicKeyExample";
         std::fs::write(&pub_file, format!("{}\n", deploy_public_key))?;
 
@@ -2578,10 +2569,10 @@ mod tests {
         let rules_path = temp_dir.path().join("secrets.nix");
         let rules_content = r#"
         {
-          "deploy-key.age" = {
+          "deploy-key" = {
             publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
           };
-          "secret-using-deploy-key.age" = {
+          "secret-using-deploy-key" = {
             publicKeys = [ 
               "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p"
               "deploy-key"
@@ -2591,7 +2582,7 @@ mod tests {
         "#;
         std::fs::write(&rules_path, rules_content)?;
 
-        let result = get_public_keys(rules_path.to_str().unwrap(), "secret-using-deploy-key.age")?;
+        let result = get_public_keys(rules_path.to_str().unwrap(), "secret-using-deploy-key")?;
 
         assert_eq!(result.len(), 2);
         assert_eq!(
@@ -2608,11 +2599,11 @@ mod tests {
         let temp_dir = TempDir::new()?;
 
         // Create multiple public key files
-        let ssh_key_pub = temp_dir.path().join("server-ssh.age.pub");
+        let ssh_key_pub = temp_dir.path().join("server-ssh.pub");
         let ssh_public_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIServerSSHKey";
         std::fs::write(&ssh_key_pub, format!("{}\n", ssh_public_key))?;
 
-        let age_key_pub = temp_dir.path().join("backup-key.age.pub");
+        let age_key_pub = temp_dir.path().join("backup-key.pub");
         let age_public_key = "age1abcdefghijklmnopqrstuvwxyz1234567890abcdefghijklmnopqrstuv";
         std::fs::write(&age_key_pub, format!("{}\n", age_public_key))?;
 
@@ -2620,25 +2611,25 @@ mod tests {
         let rules_path = temp_dir.path().join("secrets.nix");
         let rules_content = r#"
         {
-          "server-ssh.age" = {
+          "server-ssh" = {
             publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
           };
-          "backup-key.age" = {
+          "backup-key" = {
             publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
           };
-          "app-secret.age" = {
+          "app-secret" = {
             publicKeys = [ 
               "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDirectPublicKey"
               "server-ssh"
               "age1directagekey1234567890abcdefghijklmnopqrstuvwxyz12345678"
-              "backup-key.age"
+              "backup-key"
             ];
           };
         }
         "#;
         std::fs::write(&rules_path, rules_content)?;
 
-        let result = get_public_keys(rules_path.to_str().unwrap(), "app-secret.age")?;
+        let result = get_public_keys(rules_path.to_str().unwrap(), "app-secret")?;
 
         assert_eq!(result.len(), 4);
         assert_eq!(
@@ -2650,7 +2641,7 @@ mod tests {
             result[2],
             "age1directagekey1234567890abcdefghijklmnopqrstuvwxyz12345678"
         ); // Direct age key
-        assert_eq!(result[3], age_public_key); // Resolved from backup-key.age
+        assert_eq!(result[3], age_public_key); // Resolved from backup-key
 
         Ok(())
     }
@@ -2660,7 +2651,7 @@ mod tests {
         let temp_dir = TempDir::new()?;
 
         // Simulate a generated SSH keypair (only the .pub file would exist)
-        let ssh_key_pub = temp_dir.path().join("generated-deploy-key.age.pub");
+        let ssh_key_pub = temp_dir.path().join("generated-deploy-key.pub");
         let ssh_public_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGeneratedDeployKey";
         std::fs::write(&ssh_key_pub, format!("{}\n", ssh_public_key))?;
 
@@ -2668,11 +2659,11 @@ mod tests {
         let rules_path = temp_dir.path().join("secrets.nix");
         let rules_content = r#"
         {
-          "generated-deploy-key.age" = {
+          "generated-deploy-key" = {
             publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
             generator = { }: builtins.sshKey {};
           };
-          "authorized-keys.age" = {
+          "authorized-keys" = {
             publicKeys = [ 
               "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p"
               "generated-deploy-key"
@@ -2682,7 +2673,7 @@ mod tests {
         "#;
         std::fs::write(&rules_path, rules_content)?;
 
-        let result = get_public_keys(rules_path.to_str().unwrap(), "authorized-keys.age")?;
+        let result = get_public_keys(rules_path.to_str().unwrap(), "authorized-keys")?;
 
         assert_eq!(result.len(), 2);
         assert_eq!(
@@ -2992,11 +2983,11 @@ mod tests {
 
         let rules_content = r#"
         {
-          "ssh-key.age" = {
+          "ssh-key" = {
             publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
             generator = builtins.sshKey;
           };
-          "app-secret.age" = {
+          "app-secret" = {
             publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" "ssh-key" ];
             generator = { }: "app-secret-content";
           };
@@ -3004,7 +2995,7 @@ mod tests {
         "#;
         std::fs::write(&rules_path, rules_content)?;
 
-        let result = get_secret_dependencies(rules_path.to_str().unwrap(), "app-secret.age")?;
+        let result = get_secret_dependencies(rules_path.to_str().unwrap(), "app-secret")?;
 
         // Should detect "ssh-key" as an implicit dependency from publicKeys
         assert_eq!(result.len(), 1);
@@ -3020,19 +3011,19 @@ mod tests {
 
         let rules_content = r#"
         {
-          "deploy-key.age" = {
+          "deploy-key" = {
             publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
             generator = builtins.sshKey;
           };
-          "backup-key.age" = {
+          "backup-key" = {
             publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
             generator = builtins.sshKey;
           };
-          "server-key.age" = {
+          "server-key" = {
             publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
             generator = builtins.sshKey;
           };
-          "multi-recipient-secret.age" = {
+          "multi-recipient-secret" = {
             publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" "deploy-key" "backup-key" "server-key" ];
             generator = { }: "secret-content";
           };
@@ -3041,7 +3032,7 @@ mod tests {
         std::fs::write(&rules_path, rules_content)?;
 
         let result =
-            get_secret_dependencies(rules_path.to_str().unwrap(), "multi-recipient-secret.age")?;
+            get_secret_dependencies(rules_path.to_str().unwrap(), "multi-recipient-secret")?;
 
         // Should detect all three secret references as dependencies
         assert_eq!(result.len(), 3);
@@ -3053,27 +3044,27 @@ mod tests {
 
     #[test]
     fn test_public_key_reference_with_age_suffix() -> Result<()> {
-        // References with .age suffix should also work
+        // Test that the new format works correctly (no .age in secrets.nix)
         let temp_dir = TempDir::new()?;
         let rules_path = temp_dir.path().join("secrets.nix");
 
         let rules_content = r#"
         {
-          "base-key.age" = {
+          "base-key" = {
             publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
             generator = builtins.sshKey;
           };
-          "derived.age" = {
-            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" "base-key.age" ];
+          "derived" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" "base-key" ];
             generator = { }: "derived-content";
           };
         }
         "#;
         std::fs::write(&rules_path, rules_content)?;
 
-        let result = get_secret_dependencies(rules_path.to_str().unwrap(), "derived.age")?;
+        let result = get_secret_dependencies(rules_path.to_str().unwrap(), "derived")?;
 
-        // Should detect "base-key" (normalized from "base-key.age")
+        // Should detect "base-key"
         assert_eq!(result.len(), 1);
         assert_eq!(result[0], "base-key");
         Ok(())
@@ -3120,11 +3111,11 @@ mod tests {
 
         let rules_content = r#"
         {
-          "ssh-host-key.age" = {
+          "ssh-host-key" = {
             publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
             generator = builtins.sshKey;
           };
-          "app-config.age" = {
+          "app-config" = {
             publicKeys = [ 
               "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p"
               "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqiXi9DyVJGcL8pE4+bKqe3FP8"
@@ -3137,7 +3128,7 @@ mod tests {
         "#;
         std::fs::write(&rules_path, rules_content)?;
 
-        let result = get_secret_dependencies(rules_path.to_str().unwrap(), "app-config.age")?;
+        let result = get_secret_dependencies(rules_path.to_str().unwrap(), "app-config")?;
 
         // Should only detect "ssh-host-key" as dependency, not the actual public keys
         assert_eq!(result.len(), 1);
@@ -3153,7 +3144,7 @@ mod tests {
 
         let rules_content = r#"
         {
-          "secret.age" = {
+          "secret" = {
             publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" "nonexistent-key" ];
             generator = { }: "content";
           };
