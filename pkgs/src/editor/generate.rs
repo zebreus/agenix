@@ -583,12 +583,12 @@ mod tests {
         );
         // Check that both files were created
         let ssh_key_path = temp_dir.path().join("ssh-key.age");
-        let ssh_key_pub_path = temp_dir.path().join("ssh-key.age.pub");
+        let ssh_key_pub_path = temp_dir.path().join("ssh-key.pub");
         let authorized_keys_path = temp_dir.path().join("authorized-keys.age");
         assert!(ssh_key_path.exists(), "ssh-key.age should be created");
         assert!(
             ssh_key_pub_path.exists(),
-            "ssh-key.age.pub should be created"
+            "ssh-key.pub should be created"
         );
         assert!(
             authorized_keys_path.exists(),
@@ -669,7 +669,7 @@ mod tests {
     dependencies = [ "base" ];
     generator = {{ publics }}: "derived-from-" + publics.base;
       }};
-      "{}/base.age" = {{
+      "{}/base" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ }}: {{ secret = "base-secret"; public = "base-public"; }};
       }};
@@ -696,10 +696,10 @@ mod tests {
         );
         // Both files should exist
         let base_path = temp_dir.path().join("base.age");
-        let base_pub_path = temp_dir.path().join("base.age.pub");
+        let base_pub_path = temp_dir.path().join("base.pub");
         let derived_path = temp_dir.path().join("derived.age");
         assert!(base_path.exists(), "base.age should be created");
-        assert!(base_pub_path.exists(), "base.age.pub should be created");
+        assert!(base_pub_path.exists(), "base.pub should be created");
         assert!(derived_path.exists(), "derived.age should be created");
         Ok(())
     }
@@ -796,15 +796,15 @@ mod tests {
         let rules_content = format!(
             r#"
     {{
-      "{}/level1.age" = {{
+      "{}/level1" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ }}: {{ secret = "level1-secret"; public = "level1-public"; }};
       }};
-      "{}/level2.age" = {{
+      "{}/level2" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ publics }}: {{ secret = "level2-" + publics."level1"; public = "level2-public"; }};
       }};
-      "{}/level3.age" = {{
+      "{}/level3" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ publics }}: "level3-" + publics."level2";
       }};
@@ -842,22 +842,22 @@ mod tests {
         let temp_dir = tempdir()?;
         // Pre-create middle secret with public key
         let level2_path = temp_dir.path().join("level2.age");
-        let level2_pub_path = temp_dir.path().join("level2.age.pub");
+        let level2_pub_path = temp_dir.path().join("level2.pub");
         std::fs::write(&level2_path, "existing-level2-encrypted")?;
         std::fs::write(&level2_pub_path, "existing-level2-public")?;
         // Chain: level1 -> level2 (exists) -> level3
         let rules_content = format!(
             r#"
     {{
-      "{}/level1.age" = {{
+      "{}/level1" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ }}: {{ secret = "level1-secret"; public = "level1-public"; }};
       }};
-      "{}/level2.age" = {{
+      "{}/level2" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ publics }}: {{ secret = "level2-" + publics."level1"; public = "level2-public"; }};
       }};
-      "{}/level3.age" = {{
+      "{}/level3" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ publics }}: "level3-" + publics."level2";
       }};
@@ -896,21 +896,21 @@ mod tests {
         use tempfile::NamedTempFile;
         let temp_dir = tempdir()?;
         // Pre-create middle secret with only public key (no encrypted file)
-        let level2_pub_path = temp_dir.path().join("level2.age.pub");
+        let level2_pub_path = temp_dir.path().join("level2.pub");
         std::fs::write(&level2_pub_path, "existing-level2-public")?;
         // Chain where level3 needs the SECRET from level2 but only public is available
         let rules_content = format!(
             r#"
     {{
-      "{}/level1.age" = {{
+      "{}/level1" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ }}: {{ secret = "level1-secret"; public = "level1-public"; }};
       }};
-      "{}/level2.age" = {{
+      "{}/level2" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ publics }}: {{ secret = "level2-" + publics."level1"; public = "level2-public"; }};
       }};
-      "{}/level3.age" = {{
+      "{}/level3" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ secrets }}: "level3-" + secrets."level2";
       }};
@@ -950,11 +950,11 @@ mod tests {
         let rules_content = format!(
             r#"
     {{
-      "{}/level1.age" = {{
+      "{}/level1" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ }}: {{ secret = "level1-secret"; public = "level1-public"; }};
       }};
-      "{}/level3.age" = {{
+      "{}/level3" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     dependencies = [ "level2" ];
     generator = {{ publics }}: "level3-" + publics."level2";
@@ -1035,7 +1035,7 @@ mod tests {
         let rules_content = format!(
             r#"
     {{
-      "{}/base.age" = {{
+      "{}/base" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ }}: {{ secret = "base"; public = "base-pub"; }};
       }};
@@ -1551,7 +1551,7 @@ mod tests {
         let rules_content = format!(
             r#"
     {{
-      "{}/base.age" = {{
+      "{}/base" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ }}: {{ secret = "base-secret"; public = "base-public"; }};
       }};
@@ -1612,7 +1612,7 @@ mod tests {
         let rules_content = format!(
             r#"
     {{
-      "{}/base.age" = {{
+      "{}/base" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ }}: {{ secret = "base-secret"; public = "base-public"; }};
       }};
@@ -1781,7 +1781,7 @@ mod tests {
         let rules_content = format!(
             r#"
     {{
-      "{}/base.age" = {{
+      "{}/base" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ }}: {{ secret = "base-secret"; public = "base-public"; }};
       }};
@@ -1799,10 +1799,10 @@ mod tests {
         writeln!(temp_rules, "{}", rules_content)?;
         temp_rules.flush()?;
         // Create an existing .pub file for base (simulating a pre-generated dependency)
-        let base_pub_path = temp_dir.path().join("base.age.pub");
+        let base_pub_path = temp_dir.path().join("base.pub");
         fs::write(&base_pub_path, "existing-base-public")?;
         // Generate only derived.age with --no-dependencies
-        // This should succeed because base.age.pub exists
+        // This should succeed because base.pub exists
         let args = vec![
             "agenix".to_string(),
             "generate".to_string(),
@@ -1838,7 +1838,7 @@ mod tests {
         let rules_content = format!(
             r#"
     {{
-      "{}/base.age" = {{
+      "{}/base" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ }}: {{ secret = "base-secret"; public = "base-public"; }};
       }};
@@ -1884,7 +1884,7 @@ mod tests {
         let rules_content = format!(
             r#"
     {{
-      "{}/base.age" = {{
+      "{}/base" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ }}: {{ secret = "base-secret"; public = "base-public"; }};
       }};
@@ -1901,11 +1901,11 @@ mod tests {
         let mut temp_rules = NamedTempFile::new()?;
         writeln!(temp_rules, "{}", rules_content)?;
         temp_rules.flush()?;
-        // Pre-create base.age.pub (simulating base was already generated)
-        let base_pub_path = temp_dir.path().join("base.age.pub");
+        // Pre-create base.pub (simulating base was already generated)
+        let base_pub_path = temp_dir.path().join("base.pub");
         fs::write(&base_pub_path, "pre-existing-base-public")?;
         // Generate only derived.age with --no-dependencies
-        // This should succeed because base.age.pub exists
+        // This should succeed because base.pub exists
         let args = vec![
             "agenix".to_string(),
             "generate".to_string(),
@@ -1965,12 +1965,12 @@ mod tests {
         let mut temp_rules = NamedTempFile::new()?;
         writeln!(temp_rules, "{}", rules_content)?;
         temp_rules.flush()?;
-        // Pre-create both a.age.pub and b.age.pub (all deps need .pub files)
-        let a_pub_path = temp_dir.path().join("a.age.pub");
+        // Pre-create both a.pub and b.pub (all deps need .pub files)
+        let a_pub_path = temp_dir.path().join("a.pub");
         fs::write(&a_pub_path, "pre-existing-a-public")?;
-        let b_pub_path = temp_dir.path().join("b.age.pub");
+        let b_pub_path = temp_dir.path().join("b.pub");
         fs::write(&b_pub_path, "pre-existing-b-public")?;
-        // Generate only c.age with --no-dependencies
+        // Generate only c with --no-dependencies
         // This should succeed because all dependencies have .pub files
         let args = vec![
             "agenix".to_string(),
@@ -2085,7 +2085,7 @@ mod tests {
         let rules_content = format!(
             r#"
     {{
-      "{}/base.age" = {{
+      "{}/base" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ }}: {{ secret = "base-secret"; public = "base-public"; }};
       }};
@@ -2231,7 +2231,7 @@ mod tests {
         let rules_content1 = format!(
             r#"
     {{
-      "{}/base.age" = {{
+      "{}/base" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ }}: {{ secret = "base-secret"; public = "base-public"; }};
       }};
@@ -2248,7 +2248,7 @@ mod tests {
         let rules_content2 = format!(
             r#"
     {{
-      "{}/base.age" = {{
+      "{}/base" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ }}: {{ secret = "base-secret"; public = "base-public"; }};
       }};
@@ -2302,8 +2302,8 @@ mod tests {
             "Implicit all should create base.age"
         );
         assert!(
-            temp_dir1.path().join("base.age.pub").exists(),
-            "Implicit all should create base.age.pub"
+            temp_dir1.path().join("base.pub").exists(),
+            "Implicit all should create base.pub"
         );
         assert!(
             temp_dir1.path().join("derived.age").exists(),
@@ -2314,8 +2314,8 @@ mod tests {
             "Explicit all should create base.age"
         );
         assert!(
-            temp_dir2.path().join("base.age.pub").exists(),
-            "Explicit all should create base.age.pub"
+            temp_dir2.path().join("base.pub").exists(),
+            "Explicit all should create base.pub"
         );
         assert!(
             temp_dir2.path().join("derived.age").exists(),
@@ -2375,7 +2375,7 @@ mod tests {
         let rules_content1 = format!(
             r#"
     {{
-      "{}/base.age" = {{
+      "{}/base" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ }}: {{ secret = "base-secret"; public = "base-public"; }};
       }};
@@ -2392,7 +2392,7 @@ mod tests {
         let rules_content2 = format!(
             r#"
     {{
-      "{}/base.age" = {{
+      "{}/base" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ }}: {{ secret = "base-secret"; public = "base-public"; }};
       }};
@@ -2838,7 +2838,7 @@ mod tests {
         let rules_content = format!(
             r#"
     {{
-      "{}/base.age" = {{
+      "{}/base" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ }}: {{ public = "base-public-only"; }};
       }};
@@ -2892,7 +2892,7 @@ mod tests {
         let rules_content = format!(
             r#"
     {{
-      "{}/base.age" = {{
+      "{}/base" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ }}: {{ secret = "base-secret-only"; }};
       }};
