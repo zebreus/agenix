@@ -4,7 +4,7 @@ let
 in
 {
   # Generate an SSH key for deployment
-  "deploy-key.age" = {
+  "deploy-key" = {
     publicKeys = [
       user1
       system1
@@ -13,24 +13,24 @@ in
   };
 
   # Use the deploy key's public key in another secret's publicKeys
-  "authorized-keys.age" = {
+  "authorized-keys" = {
     publicKeys = [
       user1
       system1
-      "deploy-key" # This references the public key from deploy-key.age.pub
+      "deploy-key" # This references the public key from deploy-key.pub
     ];
   };
 
-  # Also works with .age suffix
-  "backup-config.age" = {
+  # Can also reference secret names directly
+  "backup-config" = {
     publicKeys = [
       user1
-      "deploy-key.age" # Can also reference with .age suffix
+      "deploy-key" # References the secret name
     ];
   };
 
   # NEW: Use dependencies to reference public content in generators
-  "ssh-config.age" = {
+  "ssh-config" = {
     publicKeys = [
       user1
       system1
