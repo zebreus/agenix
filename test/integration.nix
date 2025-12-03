@@ -111,13 +111,13 @@ pkgs.testers.nixosTest {
             # Test home-manager public file symlinking using public.installPath
             secrets.hm-secret-with-public = {
               file = ./example/secret-with-public.age;
-              public.file = ./example/secret-with-public.age.pub;
+              public.file = ./example/secret-with-public.pub;
               public.installPath = "${config.age.publicKeysDir}/hm-secret-with-public.pub";
             };
             # Test home-manager public file at custom path
             secrets.hm-secret-with-public-custom = {
               file = ./example/secret-with-public.age;
-              public.file = ./example/secret-with-public.age.pub;
+              public.file = ./example/secret-with-public.pub;
               public.installPath = "/home/user1/.config/my-public-key.pub";
               public.mode = "0644";
             };
@@ -126,7 +126,7 @@ pkgs.testers.nixosTest {
               file = ./example/secret-with-public.age;
               path = "/home/user1/.ssh/id_ed25519_test";
               mode = "0600";
-              public.file = ./example/secret-with-public.age.pub;
+              public.file = ./example/secret-with-public.pub;
               public.installPath = "/home/user1/.ssh/id_ed25519_test.pub";
               public.mode = "0644";
             };
