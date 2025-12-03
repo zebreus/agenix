@@ -118,13 +118,20 @@ impl SecretName {
     }
 
     /// Check if this secret name matches another.
-    /// This supports matching by basename, so "/path/to/secret1" matches "secret1".
+    ///
+    /// This performs simple equality check on the names. However, for backwards
+    /// compatibility with tests and internal filtering logic, it also supports
+    /// matching by basename when one side might be a path (from Nix evaluation).
+    ///
+    /// Note: User input is validated to NOT be paths via `validate_and_create()`,
+    /// but Nix evaluation may still return paths in some contexts.
     pub fn matches(&self, other: &SecretName) -> bool {
         if self.name == other.name {
             return true;
         }
 
-        // Try matching by basename (handles paths like "/path/to/secret1")
+        // Support matching by basename for internal filtering
+        // (Nix evaluation may return paths in some contexts)
         if let Some(basename) = self.name.rsplit('/').next() {
             if basename == other.name {
                 return true;

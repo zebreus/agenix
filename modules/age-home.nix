@@ -144,9 +144,33 @@ let
           '';
         };
         file = mkOption {
-          type = types.path;
+          type = types.nullOr types.path;
+          default =
+            let
+              # If secretsPath is set, construct path from secret name
+              secretPath =
+                if cfg.secretsPath != null then
+                  "${toString cfg.secretsPath}/${config.name}.age"
+                else
+                  null;
+            in
+            if secretPath != null && builtins.pathExists secretPath then secretPath else null;
+          defaultText = literalExpression ''
+            if cfg.secretsPath != null then
+              "''${cfg.secretsPath}/''${config.name}.age"
+            else
+              null
+          '';
           description = ''
             Age file the secret is loaded from.
+
+            If not specified and {option}`age.secretsPath` is set, defaults to
+            `''${age.secretsPath}/''${name}.age` where `name` is the attribute name
+            in `age.secrets`.
+
+            For example, with `age.secretsPath = ./secrets` and
+            `age.secrets.cool_key_ed25519 = {}`{, the secret file will be
+            `./secrets/cool_key_ed25519.age`.
           '';
         };
         path = mkOption {
@@ -288,6 +312,30 @@ in
   options.age = {
     package = mkPackageOption pkgs "age" { };
 
+    secretsPath = mkOption {
+      type = types.nullOr types.path;
+      default = null;
+      description = ''
+        Path to the directory containing secrets.nix and the encrypted secret files.
+
+        When set, the `file` option for each secret defaults to
+        `''${secretsPath}/''${name}.age`, where `name` is the attribute name.
+
+        This allows you to simply reference secrets by name without specifying
+        the file path explicitly:
+
+        ```nix
+        age.secretsPath = ./secrets;
+        age.secrets.cool_key_ed25519 = {
+          # file defaults to ./secrets/cool_key_ed25519.age
+        };
+        ```
+
+        All secret files (`.age`) and public files (`.pub`) are expected to be in
+        this directory, matching the format used by the agenix CLI tool.
+      '';
+    };
+
     secrets = mkOption {
       type = types.attrsOf secretType;
       default = { };
@@ -346,7 +394,24 @@ in
         assertion = cfg.identityPaths != [ ];
         message = "age.identityPaths must be set.";
       }
-    ];
+    ]
+    ++ (map (
+      secret:
+      {
+        assertion = secret.file != null;
+        message = ''
+          age.secrets.${secret.name}: Either specify the `file` option explicitly
+          or set `age.secretsPath` to enable automatic file path resolution.
+
+          When `age.secretsPath` is set, the file defaults to:
+            ''${age.secretsPath}/${secret.name}.age
+
+          Example:
+            age.secretsPath = ./secrets;
+            age.secrets.${secret.name} = {};  # file = ./secrets/${secret.name}.age
+        '';
+      }
+    ) (builtins.attrValues cfg.secrets));
 
     systemd.user.services.agenix = lib.mkIf pkgs.stdenv.hostPlatform.isLinux {
       Unit = {
