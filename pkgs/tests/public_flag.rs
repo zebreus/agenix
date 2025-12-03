@@ -16,6 +16,11 @@ fn create_rules_file_in_dir(dir: &std::path::Path, content: &str) -> std::path::
     rules_path
 }
 
+/// Helper to convert PathBuf to string for use in command arguments.
+fn path_to_str(path: &std::path::PathBuf) -> &str {
+    path.to_str().unwrap()
+}
+
 /// Default age public key for testing.
 const TEST_PUBKEY: &str = "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p";
 
@@ -54,7 +59,7 @@ fn test_decrypt_public_reads_pub_file() {
             "decrypt",
             "--public",
             "--secrets-nix",
-            &temp_rules.to_str().unwrap(),
+            path_to_str(&temp_rules),
             secret_name,
         ])
         .output()
@@ -101,7 +106,7 @@ fn test_decrypt_public_short_flag() {
             "decrypt",
             "-p",
             "--secrets-nix",
-            &temp_rules.to_str().unwrap(),
+            path_to_str(&temp_rules),
             secret_name,
         ])
         .output()
@@ -146,7 +151,7 @@ fn test_decrypt_public_to_output_file() {
             "-o",
             output_path.to_str().unwrap(),
             "--secrets-nix",
-            &temp_rules.to_str().unwrap(),
+            path_to_str(&temp_rules),
             secret_name,
         ])
         .output()
@@ -186,7 +191,7 @@ fn test_decrypt_public_fails_when_pub_file_missing() {
             "decrypt",
             "--public",
             "--secrets-nix",
-            &temp_rules.to_str().unwrap(),
+            path_to_str(&temp_rules),
             secret_name,
         ])
         .output()
@@ -226,7 +231,7 @@ fn test_decrypt_public_fails_for_nonexistent_secret() {
             "decrypt",
             "--public",
             "--secrets-nix",
-            &temp_rules.to_str().unwrap(),
+            path_to_str(&temp_rules),
             secret_name,
         ])
         .output()
@@ -266,7 +271,7 @@ fn test_encrypt_public_writes_pub_file() {
             "encrypt",
             "--public",
             "--secrets-nix",
-            &temp_rules.to_str().unwrap(),
+            path_to_str(&temp_rules),
             secret_name,
         ])
         .stdin(std::process::Stdio::piped())
@@ -318,7 +323,7 @@ fn test_encrypt_public_short_flag() {
             "encrypt",
             "-p",
             "--secrets-nix",
-            &temp_rules.to_str().unwrap(),
+            path_to_str(&temp_rules),
             secret_name,
         ])
         .stdin(std::process::Stdio::piped())
@@ -367,7 +372,7 @@ fn test_encrypt_public_fails_without_force_when_exists() {
             "encrypt",
             "--public",
             "--secrets-nix",
-            &temp_rules.to_str().unwrap(),
+            path_to_str(&temp_rules),
             secret_name,
         ])
         .stdin(std::process::Stdio::piped())
@@ -419,7 +424,7 @@ fn test_encrypt_public_with_force_overwrites() {
             "--public",
             "--force",
             "--secrets-nix",
-            &temp_rules.to_str().unwrap(),
+            path_to_str(&temp_rules),
             secret_name,
         ])
         .stdin(std::process::Stdio::piped())
@@ -467,7 +472,7 @@ fn test_encrypt_public_dry_run_does_not_create_file() {
             "encrypt",
             "--public",
             "--secrets-nix",
-            &temp_rules.to_str().unwrap(),
+            path_to_str(&temp_rules),
             secret_name,
         ])
         .stdin(std::process::Stdio::piped())
@@ -523,7 +528,7 @@ fn test_encrypt_public_with_input_file() {
             "--input",
             input_path.to_str().unwrap(),
             "--secrets-nix",
-            &temp_rules.to_str().unwrap(),
+            path_to_str(&temp_rules),
             secret_name,
         ])
         .output()
@@ -568,7 +573,7 @@ fn test_edit_public_creates_new_file_with_force() {
             "--public",
             "--force",
             "--secrets-nix",
-            &temp_rules.to_str().unwrap(),
+            path_to_str(&temp_rules),
             secret_name,
         ])
         .stdin(std::process::Stdio::piped())
@@ -622,7 +627,7 @@ fn test_edit_public_modifies_existing_file() {
             "edit",
             "--public",
             "--secrets-nix",
-            &temp_rules.to_str().unwrap(),
+            path_to_str(&temp_rules),
             secret_name,
         ])
         .stdin(std::process::Stdio::piped())
@@ -675,7 +680,7 @@ fn test_edit_public_short_flag() {
             "edit",
             "-p",
             "--secrets-nix",
-            &temp_rules.to_str().unwrap(),
+            path_to_str(&temp_rules),
             secret_name,
         ])
         .stdin(std::process::Stdio::piped())
@@ -726,7 +731,7 @@ fn test_edit_public_dry_run_does_not_modify_file() {
             "edit",
             "--public",
             "--secrets-nix",
-            &temp_rules.to_str().unwrap(),
+            path_to_str(&temp_rules),
             secret_name,
         ])
         .stdin(std::process::Stdio::piped())
@@ -778,7 +783,7 @@ fn test_edit_public_creates_new_pub_file_without_force() {
             "edit",
             "--public",
             "--secrets-nix",
-            &temp_rules.to_str().unwrap(),
+            path_to_str(&temp_rules),
             secret_name,
         ])
         .stdin(std::process::Stdio::piped())
@@ -833,7 +838,7 @@ fn test_edit_public_produces_dry_run_output() {
             "edit",
             "--public",
             "--secrets-nix",
-            &temp_rules.to_str().unwrap(),
+            path_to_str(&temp_rules),
             secret_name,
         ])
         .stdin(std::process::Stdio::piped())
@@ -885,7 +890,7 @@ fn test_encrypt_public_works_with_empty_public_keys() {
             "encrypt",
             "--public",
             "--secrets-nix",
-            &temp_rules.to_str().unwrap(),
+            path_to_str(&temp_rules),
             secret_name,
         ])
         .stdin(std::process::Stdio::piped())
@@ -938,7 +943,7 @@ fn test_decrypt_public_works_with_empty_public_keys() {
             "decrypt",
             "--public",
             "--secrets-nix",
-            &temp_rules.to_str().unwrap(),
+            path_to_str(&temp_rules),
             secret_name,
         ])
         .output()
@@ -982,7 +987,7 @@ fn test_edit_public_works_with_empty_public_keys() {
             "edit",
             "--public",
             "--secrets-nix",
-            &temp_rules.to_str().unwrap(),
+            path_to_str(&temp_rules),
             secret_name,
         ])
         .stdin(std::process::Stdio::piped())
@@ -1032,7 +1037,7 @@ fn test_public_operations_work_with_minimal_config() {
             "encrypt",
             "--public",
             "--secrets-nix",
-            &temp_rules.to_str().unwrap(),
+            path_to_str(&temp_rules),
             secret_name,
         ])
         .stdin(std::process::Stdio::piped())
