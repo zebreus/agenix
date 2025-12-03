@@ -20,7 +20,7 @@ pub struct SecretName {
 
 impl SecretName {
     /// Create a new SecretName from a string.
-    /// 
+    ///
     /// If the input has .age suffix, it will be stripped to get the secret name.
     /// This allows the CLI to accept both forms for backwards compatibility.
     pub fn new(name: &str) -> Self {

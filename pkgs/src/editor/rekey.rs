@@ -3,7 +3,7 @@
 //! This module handles re-encrypting secrets with updated recipients.
 
 use anyhow::{Result, anyhow};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::log;
 use crate::nix::get_all_files;
@@ -11,7 +11,17 @@ use crate::output::pluralize_secret;
 
 use super::edit::edit_file;
 use super::filter_files;
+use super::secret_name::SecretName;
 use super::validate_secrets_exist;
+
+/// Get the rules directory from a rules file path
+fn get_rules_dir(rules_path: &str) -> PathBuf {
+    let path = Path::new(rules_path);
+    path.parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."))
+        .to_path_buf()
+}
 
 /// Result of the pre-flight decryption check.
 pub struct PreflightResult {
@@ -24,22 +34,39 @@ pub struct PreflightResult {
 /// Perform a pre-flight check to verify which files can be decrypted.
 ///
 /// # Arguments
-/// * `files` - List of files to check
+/// * `rules_path` - Path to the secrets.nix file
+/// * `secret_names` - List of secret names to check
 /// * `identities` - Identity files for decryption
 /// * `no_system_identities` - If true, don't use default system identities
 fn preflight_check(
-    files: &[String],
+    rules_path: &str,
+    secret_names: &[String],
     identities: &[String],
     no_system_identities: bool,
 ) -> PreflightResult {
     let mut decryptable = Vec::new();
     let mut undecryptable = Vec::new();
 
-    for file in files {
-        if let Err(e) = crate::crypto::can_decrypt(file, identities, no_system_identities) {
-            undecryptable.push((file.clone(), format!("{e:#}")));
+    let rules_dir = get_rules_dir(rules_path);
+
+    for secret_name in secret_names {
+        // Construct the actual secret file path
+        let sname = SecretName::new(secret_name);
+        let secret_file = rules_dir.join(sname.secret_file());
+        let secret_file_str = match secret_file.to_str() {
+            Some(s) => s,
+            None => {
+                undecryptable.push((secret_name.clone(), "Invalid path encoding".to_string()));
+                continue;
+            }
+        };
+
+        if let Err(e) =
+            crate::crypto::can_decrypt(secret_file_str, identities, no_system_identities)
+        {
+            undecryptable.push((secret_name.clone(), format!("{e:#}")));
         } else {
-            decryptable.push(file.clone());
+            decryptable.push(secret_name.clone());
         }
     }
 
@@ -133,10 +160,16 @@ pub fn rekey_files(
 
     validate_secrets_exist(&files, secrets)?;
 
+    let rules_dir = get_rules_dir(rules_path);
+
     // Filter to only existing files (non-existing files don't need rekeying)
     let existing_files: Vec<_> = files
         .iter()
-        .filter(|f| Path::new(f).exists())
+        .filter(|secret_name| {
+            let sname = SecretName::new(secret_name);
+            let secret_file = rules_dir.join(sname.secret_file());
+            secret_file.exists()
+        })
         .cloned()
         .collect();
 
@@ -147,7 +180,12 @@ pub fn rekey_files(
         pluralize_secret(existing_files.len())
     );
 
-    let preflight = preflight_check(&existing_files, identities, no_system_identities);
+    let preflight = preflight_check(
+        rules_path,
+        &existing_files,
+        identities,
+        no_system_identities,
+    );
 
     // Handle undecryptable files based on mode
     handle_undecryptable_files(&preflight.undecryptable, partial)?;
@@ -171,14 +209,14 @@ pub fn rekey_files(
     let mut failed_files: Vec<(String, String)> = Vec::new();
     let mut success_count = 0;
 
-    for file in &preflight.decryptable {
-        log!("Rekeying {file}...");
+    for secret_name in &preflight.decryptable {
+        log!("Rekeying {secret_name}...");
 
         // Call edit_file with dry_run flag - it will skip the actual file write in dry-run mode
         // Never use force for rekey - we already verified decryptability in preflight
         if let Err(e) = edit_file(
             rules_path,
-            file,
+            secret_name,
             Some(":"),
             identities,
             no_system_identities,
@@ -186,11 +224,11 @@ pub fn rekey_files(
             dry_run,
         ) {
             if partial {
-                failed_files.push((file.clone(), format!("{e:#}")));
+                failed_files.push((secret_name.clone(), format!("{e:#}")));
             } else {
                 return Err(anyhow!(
                     "Unexpected error rekeying '{}': {}\n\nThis is unexpected after pre-flight check passed.",
-                    file,
+                    secret_name,
                     e
                 ));
             }

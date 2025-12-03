@@ -39,10 +39,7 @@ impl EncryptionContext {
             return Err(anyhow!("No public keys found for secret: {secret_name}"));
         }
         let armor = should_armor(rules_path, secret_name)?;
-        Ok(Self {
-            public_keys,
-            armor,
-        })
+        Ok(Self { public_keys, armor })
     }
 
     /// Encrypt a cleartext file to the output path.
@@ -124,7 +121,7 @@ pub fn edit_file(
     // Normalize the secret name (strip .age if provided for backwards compatibility)
     let sname = SecretName::new(secret_name);
     let secret_name = sname.name();
-    
+
     // Construct the actual secret file path
     let rules_dir = get_rules_dir(rules_path);
     let secret_file = rules_dir.join(sname.secret_file());
@@ -141,14 +138,21 @@ pub fn edit_file(
     // Decrypt existing file if present
     if secret_file.exists() {
         verbose!("Decrypting existing file: {}", secret_file.display());
-        if let Err(e) =
-            crypto::decrypt_to_file(secret_file_str, &cleartext_file, identities, no_system_identities)
-        {
+        if let Err(e) = crypto::decrypt_to_file(
+            secret_file_str,
+            &cleartext_file,
+            identities,
+            no_system_identities,
+        ) {
             if force {
-                log!("Warning: Could not decrypt {secret_name}, starting with empty content: {e:#}");
+                log!(
+                    "Warning: Could not decrypt {secret_name}, starting with empty content: {e:#}"
+                );
             } else {
                 return Err(e).with_context(|| {
-                    format!("Failed to decrypt {secret_name}. Use --force to start with empty content")
+                    format!(
+                        "Failed to decrypt {secret_name}. Use --force to start with empty content"
+                    )
                 });
             }
         }
@@ -248,7 +252,7 @@ pub fn encrypt_file(
     // Normalize the secret name (strip .age if provided for backwards compatibility)
     let sname = SecretName::new(secret_name);
     let secret_name = sname.name();
-    
+
     // Construct the actual secret file path
     let rules_dir = get_rules_dir(rules_path);
     let secret_file = rules_dir.join(sname.secret_file());
@@ -327,7 +331,7 @@ pub fn decrypt_file(
     // Normalize the secret name (strip .age if provided for backwards compatibility)
     let sname = SecretName::new(secret_name);
     let secret_name = sname.name();
-    
+
     validate_secret_exists(rules_path, secret_name)?;
 
     // Construct the actual secret file path
@@ -494,9 +498,9 @@ pub fn read_public_file(rules_path: &str, secret_name: &str, output: Option<&str
     // Normalize the secret name
     let sname = SecretName::new(secret_name);
     let secret_name = sname.name();
-    
+
     validate_secret_exists(rules_path, secret_name)?;
-    
+
     // Construct the public file path
     let rules_dir = get_rules_dir(rules_path);
     let pub_file = rules_dir.join(sname.public_file());
@@ -508,8 +512,8 @@ pub fn read_public_file(rules_path: &str, secret_name: &str, output: Option<&str
         ));
     }
 
-    let content =
-        fs::read_to_string(&pub_file).with_context(|| format!("Failed to read: {}", pub_file.display()))?;
+    let content = fs::read_to_string(&pub_file)
+        .with_context(|| format!("Failed to read: {}", pub_file.display()))?;
     let output_path = output.unwrap_or("/dev/stdout");
     fs::write(output_path, content).with_context(|| format!("Failed to write to: {}", output_path))
 }
@@ -528,9 +532,9 @@ pub fn write_public_file(
     // Normalize the secret name
     let sname = SecretName::new(secret_name);
     let secret_name = sname.name();
-    
+
     validate_secret_exists(rules_path, secret_name)?;
-    
+
     // Construct the public file path
     let rules_dir = get_rules_dir(rules_path);
     let pub_file = rules_dir.join(sname.public_file());
@@ -552,7 +556,8 @@ pub fn write_public_file(
         return Ok(());
     }
 
-    fs::write(&pub_file, content).with_context(|| format!("Failed to write: {}", pub_file.display()))
+    fs::write(&pub_file, content)
+        .with_context(|| format!("Failed to write: {}", pub_file.display()))
 }
 
 /// Edit the public file associated with a secret using an editor.
@@ -569,9 +574,9 @@ pub fn edit_public_file(
     // Normalize the secret name
     let sname = SecretName::new(secret_name);
     let secret_name = sname.name();
-    
+
     validate_secret_exists(rules_path, secret_name)?;
-    
+
     // Construct the public file path
     let rules_dir = get_rules_dir(rules_path);
     let pub_file = rules_dir.join(sname.public_file());
@@ -591,7 +596,8 @@ pub fn edit_public_file(
             }
         },
         |content| {
-            fs::write(&pub_file, content).with_context(|| format!("Failed to write: {}", pub_file.display()))
+            fs::write(&pub_file, content)
+                .with_context(|| format!("Failed to write: {}", pub_file.display()))
         },
     )
 }
