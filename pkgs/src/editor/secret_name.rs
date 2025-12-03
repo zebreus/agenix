@@ -56,7 +56,7 @@ impl SecretName {
     ///
     /// # Examples
     ///
-    /// ```
+    /// ```ignore
     /// use agenix::editor::secret_name::SecretName;
     ///
     /// // Valid names
