@@ -179,7 +179,7 @@ impl<'a> DependencyResolver<'a> {
         for dep in deps {
             let dep_file = self.resolve_dependency_path(dep);
             let dep_name = SecretName::new(&dep_file);
-            
+
             // Extract just the basename for the key, not the full path
             let dep_key = std::path::Path::new(dep_name.name())
                 .file_name()
