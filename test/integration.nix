@@ -30,13 +30,13 @@ pkgs.testers.nixosTest {
         # Test secret with public file using public.installPath
         secret-with-public = {
           file = ./example/secret-with-public.age;
-          public.file = ./example/secret-with-public.age.pub;
+          public.file = ./example/secret-with-public.pub;
           public.installPath = "/run/agenix-public/secret-with-public.pub";
         };
         # Test secret with public file at custom path with permissions
         secret-with-public-custom-path = {
           file = ./example/secret-with-public.age;
-          public.file = ./example/secret-with-public.age.pub;
+          public.file = ./example/secret-with-public.pub;
           public.installPath = "/etc/my-public-key.pub";
           public.mode = "0644";
           public.owner = "root";
@@ -45,7 +45,7 @@ pkgs.testers.nixosTest {
         # Test secret with public file without symlink (copy mode)
         secret-with-public-copy = {
           file = ./example/secret-with-public.age;
-          public.file = ./example/secret-with-public.age.pub;
+          public.file = ./example/secret-with-public.pub;
           public.installPath = "/etc/my-public-key-copy.pub";
           public.symlink = false;
           public.mode = "0600";
@@ -55,7 +55,7 @@ pkgs.testers.nixosTest {
           file = ./example/secret-with-public.age;
           path = "/etc/ssh/ssh_host_ed25519_key_test";
           mode = "0600";
-          public.file = ./example/secret-with-public.age.pub;
+          public.file = ./example/secret-with-public.pub;
           public.installPath = "/etc/ssh/ssh_host_ed25519_key_test.pub";
           public.mode = "0644";
         };
@@ -65,7 +65,7 @@ pkgs.testers.nixosTest {
           path = "/var/lib/deploy/.ssh/id_ed25519";
           mode = "0400";
           owner = "root";
-          public.file = ./example/secret-with-public.age.pub;
+          public.file = ./example/secret-with-public.pub;
           public.installPath = "/var/lib/deploy/.ssh/id_ed25519.pub";
           public.mode = "0444";
           public.owner = "root";
