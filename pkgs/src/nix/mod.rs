@@ -77,7 +77,10 @@ pub(crate) fn resolve_public_key(rules_dir: &Path, key_str: &str) -> Result<Stri
 /// Get public keys for a file from the rules
 pub fn get_public_keys(rules_path: &str, file: &str) -> Result<Vec<String>> {
     let nix_expr = format!(
-        "(let rules = import {rules_path}; keys = rules.\"{file}\".publicKeys; in builtins.deepSeq keys keys)"
+        "(let rules = import {rules_path}; \
+         hasPublicKeys = builtins.hasAttr \"publicKeys\" rules.\"{file}\"; \
+         keys = if hasPublicKeys then rules.\"{file}\".publicKeys else []; \
+         in builtins.deepSeq keys keys)"
     );
 
     let current_dir = current_dir()?;
