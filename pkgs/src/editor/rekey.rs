@@ -251,7 +251,7 @@ mod tests {
 
     #[test]
     fn test_filter_files_empty_secrets() {
-        let files = vec!["a.age".to_string(), "b.age".to_string()];
+        let files = vec!["a".to_string(), "b".to_string()];
         let result = filter_files(&files, &[]);
         assert_eq!(result.len(), 2);
     }
@@ -259,9 +259,9 @@ mod tests {
     #[test]
     fn test_filter_files_with_secrets() {
         let files = vec![
-            "/path/to/secret1.age".to_string(),
-            "/path/to/secret2.age".to_string(),
-            "/path/to/other.age".to_string(),
+            "/path/to/secret1".to_string(),
+            "/path/to/secret2".to_string(),
+            "/path/to/other".to_string(),
         ];
         let secrets = vec!["secret1".to_string()];
         let result = filter_files(&files, &secrets);
@@ -271,8 +271,8 @@ mod tests {
 
     #[test]
     fn test_filter_files_with_full_path() {
-        let files = vec!["/path/to/secret.age".to_string()];
-        let secrets = vec!["/path/to/secret.age".to_string()];
+        let files = vec!["/path/to/secret".to_string()];
+        let secrets = vec!["/path/to/secret".to_string()];
         let result = filter_files(&files, &secrets);
         assert_eq!(result.len(), 1);
     }
@@ -321,7 +321,7 @@ mod tests {
         let rules_content = format!(
             r#"
 {{
-  "{}/secret.age" = {{
+  "{}/secret" = {{
 publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
   }};
 }}
@@ -360,7 +360,7 @@ publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" 
         let rules_content = format!(
             r#"
 {{
-  "{}/secret.age" = {{
+  "{}/secret" = {{
 publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
   }};
 }}
@@ -397,10 +397,10 @@ publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" 
         let rules_content = format!(
             r#"
 {{
-  "{}/secret1.age" = {{
+  "{}/secret1" = {{
 publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
   }};
-  "{}/secret2.age" = {{
+  "{}/secret2" = {{
 publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
   }};
 }}
@@ -451,13 +451,13 @@ publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" 
         let rules_content = format!(
             r#"
 {{
-  "{}/secret1.age" = {{
+  "{}/secret1" = {{
 publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
   }};
-  "{}/secret2.age" = {{
+  "{}/secret2" = {{
 publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
   }};
-  "{}/secret3.age" = {{
+  "{}/secret3" = {{
 publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
   }};
 }}
@@ -486,17 +486,21 @@ publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" 
         assert!(result.is_err(), "Rekey should fail");
         let err_msg = format!("{:?}", result.unwrap_err());
 
+        // Error messages now reference secret names (without .age)
         assert!(
-            err_msg.contains("secret1.age"),
-            "Error should mention secret1.age"
+            err_msg.contains("secret1") || err_msg.contains("secret1.age"),
+            "Error should mention secret1: {}",
+            err_msg
         );
         assert!(
-            err_msg.contains("secret2.age"),
-            "Error should mention secret2.age"
+            err_msg.contains("secret2") || err_msg.contains("secret2.age"),
+            "Error should mention secret2: {}",
+            err_msg
         );
         assert!(
-            err_msg.contains("secret3.age"),
-            "Error should mention secret3.age"
+            err_msg.contains("secret3") || err_msg.contains("secret3.age"),
+            "Error should mention secret3: {}",
+            err_msg
         );
         assert!(err_msg.contains("3"), "Error should mention count 3");
     }

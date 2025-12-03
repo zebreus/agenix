@@ -46,8 +46,8 @@ pub(crate) fn resolve_public_key(rules_dir: &Path, key_str: &str) -> Result<Stri
     }
 
     // Try to resolve as a secret reference
-    // The secret name is used directly (no .age suffix in secrets.nix)
-    let secret_name = key_str;
+    // Strip .age suffix for backwards compatibility
+    let secret_name = key_str.strip_suffix(".age").unwrap_or(key_str);
 
     // Public file is now <secret_name>.pub in the same directory
     let pub_file_path = rules_dir.join(format!("{}.pub", secret_name));
@@ -3152,7 +3152,7 @@ mod tests {
         "#;
         std::fs::write(&rules_path, rules_content)?;
 
-        let result = get_secret_dependencies(rules_path.to_str().unwrap(), "secret.age")?;
+        let result = get_secret_dependencies(rules_path.to_str().unwrap(), "secret")?;
 
         // "nonexistent-key" should not be detected because it's not a valid secret in rules
         assert_eq!(result.len(), 0);
@@ -3167,7 +3167,7 @@ mod tests {
 
         let rules_content = r#"
         {
-          "self-ref.age" = {
+          "self-ref" = {
             publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" "self-ref" ];
             generator = { }: "content";
           };
@@ -3175,7 +3175,7 @@ mod tests {
         "#;
         std::fs::write(&rules_path, rules_content)?;
 
-        let result = get_secret_dependencies(rules_path.to_str().unwrap(), "self-ref.age")?;
+        let result = get_secret_dependencies(rules_path.to_str().unwrap(), "self-ref")?;
 
         // Should not include self as dependency
         assert_eq!(result.len(), 0);

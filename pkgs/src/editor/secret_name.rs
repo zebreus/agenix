@@ -46,8 +46,26 @@ impl SecretName {
     }
 
     /// Check if this secret name matches another.
+    /// This supports matching by basename, so "/path/to/secret1" matches "secret1".
     pub fn matches(&self, other: &SecretName) -> bool {
-        self.name == other.name
+        if self.name == other.name {
+            return true;
+        }
+
+        // Try matching by basename (handles paths like "/path/to/secret1")
+        if let Some(basename) = self.name.rsplit('/').next() {
+            if basename == other.name {
+                return true;
+            }
+        }
+
+        if let Some(basename) = other.name.rsplit('/').next() {
+            if self.name == basename {
+                return true;
+            }
+        }
+
+        false
     }
 }
 
