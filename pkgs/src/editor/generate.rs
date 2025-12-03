@@ -174,8 +174,12 @@ fn encrypt_secret(
     fs::write(&temp_file, secret_content)
         .context("Failed to write generated content to temporary file")?;
 
-    // Encrypt the generated secret content
-    encrypt_from_file(&temp_file.to_string_lossy(), file, &public_keys, armor)
+    // Construct the actual secret file path (with .age suffix)
+    let secret_name = SecretName::new(file);
+    let secret_file_path = secret_name.secret_file();
+
+    // Encrypt the generated secret content to the actual file path
+    encrypt_from_file(&temp_file.to_string_lossy(), &secret_file_path, &public_keys, armor)
         .with_context(|| format!("Failed to encrypt generated secret {file}"))?;
 
     Ok(ProcessResult::Generated)
