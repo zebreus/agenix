@@ -32,8 +32,6 @@ pub enum ProcessResult {
     AlreadyProcessed,
     /// Secret has no generator defined
     NoGenerator,
-    /// Secret has no public keys defined
-    NoPublicKeys,
     /// Generator produced only public output (no secret to encrypt)
     PublicOnlyGenerated,
 }
@@ -153,13 +151,15 @@ fn encrypt_secret(
     let armor = should_armor(rules_path, file)?;
 
     if public_keys.is_empty() {
-        log!("Error: Cannot encrypt '{}': no public keys defined.", file);
-        log!("This usually means:");
-        log!("  1. The 'publicKeys' attribute is missing from '{}'", file);
-        log!("  2. The 'publicKeys' array is empty");
-        log!("To fix: Add 'publicKeys = [ \"your-public-key\" ];' to the secret definition");
         return Err(anyhow!(
-            "Secret '{}' has no public keys defined. Add a 'publicKeys' attribute with at least one recipient.",
+            "Cannot encrypt '{}': no public keys defined.\n\
+             \n\
+             This usually means:\n\
+             1. The 'publicKeys' attribute is missing from the secret definition, or\n\
+             2. The 'publicKeys' array is empty\n\
+             \n\
+             To fix: Add 'publicKeys = [ \"your-public-key\" ];' to '{}'",
+            file,
             file
         ));
     }
@@ -182,6 +182,13 @@ fn encrypt_secret(
     Ok(ProcessResult::Generated)
 }
 
+/// Check if an error message indicates a dependency-related issue.
+fn is_dependency_error(error_msg: &str) -> bool {
+    error_msg.contains("attribute")
+        || error_msg.contains("not found")
+        || error_msg.contains("Unexpected argument")
+}
+
 /// Run the generator for a secret, with dependency context if needed.
 fn run_generator(
     file: &str,
@@ -201,12 +208,7 @@ fn run_generator(
         Ok(out) => Ok(out),
         Err(err) => {
             // Check if this might be a dependency-related error
-            let err_str = err.to_string();
-            if !deps.is_empty()
-                && (err_str.contains("attribute")
-                    || err_str.contains("not found")
-                    || err_str.contains("Unexpected argument"))
-            {
+            if !deps.is_empty() && is_dependency_error(&err.to_string()) {
                 // Get dependency availability info to provide better error context
                 let dep_info = resolver.get_dependency_availability_info(deps);
                 if !dep_info.is_empty() {
@@ -235,12 +237,7 @@ fn write_generated_output(
         Some(secret_content) => {
             // Has secret content - encrypt and optionally write .pub file
             log!("Generating {file}...");
-            let result = encrypt_secret(file, secret_content, rules_path, dry_run)?;
-
-            if result == ProcessResult::NoPublicKeys {
-                return Ok(result);
-            }
-
+            encrypt_secret(file, secret_content, rules_path, dry_run)?;
             log!("Generated and encrypted {file}");
             write_public_key_file(file, output, dry_run)?;
             Ok(ProcessResult::Generated)
@@ -304,10 +301,8 @@ fn process_single_secret(
     // Write output files and get result
     let result = write_generated_output(file, &output, ctx.rules_path(), dry_run)?;
 
-    // Store and mark as processed (unless no public keys)
-    if result != ProcessResult::NoPublicKeys {
-        resolver.store_generated(file, output);
-    }
+    // Store generated content and mark as processed
+    resolver.store_generated(file, output);
     resolver.mark_processed(file);
 
     Ok(result)
@@ -378,9 +373,7 @@ pub fn generate_secrets(
                     progress_made = true
                 }
                 ProcessResult::Deferred => deferred.push(file),
-                ProcessResult::AlreadyProcessed
-                | ProcessResult::NoGenerator
-                | ProcessResult::NoPublicKeys => {}
+                ProcessResult::AlreadyProcessed | ProcessResult::NoGenerator => {}
             }
         }
 
