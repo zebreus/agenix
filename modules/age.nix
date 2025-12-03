@@ -203,10 +203,7 @@ let
             let
               # If secretsPath is set, construct path from secret name
               secretPath =
-                if cfg.secretsPath != null then
-                  "${toString cfg.secretsPath}/${config.name}.age"
-                else
-                  null;
+                if cfg.secretsPath != null then "${toString cfg.secretsPath}/${config.name}.age" else null;
             in
             if secretPath != null && builtins.pathExists secretPath then secretPath else null;
           defaultText = literalExpression ''
@@ -267,18 +264,7 @@ let
               at the same location as the secret file, with .pub extension instead of .age.
             '';
           };
-          # Kept for backwards compatibility
-          path = mkOption {
-            type = types.nullOr types.str;
-            default = config.public.file;
-            defaultText = literalExpression ''
-              config.public.file
-            '';
-            description = ''
-              Deprecated: Use `public.file` instead. Path to the public file
-              associated with this secret in the Nix store.
-            '';
-          };
+
           content = mkOption {
             type = types.nullOr types.str;
             default = if config.public.file != null then builtins.readFile config.public.file else null;
@@ -482,23 +468,20 @@ in
           message = "age.identityPaths must be set, for example by enabling openssh.";
         }
       ]
-      ++ (map (
-        secret:
-        {
-          assertion = secret.file != null;
-          message = ''
-            age.secrets.${secret.name}: Either specify the `file` option explicitly
-            or set `age.secretsPath` to enable automatic file path resolution.
+      ++ (map (secret: {
+        assertion = secret.file != null;
+        message = ''
+          age.secrets.${secret.name}: Either specify the `file` option explicitly
+          or set `age.secretsPath` to enable automatic file path resolution.
 
-            When `age.secretsPath` is set, the file defaults to:
-              ''${age.secretsPath}/${secret.name}.age
+          When `age.secretsPath` is set, the file defaults to:
+            ''${age.secretsPath}/${secret.name}.age
 
-            Example:
-              age.secretsPath = ./secrets;
-              age.secrets.${secret.name} = {};  # file = ./secrets/${secret.name}.age
-          '';
-        }
-      ) (builtins.attrValues cfg.secrets));
+          Example:
+            age.secretsPath = ./secrets;
+            age.secrets.${secret.name} = {};  # file = ./secrets/${secret.name}.age
+        '';
+      }) (builtins.attrValues cfg.secrets));
     }
     (optionalAttrs (!isDarwin) {
       # When using sysusers we no longer be started as an activation script
