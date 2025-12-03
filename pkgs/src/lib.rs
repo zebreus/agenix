@@ -8,6 +8,26 @@ use anyhow::{Context, Result, anyhow};
 use clap::Parser;
 use std::path::Path;
 
+/// Validate that a secret name is a simple name, not a path.
+///
+/// Secret names must not contain path separators and must not start with '.'.
+/// This ensures all secret files are located in the same directory as secrets.nix.
+fn validate_secret_name(name: &str) -> Result<()> {
+    editor::secret_name::SecretName::validate_and_create(name)?;
+    Ok(())
+}
+
+/// Validate a list of secret names.
+///
+/// Returns an error if any secret name is invalid (contains paths, etc.).
+fn validate_secret_names(names: &[String]) -> Result<()> {
+    for name in names {
+        validate_secret_name(name)
+            .with_context(|| format!("Invalid secret name: {}", name))?;
+    }
+    Ok(())
+}
+
 /// Check if the secrets.nix file exists and provide a helpful error message if not.
 ///
 /// This gives users a clear hint about what to do when the default `secrets.nix`
@@ -88,32 +108,39 @@ where
     }
 
     match args.command {
-        Some(cli::Command::Rekey { secrets, partial }) => editor::rekey_files(
-            &secrets_nix,
-            &secrets,
-            &args.identity,
-            args.no_system_identities,
-            partial,
-            args.dry_run,
-        )
-        .context("Failed to rekey files"),
+        Some(cli::Command::Rekey { secrets, partial }) => {
+            validate_secret_names(&secrets)?;
+            editor::rekey_files(
+                &secrets_nix,
+                &secrets,
+                &args.identity,
+                args.no_system_identities,
+                partial,
+                args.dry_run,
+            )
+            .context("Failed to rekey files")
+        }
         Some(cli::Command::Generate {
             force,
             no_dependencies,
             secrets,
-        }) => editor::generate_secrets(
-            &secrets_nix,
-            force,
-            args.dry_run,
-            !no_dependencies,
-            &secrets,
-        )
-        .context("Failed to generate secrets"),
+        }) => {
+            validate_secret_names(&secrets)?;
+            editor::generate_secrets(
+                &secrets_nix,
+                force,
+                args.dry_run,
+                !no_dependencies,
+                &secrets,
+            )
+            .context("Failed to generate secrets")
+        }
         Some(cli::Command::Decrypt {
             file,
             output,
             public,
         }) => {
+            validate_secret_name(&file)?;
             let op = if public {
                 "read public file"
             } else {
@@ -138,6 +165,7 @@ where
             force,
             public,
         }) => {
+            validate_secret_name(&file)?;
             let op = if public { "edit public file" } else { "edit" };
             if public {
                 editor::edit_public_file(
@@ -166,6 +194,7 @@ where
             force,
             public,
         }) => {
+            validate_secret_name(&file)?;
             let op = if public {
                 "write public file"
             } else {
@@ -184,21 +213,27 @@ where
             }
             .with_context(|| format!("Failed to {} {}", op, file))
         }
-        Some(cli::Command::List { status, secrets }) => editor::list_secrets(
-            &secrets_nix,
-            status,
-            &secrets,
-            &args.identity,
-            args.no_system_identities,
-        )
-        .context("Failed to list secrets"),
-        Some(cli::Command::Check { secrets }) => editor::check_secrets(
-            &secrets_nix,
-            &secrets,
-            &args.identity,
-            args.no_system_identities,
-        )
-        .context("Failed to check secrets"),
+        Some(cli::Command::List { status, secrets }) => {
+            validate_secret_names(&secrets)?;
+            editor::list_secrets(
+                &secrets_nix,
+                status,
+                &secrets,
+                &args.identity,
+                args.no_system_identities,
+            )
+            .context("Failed to list secrets")
+        }
+        Some(cli::Command::Check { secrets }) => {
+            validate_secret_names(&secrets)?;
+            editor::check_secrets(
+                &secrets_nix,
+                &secrets,
+                &args.identity,
+                args.no_system_identities,
+            )
+            .context("Failed to check secrets")
+        }
         Some(cli::Command::Completions { shell }) => {
             cli::print_completions(shell, &mut cli::build_cli());
             Ok(())
