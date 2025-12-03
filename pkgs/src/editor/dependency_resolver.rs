@@ -265,17 +265,18 @@ impl<'a> DependencyResolver<'a> {
                 }
             } else if !has_secret && !has_public {
                 messages.push(format!(
-                    "Dependency '{}' has not been generated yet and has no .pub file available. \
-                    \nTo fix: Ensure '{}' either:\n  \
-                    1. Has a generator that produces output (string or {{ secret/public }}), or\n  \
-                    2. Has an existing .pub file, or\n  \
-                    3. If it has hasSecret=false, also set hasPublic=true with a generator that returns {{ public = ...; }}",
+                    "Dependency '{}' has not been generated yet and has no .pub file available.\n\
+                     \n\
+                     To fix: Ensure '{}' either:\n\
+                     1. Has a generator that produces output (string or {{ secret/public }}), or\n\
+                     2. Has an existing .pub file, or\n\
+                     3. If it has hasSecret=false, also set hasPublic=true with a generator that returns {{ public = ...; }}",
                     dep_key, dep_key
                 ));
             } else if !has_secret {
                 messages.push(format!(
-                    "Dependency '{}' only has a .pub file available (no secret content). \
-                    If your generator uses secrets.\"{}\", you need to regenerate the dependency first",
+                    "Dependency '{}' only has a .pub file available (no secret content).\n\
+                     If your generator uses secrets.\"{}\", you need to regenerate the dependency first",
                     dep_key, dep_key
                 ));
             }
