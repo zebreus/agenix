@@ -218,17 +218,29 @@ let
             type = types.nullOr types.path;
             default =
               let
-                pubFile = "${toString config.file}.pub";
+                # Remove .age suffix if present, then add .pub
+                basePath = toString config.file;
+                baseWithoutAge =
+                  if lib.hasSuffix ".age" basePath then lib.removeSuffix ".age" basePath else basePath;
+                pubFile = "${baseWithoutAge}.pub";
               in
               if builtins.pathExists pubFile then pubFile else null;
             defaultText = literalExpression ''
-              if builtins.pathExists "''${config.file}.pub" then "''${config.file}.pub" else null
+              let
+                basePath = toString config.file;
+                baseWithoutAge = if lib.hasSuffix ".age" basePath then
+                  lib.removeSuffix ".age" basePath
+                else
+                  basePath;
+                pubFile = "''${baseWithoutAge}.pub";
+              in
+              if builtins.pathExists pubFile then pubFile else null
             '';
             description = ''
               Path to the public file associated with this secret, if it exists.
               This file is created when the generator function returns an attrset
-              with both `secret` and `public` keys. This is the source file path
-              (in the Nix store).
+              with both `secret` and `public` keys. The public file is expected to be
+              at the same location as the secret file, with .pub extension instead of .age.
             '';
           };
           # Kept for backwards compatibility
