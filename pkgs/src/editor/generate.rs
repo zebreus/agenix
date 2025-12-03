@@ -153,8 +153,15 @@ fn encrypt_secret(
     let armor = should_armor(rules_path, file)?;
 
     if public_keys.is_empty() {
-        log!("Warning: No public keys found for {file}, skipping");
-        return Ok(ProcessResult::NoPublicKeys);
+        log!("Error: Cannot encrypt '{}': no public keys defined.", file);
+        log!("This usually means:");
+        log!("  1. The 'publicKeys' attribute is missing from '{}'", file);
+        log!("  2. The 'publicKeys' array is empty");
+        log!("To fix: Add 'publicKeys = [ \"your-public-key\" ];' to the secret definition");
+        return Err(anyhow!(
+            "Secret '{}' has no public keys defined. Add a 'publicKeys' attribute with at least one recipient.",
+            file
+        ));
     }
 
     // Skip actual encryption in dry-run mode
@@ -3175,6 +3182,63 @@ mod tests {
         assert!(
             err_msg.contains("generator") || err_msg.contains("hasPublic"),
             "Error should mention generator or hasPublic: {}",
+            err_msg
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_missing_public_keys_attribute_error_message() -> Result<()> {
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+
+        let temp_dir = tempdir()?;
+
+        // Create a scenario where publicKeys attribute is missing (common mistake)
+        let rules_content = format!(
+            r#"
+    {{
+      "{}/my_key_ed25519.age" = {{
+        hasSecret = false;
+      }};
+    }}
+    "#,
+            temp_dir.path().to_str().unwrap()
+        );
+
+        let mut temp_rules = NamedTempFile::new()?;
+        writeln!(temp_rules, "{}", rules_content)?;
+        temp_rules.flush()?;
+
+        let args = vec![
+            "agenix".to_string(),
+            "generate".to_string(),
+            "--secrets-nix".to_string(),
+            temp_rules.path().to_str().unwrap().to_string(),
+        ];
+
+        let result = crate::run(args);
+
+        // Should fail with helpful error message
+        assert!(
+            result.is_err(),
+            "Should fail when publicKeys attribute is missing"
+        );
+
+        let err_msg = format!("{:?}", result.unwrap_err());
+
+        // Check that error mentions publicKeys
+        assert!(
+            err_msg.contains("publicKeys") || err_msg.contains("public keys"),
+            "Error should mention publicKeys: {}",
+            err_msg
+        );
+
+        // Check that error is helpful and not a cryptic Nix error
+        assert!(
+            !err_msg.contains("attribute with name 'publicKeys' could not be found"),
+            "Should not show cryptic Nix error: {}",
             err_msg
         );
 
