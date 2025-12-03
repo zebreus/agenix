@@ -4,7 +4,6 @@
 //! and displaying their status.
 
 use anyhow::Result;
-use std::path::Path;
 
 use crate::crypto;
 use crate::log;
@@ -87,18 +86,15 @@ fn get_secret_status(
         && output_info.has_public
     {
         // This is a public-only secret - check if .pub file exists
-        let file_basename = file.strip_suffix(".age").unwrap_or(file);
+        let sname = SecretName::new(file);
         let rules_path_obj = std::path::Path::new(rules_path);
         let rules_dir = rules_path_obj
             .parent()
             .unwrap_or_else(|| std::path::Path::new("."));
 
-        let pub_paths = [
-            rules_dir.join(format!("{}.age.pub", file_basename)),
-            rules_dir.join(format!("{}.pub", file_basename)),
-        ];
+        let pub_path = rules_dir.join(sname.public_file());
 
-        if pub_paths.iter().any(|p| p.exists()) {
+        if pub_path.exists() {
             return SecretStatus::PublicOnly;
         } else {
             return SecretStatus::PublicOnlyMissing;
@@ -106,11 +102,23 @@ fn get_secret_status(
     }
 
     // Normal secret - check for .age file
-    if !Path::new(file).exists() {
+    let sname = SecretName::new(file);
+    let rules_path_obj = std::path::Path::new(rules_path);
+    let rules_dir = rules_path_obj
+        .parent()
+        .unwrap_or_else(|| std::path::Path::new("."));
+    let secret_file = rules_dir.join(sname.secret_file());
+
+    if !secret_file.exists() {
         return SecretStatus::Missing;
     }
 
-    match crypto::can_decrypt(file, identities, no_system_identities) {
+    let secret_file_str = match secret_file.to_str() {
+        Some(s) => s,
+        None => return SecretStatus::CannotDecrypt("Invalid path encoding".to_string()),
+    };
+
+    match crypto::can_decrypt(secret_file_str, identities, no_system_identities) {
         Ok(()) => SecretStatus::Ok,
         Err(e) => SecretStatus::CannotDecrypt(format!("{e:#}")),
     }
@@ -233,7 +241,19 @@ pub fn check_secrets(
     let files = filter_files(&all_files, secrets);
     validate_secrets_exist(&files, secrets)?;
 
-    let existing: Vec<_> = files.iter().filter(|f| Path::new(f).exists()).collect();
+    let rules_path_obj = std::path::Path::new(rules_path);
+    let rules_dir = rules_path_obj
+        .parent()
+        .unwrap_or_else(|| std::path::Path::new("."));
+
+    let existing: Vec<_> = files
+        .iter()
+        .filter(|secret_name| {
+            let sname = SecretName::new(secret_name);
+            let secret_file = rules_dir.join(sname.secret_file());
+            secret_file.exists()
+        })
+        .collect();
 
     if existing.is_empty() {
         if files.is_empty() {
@@ -251,9 +271,20 @@ pub fn check_secrets(
     );
 
     let mut failed = 0;
-    for file in &existing {
-        let name = SecretName::new(file).name().to_string();
-        match crypto::can_decrypt(file, identities, no_system_identities) {
+    for secret_name in &existing {
+        let name = SecretName::new(secret_name).name().to_string();
+        let sname = SecretName::new(secret_name);
+        let secret_file = rules_dir.join(sname.secret_file());
+        let secret_file_str = match secret_file.to_str() {
+            Some(s) => s,
+            None => {
+                log!("ERROR: {}: Invalid path encoding", name);
+                failed += 1;
+                continue;
+            }
+        };
+
+        match crypto::can_decrypt(secret_file_str, identities, no_system_identities) {
             Ok(()) => log!("OK: {}", name),
             Err(e) => {
                 log!("ERROR: {}: {}", name, e);

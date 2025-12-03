@@ -98,11 +98,7 @@ impl<'a> DependencyResolver<'a> {
             .all_files()
             .iter()
             .any(|f| SecretName::new(f).name() == name);
-        let exists = self
-            .ctx
-            .rules_dir()
-            .join(dep_name.secret_file())
-            .exists();
+        let exists = self.ctx.rules_dir().join(dep_name.secret_file()).exists();
         let has_public = self.get_public_content(&dep_file)?.is_some();
 
         // Missing: cannot be satisfied at all
@@ -228,9 +224,7 @@ impl<'a> DependencyResolver<'a> {
             let has_public = self.get_public_content(&dep_file).ok().flatten().is_some();
 
             // Check if dependency was generated with only one output type
-            if let Some((gen_has_secret, gen_has_public)) =
-                self.get_generated_output_info(name)
-            {
+            if let Some((gen_has_secret, gen_has_public)) = self.get_generated_output_info(name) {
                 if !gen_has_public {
                     messages.push(format!(
                         "Dependency '{}' was generated but only produced a 'secret' output, not 'public'. \
