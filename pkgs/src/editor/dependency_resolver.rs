@@ -179,7 +179,12 @@ impl<'a> DependencyResolver<'a> {
         for dep in deps {
             let dep_file = self.resolve_dependency_path(dep);
             let dep_name = SecretName::new(&dep_file);
-            let dep_key = dep_name.name();
+            
+            // Extract just the basename for the key, not the full path
+            let dep_key = std::path::Path::new(dep_name.name())
+                .file_name()
+                .and_then(|os_str| os_str.to_str())
+                .unwrap_or(dep_name.name());
             let name = dep_name.name();
 
             // Add public content if available
@@ -204,7 +209,18 @@ impl<'a> DependencyResolver<'a> {
         let secrets_str = format_nix_attrset("secrets", &secrets_parts);
         let publics_str = format_nix_attrset("publics", &publics_parts);
 
-        Ok(format!("{{ {} {} }}", secrets_str, publics_str))
+        // Build context with only non-empty attributes
+        let parts: Vec<&str> = [&secrets_str, &publics_str]
+            .iter()
+            .filter(|s| !s.is_empty())
+            .map(|s| s.as_str())
+            .collect();
+
+        if parts.is_empty() {
+            Ok("{}".to_string())
+        } else {
+            Ok(format!("{{ {} }}", parts.join(" ")))
+        }
     }
 
     /// Validate dependencies and generate helpful error messages.
@@ -308,7 +324,7 @@ pub fn escape_nix_string(s: &str) -> String {
 /// Build Nix attrset string from key-value pairs.
 fn format_nix_attrset(name: &str, parts: &[String]) -> String {
     if parts.is_empty() {
-        format!("{} = {{}};", name)
+        String::new()
     } else {
         format!("{} = {{ {} }};", name, parts.join(" "))
     }
@@ -329,7 +345,8 @@ mod tests {
 
     #[test]
     fn test_format_nix_attrset_empty() {
-        assert_eq!(format_nix_attrset("test", &[]), "test = {};");
+        // Empty attrsets should return empty string (not included in context)
+        assert_eq!(format_nix_attrset("test", &[]), "");
     }
 
     #[test]
