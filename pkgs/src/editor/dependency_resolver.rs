@@ -6,7 +6,6 @@
 use anyhow::Result;
 use std::collections::{HashMap, HashSet};
 use std::fs;
-use std::path::PathBuf;
 
 use crate::nix::{GeneratorOutput, get_secret_dependencies};
 
@@ -62,38 +61,23 @@ impl<'a> DependencyResolver<'a> {
     /// Get public content for a secret from either generated secrets or .pub files.
     pub fn get_public_content(&self, file: &str) -> Result<Option<String>> {
         let secret_name = SecretName::new(file);
-        let basename = secret_name.basename();
+        let name = secret_name.name();
 
-        // Check if we just generated it - search by basename
+        // Check if we just generated it - search by name
         for (key, output) in self.generated_secrets.iter() {
-            if SecretName::new(key).basename() == basename
+            if SecretName::new(key).name() == name
                 && let Some(ref public) = output.public
             {
                 return Ok(Some(public.clone()));
             }
         }
 
-        // Check for .pub file
-        let secret_base = SecretName::strip_age_suffix(file);
-        let pub_file_paths = if secret_base.starts_with('/') || secret_base.starts_with('\\') {
-            vec![
-                PathBuf::from(format!("{}.age.pub", secret_base)),
-                PathBuf::from(format!("{}.pub", secret_base)),
-            ]
-        } else {
-            vec![
-                self.ctx
-                    .rules_dir()
-                    .join(format!("{}.age.pub", secret_base)),
-                self.ctx.rules_dir().join(format!("{}.pub", secret_base)),
-            ]
-        };
+        // Check for .pub file - now it's just <name>.pub
+        let pub_file_path = self.ctx.rules_dir().join(secret_name.public_file());
 
-        for pub_file_path in &pub_file_paths {
-            if pub_file_path.exists() {
-                let content = fs::read_to_string(pub_file_path)?;
-                return Ok(Some(content.trim().to_string()));
-            }
+        if pub_file_path.exists() {
+            let content = fs::read_to_string(pub_file_path)?;
+            return Ok(Some(content.trim().to_string()));
         }
 
         Ok(None)
@@ -107,17 +91,17 @@ impl<'a> DependencyResolver<'a> {
     pub fn check_dependency_satisfied(&self, dep: &str) -> Result<(bool, bool)> {
         let dep_file = self.resolve_dependency_path(dep);
         let dep_name = SecretName::new(&dep_file);
-        let dep_basename = dep_name.basename();
+        let name = dep_name.name();
 
         let will_be_generated = self
             .ctx
             .all_files()
             .iter()
-            .any(|f| SecretName::new(f).basename() == dep_basename);
+            .any(|f| SecretName::new(f).name() == name);
         let exists = self
             .ctx
             .rules_dir()
-            .join(dep_name.with_age_suffix())
+            .join(dep_name.secret_file())
             .exists();
         let has_public = self.get_public_content(&dep_file)?.is_some();
 
@@ -131,7 +115,7 @@ impl<'a> DependencyResolver<'a> {
             let is_processed = self
                 .processed
                 .iter()
-                .any(|p| SecretName::new(p).basename() == dep_basename);
+                .any(|p| SecretName::new(p).name() == name);
             if !is_processed {
                 return Ok((false, false));
             }
@@ -167,22 +151,22 @@ impl<'a> DependencyResolver<'a> {
         Ok((all_satisfied, missing))
     }
 
-    /// Find generated secret content by basename matching.
+    /// Find generated secret content by name matching.
     /// Returns None if no matching generated secret exists or if the generator
     /// only produced public output (no secret).
-    pub fn find_generated_secret(&self, basename: &str) -> Option<&str> {
+    pub fn find_generated_secret(&self, name: &str) -> Option<&str> {
         self.generated_secrets
             .iter()
-            .find(|(key, _)| SecretName::new(key).basename() == basename)
+            .find(|(key, _)| SecretName::new(key).name() == name)
             .and_then(|(_, output)| output.secret.as_deref())
     }
 
     /// Check if a dependency was generated with a specific output type.
     /// Returns (has_secret, has_public).
-    pub fn get_generated_output_info(&self, basename: &str) -> Option<(bool, bool)> {
+    pub fn get_generated_output_info(&self, name: &str) -> Option<(bool, bool)> {
         self.generated_secrets
             .iter()
-            .find(|(key, _)| SecretName::new(key).basename() == basename)
+            .find(|(key, _)| SecretName::new(key).name() == name)
             .map(|(_, output)| (output.secret.is_some(), output.public.is_some()))
     }
 
@@ -199,8 +183,8 @@ impl<'a> DependencyResolver<'a> {
         for dep in deps {
             let dep_file = self.resolve_dependency_path(dep);
             let dep_name = SecretName::new(&dep_file);
-            let dep_key = dep_name.normalized();
-            let dep_basename = dep_name.basename();
+            let dep_key = dep_name.name();
+            let name = dep_name.name();
 
             // Add public content if available
             if let Some(public) = self.get_public_content(&dep_file)? {
@@ -212,7 +196,7 @@ impl<'a> DependencyResolver<'a> {
             }
 
             // Add secret content if available (from generated_secrets)
-            if let Some(secret) = self.find_generated_secret(dep_basename) {
+            if let Some(secret) = self.find_generated_secret(name) {
                 secrets_parts.push(format!(
                     r#""{}" = "{}";"#,
                     dep_key,
@@ -237,15 +221,15 @@ impl<'a> DependencyResolver<'a> {
         for dep in deps {
             let dep_file = self.resolve_dependency_path(dep);
             let dep_name = SecretName::new(&dep_file);
-            let dep_basename = dep_name.basename();
-            let dep_key = dep_name.normalized();
+            let name = dep_name.name();
+            let dep_key = dep_name.name();
 
-            let has_secret = self.find_generated_secret(dep_basename).is_some();
+            let has_secret = self.find_generated_secret(name).is_some();
             let has_public = self.get_public_content(&dep_file).ok().flatten().is_some();
 
             // Check if dependency was generated with only one output type
             if let Some((gen_has_secret, gen_has_public)) =
-                self.get_generated_output_info(dep_basename)
+                self.get_generated_output_info(name)
             {
                 if !gen_has_public {
                     messages.push(format!(

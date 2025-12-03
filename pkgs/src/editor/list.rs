@@ -124,7 +124,7 @@ fn get_secret_info(
     no_system_identities: bool,
 ) -> SecretInfo {
     SecretInfo {
-        name: SecretName::new(file).normalized().to_string(),
+        name: SecretName::new(file).name().to_string(),
         status: get_secret_status(rules_path, file, identities, no_system_identities),
     }
 }
@@ -157,7 +157,7 @@ pub fn list_secrets(
     if !show_status {
         let mut names: Vec<_> = files
             .iter()
-            .map(|f| SecretName::new(f).normalized().to_string())
+            .map(|f| SecretName::new(f).name().to_string())
             .collect();
         names.sort();
         for name in names {
@@ -252,7 +252,7 @@ pub fn check_secrets(
 
     let mut failed = 0;
     for file in &existing {
-        let name = SecretName::new(file).normalized().to_string();
+        let name = SecretName::new(file).name().to_string();
         match crypto::can_decrypt(file, identities, no_system_identities) {
             Ok(()) => log!("OK: {}", name),
             Err(e) => {
