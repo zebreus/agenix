@@ -59,7 +59,7 @@ let
   user = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5...";
   host = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5...";
 in {
-  "db-password.age".publicKeys = [ user host ];
+  "db-password".publicKeys = [ user host ];
 }
 ----
 
@@ -67,7 +67,7 @@ in {
 +
 [source,shell]
 ----
-cd secrets && agenix edit db-password.age
+cd secrets && agenix edit db-password
 ----
 
 . Use in your NixOS configuration:
