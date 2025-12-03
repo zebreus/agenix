@@ -586,10 +586,7 @@ mod tests {
         let ssh_key_pub_path = temp_dir.path().join("ssh-key.pub");
         let authorized_keys_path = temp_dir.path().join("authorized-keys.age");
         assert!(ssh_key_path.exists(), "ssh-key.age should be created");
-        assert!(
-            ssh_key_pub_path.exists(),
-            "ssh-key.pub should be created"
-        );
+        assert!(ssh_key_pub_path.exists(), "ssh-key.pub should be created");
         assert!(
             authorized_keys_path.exists(),
             "authorized-keys.age should be created"
