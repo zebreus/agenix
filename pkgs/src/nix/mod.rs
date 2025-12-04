@@ -72,10 +72,12 @@ pub(crate) fn resolve_public_key(rules_dir: &Path, key_str: &str) -> Result<Stri
 /// Get public keys for a file from the rules
 pub fn get_public_keys(rules_path: &str, file: &str) -> Result<Vec<String>> {
     let nix_expr = format!(
-        "(let rules = import {rules_path}; \
-         hasPublicKeys = builtins.hasAttr \"publicKeys\" rules.\"{file}\"; \
-         keys = if hasPublicKeys then rules.\"{file}\".publicKeys else []; \
-         in builtins.deepSeq keys keys)"
+        r#"let
+          rules = import {rules_path};
+          hasKeys = builtins.hasAttr "publicKeys" rules."{file}";
+          keys = if hasKeys then rules."{file}".publicKeys else [];
+        in
+          builtins.deepSeq keys keys"#
     );
 
     let current_dir = current_dir()?;
@@ -99,7 +101,11 @@ pub fn get_public_keys(rules_path: &str, file: &str) -> Result<Vec<String>> {
 /// This returns the strings as they appear in the rules file.
 fn get_raw_public_keys(rules_path: &str, file: &str) -> Result<Vec<String>> {
     let nix_expr = format!(
-        "(let rules = import {rules_path}; keys = rules.\"{file}\".publicKeys; in builtins.deepSeq keys keys)"
+        r#"let
+          rules = import {rules_path};
+          keys = rules."{file}".publicKeys;
+        in
+          builtins.deepSeq keys keys"#
     );
 
     let current_dir = current_dir()?;
@@ -144,7 +150,12 @@ pub fn get_public_key_references(
 /// Check if a file should be armored (ASCII-armored output)
 pub fn should_armor(rules_path: &str, file: &str) -> Result<bool> {
     let nix_expr = format!(
-        "(let rules = import {rules_path}; in (builtins.hasAttr \"armor\" rules.\"{file}\" && rules.\"{file}\".armor))",
+        r#"let
+          rules = import {rules_path};
+          secret = rules."{file}";
+          hasArmor = builtins.hasAttr "armor" secret;
+        in
+          hasArmor && secret.armor"#
     );
 
     let current_dir = current_dir()?;
@@ -220,18 +231,20 @@ pub fn get_secret_output_info(rules_path: &str, file: &str) -> Result<SecretOutp
 /// Check for explicitly set hasSecret/hasPublic attributes in secrets.nix
 fn get_explicit_output_info(rules_path: &str, file: &str) -> Result<Option<SecretOutputInfo>> {
     let nix_expr = format!(
-        r#"(let 
+        r#"let
           rules = import {rules_path};
           secret = rules."{file}";
           hasSecretAttr = builtins.hasAttr "hasSecret" secret;
           hasPublicAttr = builtins.hasAttr "hasPublic" secret;
+          
           result = {{
             hasSecretAttr = hasSecretAttr;
             hasPublicAttr = hasPublicAttr;
             hasSecret = if hasSecretAttr then secret.hasSecret else null;
             hasPublic = if hasPublicAttr then secret.hasPublic else null;
           }};
-        in builtins.deepSeq result result)"#,
+        in
+          builtins.deepSeq result result"#
     );
 
     let current_dir = current_dir()?;
@@ -347,12 +360,19 @@ pub fn generate_secret_with_public(
 /// Build a Nix expression that evaluates a generator with automatic fallback
 fn build_generator_nix_expression(rules_path: &str, file: &str, attempt_arg: &str) -> String {
     format!(
-        r#"(let 
+        r#"let
           rules = import {rules_path};
-          name = builtins.replaceStrings ["A" "B" "C" "D" "E" "F" "G" "H" "I" "J" "K" "L" "M" "N" "O" "P" "Q" "R" "S" "T" "U" "V" "W" "X" "Y" "Z"] ["a" "b" "c" "d" "e" "f" "g" "h" "i" "j" "k" "l" "m" "n" "o" "p" "q" "r" "s" "t" "u" "v" "w" "x" "y" "z"] "{file}";
-          hasSuffix = s: builtins.match ".*${{s}}$" name != null;
-          auto = 
-            if hasSuffix "ed25519" || hasSuffix "ssh" || hasSuffix "ssh_key" 
+          lowercaseName = builtins.replaceStrings
+            ["A" "B" "C" "D" "E" "F" "G" "H" "I" "J" "K" "L" "M"
+             "N" "O" "P" "Q" "R" "S" "T" "U" "V" "W" "X" "Y" "Z"]
+            ["a" "b" "c" "d" "e" "f" "g" "h" "i" "j" "k" "l" "m"
+             "n" "o" "p" "q" "r" "s" "t" "u" "v" "w" "x" "y" "z"]
+            "{file}";
+          
+          hasSuffix = suffix: builtins.match ".*${{suffix}}$" lowercaseName != null;
+          
+          autoGenerator =
+            if hasSuffix "ed25519" || hasSuffix "ssh" || hasSuffix "ssh_key"
             then builtins.sshKey
             else if hasSuffix "x25519"
             then builtins.ageKey
@@ -361,12 +381,24 @@ fn build_generator_nix_expression(rules_path: &str, file: &str, attempt_arg: &st
             else if hasSuffix "password" || hasSuffix "passphrase"
             then (_: builtins.randomString 32)
             else null;
+          
           secretsContext = {attempt_arg};
-          callGenerator = gen: if builtins.isFunction gen then gen secretsContext else gen;
-          result = if builtins.hasAttr "generator" rules."{file}"
-                   then callGenerator rules."{file}".generator
-                   else if auto != null then auto secretsContext else null;
-        in builtins.deepSeq result result)"#,
+          
+          callGenerator = gen:
+            if builtins.isFunction gen
+            then gen secretsContext
+            else gen;
+          
+          hasExplicitGenerator = builtins.hasAttr "generator" rules."{file}";
+          
+          result =
+            if hasExplicitGenerator
+            then callGenerator rules."{file}".generator
+            else if autoGenerator != null
+            then autoGenerator secretsContext
+            else null;
+        in
+          builtins.deepSeq result result"#
     )
 }
 
@@ -476,7 +508,11 @@ pub(crate) fn generate_secret_with_public_and_context(
 /// Get all file names from the rules
 pub fn get_all_files(rules_path: &str) -> Result<Vec<String>> {
     let nix_expr = format!(
-        "(let rules = import {rules_path}; names = builtins.attrNames rules; in builtins.deepSeq names names)"
+        r#"let
+          rules = import {rules_path};
+          names = builtins.attrNames rules;
+        in
+          builtins.deepSeq names names"#
     );
 
     let current_dir = current_dir()?;
@@ -498,12 +534,14 @@ pub fn get_all_files(rules_path: &str) -> Result<Vec<String>> {
 pub fn get_secret_dependencies(rules_path: &str, file: &str) -> Result<Vec<String>> {
     // First check if dependencies are explicitly specified
     let nix_expr = format!(
-        r#"(let 
+        r#"let
           rules = import {rules_path};
-          hasGenerator = builtins.hasAttr "generator" rules."{file}";
-          hasDeps = hasGenerator && (builtins.hasAttr "dependencies" rules."{file}");
-          deps = if hasDeps then rules."{file}".dependencies else [];
-        in builtins.deepSeq deps deps)"#,
+          secret = rules."{file}";
+          hasGenerator = builtins.hasAttr "generator" secret;
+          hasDeps = hasGenerator && builtins.hasAttr "dependencies" secret;
+          deps = if hasDeps then secret.dependencies else [];
+        in
+          builtins.deepSeq deps deps"#
     );
 
     let current_dir = current_dir()?;
@@ -522,14 +560,18 @@ pub fn get_secret_dependencies(rules_path: &str, file: &str) -> Result<Vec<Strin
 /// Build Nix expression to test generator with given params
 fn build_generator_test_expr(rules_path: &str, file: &str, params: &str) -> String {
     format!(
-        r#"(let 
+        r#"let
           rules = import {rules_path};
-          hasGenerator = builtins.hasAttr "generator" rules."{file}";
-          gen = rules."{file}".generator;
-          result = if hasGenerator 
-                   then (if builtins.isFunction gen then gen {params} else gen)
-                   else null;
-        in builtins.deepSeq result result)"#,
+          secret = rules."{file}";
+          hasGenerator = builtins.hasAttr "generator" secret;
+          generator = secret.generator;
+          
+          result =
+            if hasGenerator
+            then (if builtins.isFunction generator then generator {params} else generator)
+            else null;
+        in
+          builtins.deepSeq result result"#
     )
 }
 
