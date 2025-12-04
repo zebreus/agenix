@@ -193,9 +193,9 @@ pub fn edit_file(
         EditorChoice::Stdin => {
             // Read from stdin directly
             verbose!("Reading content from stdin");
-            let mut stdin_content = String::new();
+            let mut stdin_content = Vec::new();
             io::stdin()
-                .read_to_string(&mut stdin_content)
+                .read_to_end(&mut stdin_content)
                 .context("Failed to read from stdin")?;
 
             if stdin_content.is_empty() {
@@ -278,14 +278,14 @@ pub fn encrypt_file(
     let content = match input {
         Some(input_path) => {
             verbose!("Reading content from file: {}", input_path);
-            fs::read_to_string(input_path)
+            fs::read(input_path)
                 .with_context(|| format!("Failed to read input file: {}", input_path))?
         }
         None => {
             verbose!("Reading content from stdin");
-            let mut stdin_content = String::new();
+            let mut stdin_content = Vec::new();
             io::stdin()
-                .read_to_string(&mut stdin_content)
+                .read_to_end(&mut stdin_content)
                 .context("Failed to read from stdin")?;
             stdin_content
         }
@@ -366,14 +366,65 @@ fn validate_secret_exists(rules_path: &str, secret_name: &str) -> Result<()> {
     }
 }
 
-/// Run an editor workflow on a file, handling stdin, change detection, and dry-run.
-fn run_editor_workflow(
+/// Read binary content from stdin or a file.
+fn read_input_binary(input: Option<&str>) -> Result<Vec<u8>> {
+    match input {
+        Some(path) => {
+            verbose!("Reading content from file: {}", path);
+            fs::read(path).with_context(|| format!("Failed to read: {}", path))
+        }
+        None => {
+            verbose!("Reading content from stdin");
+            let mut content = Vec::new();
+            io::stdin()
+                .read_to_end(&mut content)
+                .context("Failed to read from stdin")?;
+            Ok(content)
+        }
+    }
+}
+
+/// Run the editor and return whether to skip change detection (binary version).
+fn run_editor_binary(editor_cmd: Option<&str>, temp_file: &Path) -> Result<bool> {
+    match determine_editor(editor_cmd) {
+        EditorChoice::Command(cmd) if cmd == ":" => {
+            verbose!("Skipping editor (rekey mode)");
+            Ok(true)
+        }
+        EditorChoice::Command(cmd) => {
+            verbose!("Running editor: {}", cmd);
+            let status = Command::new("sh")
+                .args(["-c", &format!("{} '{}'", cmd, temp_file.to_string_lossy())])
+                .status()
+                .context("Failed to run editor")?;
+            if !status.success() {
+                return Err(anyhow!("Editor exited with non-zero status"));
+            }
+            Ok(false)
+        }
+        EditorChoice::Stdin => {
+            verbose!("Reading content from stdin");
+            let mut content = Vec::new();
+            io::stdin()
+                .read_to_end(&mut content)
+                .context("Failed to read from stdin")?;
+            if content.is_empty() {
+                return Err(anyhow!("No input provided on stdin"));
+            }
+            fs::write(temp_file, content).context("Failed to write stdin content")?;
+            Ok(false)
+        }
+    }
+}
+
+/// Generic workflow for editing files with binary content support.
+fn run_editor_workflow_binary(
     secret_name: &str,
     editor_cmd: Option<&str>,
     force: bool,
     dry_run: bool,
-    load_content: impl FnOnce() -> Result<Option<String>>,
-    save_content: impl FnOnce(&str) -> Result<()>,
+    load_content: impl FnOnce() -> Result<Option<Vec<u8>>>,
+    save_content: impl FnOnce(&[u8]) -> Result<()>,
 ) -> Result<()> {
     let temp_filename = get_temp_filename(secret_name)?;
     let (_temp_dir, temp_file) = create_temp_cleartext(&temp_filename)?;
@@ -411,7 +462,7 @@ fn run_editor_workflow(
     }
 
     // Edit the file
-    let skip_change_check = run_editor(editor_cmd, &temp_file)?;
+    let skip_change_check = run_editor_binary(editor_cmd, &temp_file)?;
 
     // Handle case where editor didn't create the file
     if !temp_file.exists() {
@@ -435,59 +486,8 @@ fn run_editor_workflow(
         return Ok(());
     }
 
-    let content = fs::read_to_string(&temp_file).context("Failed to read edited content")?;
+    let content = fs::read(&temp_file).context("Failed to read edited content")?;
     save_content(&content)
-}
-
-/// Run the editor and return whether to skip change detection.
-fn run_editor(editor_cmd: Option<&str>, temp_file: &Path) -> Result<bool> {
-    match determine_editor(editor_cmd) {
-        EditorChoice::Command(cmd) if cmd == ":" => {
-            verbose!("Skipping editor (rekey mode)");
-            Ok(true)
-        }
-        EditorChoice::Command(cmd) => {
-            verbose!("Running editor: {}", cmd);
-            let status = Command::new("sh")
-                .args(["-c", &format!("{} '{}'", cmd, temp_file.to_string_lossy())])
-                .status()
-                .context("Failed to run editor")?;
-            if !status.success() {
-                return Err(anyhow!("Editor exited with non-zero status"));
-            }
-            Ok(false)
-        }
-        EditorChoice::Stdin => {
-            verbose!("Reading content from stdin");
-            let mut content = String::new();
-            io::stdin()
-                .read_to_string(&mut content)
-                .context("Failed to read from stdin")?;
-            if content.is_empty() {
-                return Err(anyhow!("No input provided on stdin"));
-            }
-            fs::write(temp_file, content).context("Failed to write stdin content")?;
-            Ok(false)
-        }
-    }
-}
-
-/// Read content from stdin or a file.
-fn read_input(input: Option<&str>) -> Result<String> {
-    match input {
-        Some(path) => {
-            verbose!("Reading content from file: {}", path);
-            fs::read_to_string(path).with_context(|| format!("Failed to read: {}", path))
-        }
-        None => {
-            verbose!("Reading content from stdin");
-            let mut content = String::new();
-            io::stdin()
-                .read_to_string(&mut content)
-                .context("Failed to read from stdin")?;
-            Ok(content)
-        }
-    }
 }
 
 /// Read the public file associated with a secret to stdout or a file.
@@ -512,8 +512,8 @@ pub fn read_public_file(rules_path: &str, secret_name: &str, output: Option<&str
         ));
     }
 
-    let content = fs::read_to_string(&pub_file)
-        .with_context(|| format!("Failed to read: {}", pub_file.display()))?;
+    let content =
+        fs::read(&pub_file).with_context(|| format!("Failed to read: {}", pub_file.display()))?;
     let output_path = output.unwrap_or("/dev/stdout");
     fs::write(output_path, content).with_context(|| format!("Failed to write to: {}", output_path))
 }
@@ -546,7 +546,7 @@ pub fn write_public_file(
         ));
     }
 
-    let content = read_input(input)?;
+    let content = read_input_binary(input)?;
     if content.is_empty() {
         return Err(anyhow!("No input provided"));
     }
@@ -581,14 +581,14 @@ pub fn edit_public_file(
     let rules_dir = get_rules_dir(rules_path);
     let pub_file = rules_dir.join(sname.public_file());
 
-    run_editor_workflow(
+    run_editor_workflow_binary(
         secret_name,
         editor_cmd,
         force,
         dry_run,
         || {
             if pub_file.exists() {
-                fs::read_to_string(&pub_file)
+                fs::read(&pub_file)
                     .map(Some)
                     .with_context(|| format!("Failed to read: {}", pub_file.display()))
             } else {
