@@ -197,12 +197,7 @@ let
         file = mkOption {
           type = types.path;
           internal = true;
-          default =
-            let
-              # Derive from secretsPath: ${secretsPath}/${name}.pub
-              pubFile = "${toString cfg.secretsPath}/${config.name}.pub";
-            in
-            pubFile;
+          default = cfg.secretsPath + "/${config.name}.pub";
           description = ''
             Public key file corresponding to the secret.
 
@@ -276,7 +271,7 @@ let
         file = mkOption {
           type = types.path;
           internal = true;
-          default = "${toString cfg.secretsPath}/${config.name}.age";
+          default = cfg.secretsPath + "/${config.name}.age";
           description = ''
             Age file the secret is loaded from.
 
