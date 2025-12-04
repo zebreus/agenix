@@ -195,36 +195,19 @@ let
           '';
         };
         file = mkOption {
-          type = types.nullOr types.path;
+          type = types.path;
+          internal = true;
           default =
             let
-              # Try to find corresponding secret's file
-              secretFile = cfg.secrets.${config.name}.file or null;
-              # Remove .age suffix if present, then add .pub
-              basePath = if secretFile != null then toString secretFile else null;
-              baseWithoutAge =
-                if basePath != null && lib.hasSuffix ".age" basePath then
-                  lib.removeSuffix ".age" basePath
-                else
-                  basePath;
-              pubFile = if baseWithoutAge != null then "${baseWithoutAge}.pub" else null;
+              # Derive from secretsPath: ${secretsPath}/${name}.pub
+              pubFile = "${toString cfg.secretsPath}/${config.name}.pub";
             in
-            if pubFile != null && builtins.pathExists pubFile then pubFile else null;
-          defaultText = literalExpression ''
-            let
-              secretFile = cfg.secrets.''${config.name}.file or null;
-              basePath = if secretFile != null then toString secretFile else null;
-              baseWithoutAge = if basePath != null && lib.hasSuffix ".age" basePath then
-                lib.removeSuffix ".age" basePath
-              else
-                basePath;
-              pubFile = if baseWithoutAge != null then "''${baseWithoutAge}.pub" else null;
-            in
-            if pubFile != null && builtins.pathExists pubFile then pubFile else null
-          '';
+            pubFile;
           description = ''
-            Path to the public file. Defaults to the corresponding secret's file
-            with .age replaced by .pub.
+            Public key file corresponding to the secret.
+
+            This is automatically derived from `age.secretsPath` and resolves to
+            `''${age.secretsPath}/''${name}.pub` where `name` is the attribute name.
           '';
         };
         content = mkOption {
@@ -291,33 +274,15 @@ let
           '';
         };
         file = mkOption {
-          type = types.nullOr types.path;
-          default =
-            let
-              # If secretsPath is set, construct path from secret name
-              secretPath =
-                if cfg.secretsPath != null then "${toString cfg.secretsPath}/${config.name}.age" else null;
-            in
-            secretPath;
-          defaultText = literalExpression ''
-            if cfg.secretsPath != null then
-              "''${cfg.secretsPath}/''${config.name}.age"
-            else
-              null
-          '';
+          type = types.path;
+          internal = true;
+          default = "${toString cfg.secretsPath}/${config.name}.age";
           description = ''
-            **Deprecated: This option is now automatically derived from `age.secretsPath`.**
-            
             Age file the secret is loaded from.
 
-            This is automatically set to `''${age.secretsPath}/''${name}.age` where `name` 
-            is the attribute name in `age.secrets`.
-
-            For example, with `age.secretsPath = ./secrets` and
-            `age.secrets.cool_key_ed25519 = {}`{, the secret file will be
-            `./secrets/cool_key_ed25519.age`.
-            
-            **You must set `age.secretsPath` and not set this field manually.**
+            This is automatically derived from `age.secretsPath` and cannot be set manually.
+            It resolves to `''${age.secretsPath}/''${name}.age` where `name` is the 
+            attribute name in `age.secrets`.
           '';
         };
         path = mkOption {
@@ -378,25 +343,23 @@ in
       '';
     };
     secretsPath = mkOption {
-      type = types.nullOr types.path;
-      default = null;
+      type = types.path;
       description = ''
         Path to the directory containing secrets.nix and the encrypted secret files.
 
-        When set, the `file` option for each secret defaults to
-        `''${secretsPath}/''${name}.age`, where `name` is the attribute name.
+        Secret files are automatically resolved as `''${secretsPath}/''${name}.age`, 
+        where `name` is the attribute name in `age.secrets`.
 
-        This allows you to simply reference secrets by name without specifying
-        the file path explicitly:
+        This allows you to simply reference secrets by name:
 
         ```nix
         age.secretsPath = ./secrets;
         age.secrets.cool_key_ed25519 = {
-          # file defaults to ./secrets/cool_key_ed25519.age
+          # file is automatically ./secrets/cool_key_ed25519.age
         };
         ```
 
-        All secret files (`.age`) and public files (`.pub`) are expected to be in
+        All secret files (`.age`) and public files (`.pub`) must be in
         this directory, matching the format used by the agenix CLI tool.
       '';
     };
@@ -486,21 +449,7 @@ in
           assertion = cfg.identityPaths != [ ];
           message = "age.identityPaths must be set, for example by enabling openssh.";
         }
-      ]
-      ++ (map (secret: {
-        assertion = secret.file != null;
-        message = ''
-          age.secrets.${secret.name}: Either specify the `file` option explicitly
-          or set `age.secretsPath` to enable automatic file path resolution.
-
-          When `age.secretsPath` is set, the file defaults to:
-            ''${age.secretsPath}/${secret.name}.age
-
-          Example:
-            age.secretsPath = ./secrets;
-            age.secrets.${secret.name} = {};  # file = ./secrets/${secret.name}.age
-        '';
-      }) (builtins.attrValues cfg.secrets));
+      ];
     }
     (optionalAttrs (!isDarwin) {
       # When using sysusers we no longer be started as an activation script
