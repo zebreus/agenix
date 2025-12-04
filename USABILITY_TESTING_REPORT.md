@@ -159,7 +159,7 @@ echo "ssh-ed25519 AAA..." | agenix edit --public test.age
 |-----------|--------|-------|
 | Empty secret (0 bytes) | ❌ | Fails with error |
 | Small secret (< 10 bytes) | ✅ | Works correctly |
-| Large secret (1MB+) | ⚠️ | Works only for UTF-8 text |
+| Large secret (1MB) | ⚠️ | Works only for UTF-8 text |
 | Binary data | ❌ | Not supported - UTF-8 only |
 | Multiline text | ✅ | Preserves line breaks correctly |
 | Special characters | ✅ | All special chars work |
@@ -478,7 +478,7 @@ Overall assessment: **Good usability with some important limitations to be aware
 
 ## Test Environment Details
 
-- Operating System: Linux (Ubuntu/Debian)
+- Operating System: Linux (Ubuntu)
 - Nix Version: 2.24.9
 - Agenix Version: 0.1.0
 - Test Duration: Comprehensive multi-hour testing session

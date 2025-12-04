@@ -2,7 +2,7 @@
 
 ## Overview
 
-I've completed extensive usability testing of all agenix commands in real-world scenarios. This testing covered all 8 main commands, 8+ generator functions, 15+ edge cases, and multiple workflow scenarios.
+Extensive usability testing was completed for all agenix commands in real-world scenarios. This testing covered all 8 main commands, 8+ generator functions, 15+ edge cases, and multiple workflow scenarios.
 
 ## What Was Tested
 
