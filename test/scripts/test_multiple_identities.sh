@@ -27,7 +27,7 @@ else
 fi
 
 # Test that -i works after subcommand
-decrypted=$(agenix decrypt -i "$HOME/.ssh/id_ed25519" --no-system-identities secret1.age)
+decrypted=$(agenix decrypt -i "$HOME/.ssh/id_ed25519" --no-system-identities secret1)
 if [ "$decrypted" = "hello" ]; then
   echo "✓ Identity flag after subcommand works"
 else
