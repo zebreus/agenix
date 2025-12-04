@@ -1970,7 +1970,7 @@ mod tests {
         encrypt_from_file(
             plaintext_file.path().to_str().unwrap(),
             encrypted_file.path().to_str().unwrap(),
-            &[public_key.clone()],
+            std::slice::from_ref(&public_key),
             false,
         )?;
 
