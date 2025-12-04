@@ -13,8 +13,8 @@ cd "$EDGE_TEST_DIR"
 # Setup temporary rules file
 TEMP_RULES="$EDGE_TEST_DIR/temp-secrets.nix"
 
-# Test 1: Encrypt with empty stdin should fail
-echo "--- Test 1: Empty stdin should fail ---"
+# Test 1: Encrypt with empty stdin should succeed
+echo "--- Test 1: Empty stdin should succeed ---"
 NEW_SECRET="empty-stdin"
 cat > "$TEMP_RULES" << EOF
 {
@@ -25,10 +25,17 @@ cat > "$TEMP_RULES" << EOF
 EOF
 
 if echo -n "" | agenix encrypt --secrets-nix "$TEMP_RULES" "$NEW_SECRET" 2>/dev/null; then
-  echo "✗ Encrypt should fail with empty stdin"
-  exit 1
+  # Verify that decryption also produces empty output
+  decrypted=$(agenix decrypt --secrets-nix "$TEMP_RULES" "$NEW_SECRET")
+  if [ -z "$decrypted" ]; then
+    echo "✓ Encrypt and decrypt work with empty content"
+  else
+    echo "✗ Decrypted content should be empty but got: '$decrypted'"
+    exit 1
+  fi
 else
-  echo "✓ Encrypt correctly fails with empty stdin"
+  echo "✗ Encrypt should succeed with empty stdin"
+  exit 1
 fi
 
 # Test 2: Encrypt preserves newlines
