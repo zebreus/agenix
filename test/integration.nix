@@ -24,20 +24,27 @@ pkgs.testers.nixosTest {
 
       services.openssh.enable = true;
 
+      # Set secretsPath to use example directory
+      age.secretsPath = ./example;
+
       age.secrets = {
-        passwordfile-user1.file = ./example/passwordfile-user1.age;
-        leading-hyphen.file = ./example/-leading-hyphen-filename.age;
+        passwordfile-user1 = { };
+        "-leading-hyphen-filename" = { };
         # Test secret files that correspond to publics defined below
-        secret-with-public.file = ./example/secret-with-public.age;
-        secret-with-public-custom-path.file = ./example/secret-with-public.age;
-        secret-with-public-copy.file = ./example/secret-with-public.age;
-        ssh-host-key = {
-          file = ./example/secret-with-public.age;
+        secret-with-public = { };
+        "secret-with-public-custom-path" = {
+          name = "secret-with-public";
+        };
+        "secret-with-public-copy" = {
+          name = "secret-with-public";
+        };
+        "ssh-host-key" = {
+          name = "secret-with-public";
           path = "/etc/ssh/ssh_host_ed25519_key_test";
           mode = "0600";
         };
-        deploy-key = {
-          file = ./example/secret-with-public.age;
+        "deploy-key" = {
+          name = "secret-with-public";
           path = "/var/lib/deploy/.ssh/id_ed25519";
           mode = "0400";
           owner = "root";
