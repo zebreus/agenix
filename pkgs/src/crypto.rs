@@ -66,11 +66,11 @@ pub fn can_decrypt(
         no_system_identities,
     )?;
 
-    // Try to read to verify decryption works, but allow empty files
-    let mut buf = Vec::new();
+    // Try to read with a zero-sized buffer to verify decryption works without consuming data
+    let mut buf = [];
     reader
-        .read_to_end(&mut buf)
-        .with_context(|| format!("Failed to read decrypted content from {input_file}"))?;
+        .read(&mut buf)
+        .with_context(|| format!("Failed to verify decryption for {input_file}"))?;
 
     Ok(())
 }
