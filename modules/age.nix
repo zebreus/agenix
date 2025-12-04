@@ -298,7 +298,7 @@ let
               secretPath =
                 if cfg.secretsPath != null then "${toString cfg.secretsPath}/${config.name}.age" else null;
             in
-            if secretPath != null && builtins.pathExists secretPath then secretPath else null;
+            secretPath;
           defaultText = literalExpression ''
             if cfg.secretsPath != null then
               "''${cfg.secretsPath}/''${config.name}.age"
@@ -306,15 +306,18 @@ let
               null
           '';
           description = ''
+            **Deprecated: This option is now automatically derived from `age.secretsPath`.**
+            
             Age file the secret is loaded from.
 
-            If not specified and {option}`age.secretsPath` is set, defaults to
-            `''${age.secretsPath}/''${name}.age` where `name` is the attribute name
-            in `age.secrets`.
+            This is automatically set to `''${age.secretsPath}/''${name}.age` where `name` 
+            is the attribute name in `age.secrets`.
 
             For example, with `age.secretsPath = ./secrets` and
             `age.secrets.cool_key_ed25519 = {}`{, the secret file will be
             `./secrets/cool_key_ed25519.age`.
+            
+            **You must set `age.secretsPath` and not set this field manually.**
           '';
         };
         path = mkOption {
