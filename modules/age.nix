@@ -134,10 +134,8 @@ let
     ++ (map chownSecret (builtins.attrValues cfg.secrets))
   );
 
-  # Filter secrets that have public files with installPath set
-  secretsWithPublicInstall = builtins.filter (
-    s: s.public.file != null && s.public.installPath != null
-  ) (builtins.attrValues cfg.secrets);
+  # Filter publics that have installPath set
+  publicsWithInstall = builtins.filter (p: p.installPath != null) (builtins.attrValues cfg.publics);
 
   # Create public keys directory
   createPublicKeysDir = ''
@@ -147,18 +145,18 @@ let
   '';
 
   # Install a single public file
-  installPublicFile = secretType: ''
-    echo "installing public file '${secretType.public.file}' to '${secretType.public.installPath}'..."
+  installPublicFile = publicType: ''
+    echo "installing public file '${publicType.file}' to '${publicType.installPath}'..."
     ${
-      if secretType.public.symlink then
+      if publicType.symlink then
         ''
-          mkdir -p "$(dirname "${secretType.public.installPath}")"
-          ln -sfT "${secretType.public.file}" "${secretType.public.installPath}"
+          mkdir -p "$(dirname "${publicType.installPath}")"
+          ln -sfT "${publicType.file}" "${publicType.installPath}"
         ''
       else
         ''
-          mkdir -p "$(dirname "${secretType.public.installPath}")"
-          install -m "${secretType.public.mode}" "${secretType.public.file}" "${secretType.public.installPath}"
+          mkdir -p "$(dirname "${publicType.installPath}")"
+          install -m "${publicType.mode}" "${publicType.file}" "${publicType.installPath}"
         ''
     }
   '';
@@ -167,22 +165,117 @@ let
   installPublicFiles = builtins.concatStringsSep "\n" (
     [ createPublicKeysDir ]
     ++ [ "echo '[agenix] installing public files...'" ]
-    ++ (map installPublicFile secretsWithPublicInstall)
+    ++ (map installPublicFile publicsWithInstall)
   );
 
   # Chown a single public file
   # Note: For symlinks pointing to the Nix store, chown doesn't change ownership
   # of the symlink (only the target), and chmod cannot be used on symlinks directly.
   # We skip these operations for symlinks.
-  chownPublicFile = secretType: ''
-    ${optionalString (!secretType.public.symlink) ''
-      chown '${secretType.public.owner}':'${secretType.public.group}' "${secretType.public.installPath}"
+  chownPublicFile = publicType: ''
+    ${optionalString (!publicType.symlink) ''
+      chown '${publicType.owner}':'${publicType.group}' "${publicType.installPath}"
     ''}
   '';
 
   # Chown all public files
   chownPublicFiles = builtins.concatStringsSep "\n" (
-    [ "echo '[agenix] chowning public files...'" ] ++ (map chownPublicFile secretsWithPublicInstall)
+    [ "echo '[agenix] chowning public files...'" ] ++ (map chownPublicFile publicsWithInstall)
+  );
+
+  publicType = types.submodule (
+    { config, name, ... }:
+    {
+      options = {
+        name = mkOption {
+          type = types.str;
+          default = name;
+          description = ''
+            Name of the public key (matches the secret name).
+          '';
+        };
+        file = mkOption {
+          type = types.nullOr types.path;
+          default =
+            let
+              # Try to find corresponding secret's file
+              secretFile = cfg.secrets.${config.name}.file or null;
+              # Remove .age suffix if present, then add .pub
+              basePath = if secretFile != null then toString secretFile else null;
+              baseWithoutAge =
+                if basePath != null && lib.hasSuffix ".age" basePath then
+                  lib.removeSuffix ".age" basePath
+                else
+                  basePath;
+              pubFile = if baseWithoutAge != null then "${baseWithoutAge}.pub" else null;
+            in
+            if pubFile != null && builtins.pathExists pubFile then pubFile else null;
+          defaultText = literalExpression ''
+            let
+              secretFile = cfg.secrets.''${config.name}.file or null;
+              basePath = if secretFile != null then toString secretFile else null;
+              baseWithoutAge = if basePath != null && lib.hasSuffix ".age" basePath then
+                lib.removeSuffix ".age" basePath
+              else
+                basePath;
+              pubFile = if baseWithoutAge != null then "''${baseWithoutAge}.pub" else null;
+            in
+            if pubFile != null && builtins.pathExists pubFile then pubFile else null
+          '';
+          description = ''
+            Path to the public file. Defaults to the corresponding secret's file
+            with .age replaced by .pub.
+          '';
+        };
+        content = mkOption {
+          type = types.nullOr types.str;
+          default = if config.file != null then builtins.readFile config.file else null;
+          defaultText = literalExpression ''
+            if config.file != null then builtins.readFile config.file else null
+          '';
+          description = ''
+            Content of the public file.
+          '';
+        };
+        installPath = mkOption {
+          type = types.nullOr types.str;
+          default = null;
+          defaultText = literalExpression "null";
+          description = ''
+            Path where the public file should be installed (symlinked or copied).
+            If null, the public file is not installed on the system.
+          '';
+        };
+        mode = mkOption {
+          type = types.str;
+          default = "0444";
+          description = ''
+            Permissions mode of the installed public file in a format understood by chmod.
+            Public files are typically world-readable by default.
+          '';
+        };
+        owner = mkOption {
+          type = types.str;
+          default = "root";
+          description = ''
+            User of the installed public file.
+          '';
+        };
+        group = mkOption {
+          type = types.str;
+          default = users.${config.owner}.group or "keys";
+          defaultText = literalExpression ''
+            users.''${config.owner}.group or "keys"
+          '';
+          description = ''
+            Group of the installed public file.
+          '';
+        };
+        symlink = mkEnableOption "symlinking public files to their destination" // {
+          default = true;
+        };
+      };
+    }
   );
 
   secretType = types.submodule (
@@ -233,96 +326,6 @@ let
           description = ''
             Path where the decrypted secret is installed.
           '';
-        };
-        public = {
-          file = mkOption {
-            type = types.nullOr types.path;
-            default =
-              let
-                # Remove .age suffix if present, then add .pub
-                basePath = toString config.file;
-                baseWithoutAge =
-                  if lib.hasSuffix ".age" basePath then lib.removeSuffix ".age" basePath else basePath;
-                pubFile = "${baseWithoutAge}.pub";
-              in
-              if builtins.pathExists pubFile then pubFile else null;
-            defaultText = literalExpression ''
-              let
-                basePath = toString config.file;
-                baseWithoutAge = if lib.hasSuffix ".age" basePath then
-                  lib.removeSuffix ".age" basePath
-                else
-                  basePath;
-                pubFile = "''${baseWithoutAge}.pub";
-              in
-              if builtins.pathExists pubFile then pubFile else null
-            '';
-            description = ''
-              Path to the public file associated with this secret, if it exists.
-              This file is created when the generator function returns an attrset
-              with both `secret` and `public` keys. The public file is expected to be
-              at the same location as the secret file, with .pub extension instead of .age.
-            '';
-          };
-
-          content = mkOption {
-            type = types.nullOr types.str;
-            default = if config.public.file != null then builtins.readFile config.public.file else null;
-            defaultText = literalExpression ''
-              if config.public.file != null then builtins.readFile config.public.file else null
-            '';
-            description = ''
-              Content of the public file associated with this secret, if it exists.
-              This is the content of the `.pub` file created when the generator
-              function returns an attrset with both `secret` and `public` keys.
-            '';
-          };
-          installPath = mkOption {
-            type = types.nullOr types.str;
-            default = null;
-            defaultText = literalExpression "null";
-            description = ''
-              Path where the public file should be installed (symlinked or copied).
-              If null, the public file is not installed on the system.
-              If set, the public file will be installed at this path.
-            '';
-          };
-          name = mkOption {
-            type = types.str;
-            default = "${config._module.args.name}.pub";
-            defaultText = literalExpression ''"''${config._module.args.name}.pub"'';
-            description = ''
-              Name of the public file used in {option}`age.publicKeysDir`
-            '';
-          };
-          mode = mkOption {
-            type = types.str;
-            default = "0444";
-            description = ''
-              Permissions mode of the installed public file in a format understood by chmod.
-              Public files are typically world-readable by default.
-            '';
-          };
-          owner = mkOption {
-            type = types.str;
-            default = "root";
-            description = ''
-              User of the installed public file.
-            '';
-          };
-          group = mkOption {
-            type = types.str;
-            default = users.${config.public.owner}.group or "keys";
-            defaultText = literalExpression ''
-              users.''${config.public.owner}.group or "keys"
-            '';
-            description = ''
-              Group of the installed public file.
-            '';
-          };
-          symlink = mkEnableOption "symlinking public files to their destination" // {
-            default = true;
-          };
         };
         mode = mkOption {
           type = types.str;
@@ -399,6 +402,19 @@ in
       default = { };
       description = ''
         Attrset of secrets.
+      '';
+    };
+    publics = mkOption {
+      type = types.attrsOf publicType;
+      default = { };
+      description = ''
+        Attrset of public keys associated with secrets.
+
+        Public keys are accessible via `config.age.publics.<name>` instead of
+        `config.age.secrets.<name>.public`.
+
+        Example:
+          age.publics.my_key.installPath = "/etc/ssh/authorized_keys.d/my_key";
       '';
     };
     secretsDir = mkOption {
