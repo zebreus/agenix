@@ -157,10 +157,14 @@ pub fn should_armor(rules_path: &str, file: &str) -> Result<bool> {
         r#"let
           rules = import {rules_path};
           secretExists = builtins.hasAttr "{file}" rules;
-          secret = if secretExists then rules."{file}" else throw "Secret '{file}' is not defined in {rules_path}. Please add it to the secrets configuration.";
-          hasArmor = builtins.hasAttr "armor" secret;
+          result = if !secretExists then throw "Secret '{file}' is not defined in {rules_path}. Please add it to the secrets configuration."
+                   else
+                     let
+                       secret = rules."{file}";
+                       hasArmor = builtins.hasAttr "armor" secret;
+                     in hasArmor && secret.armor;
         in
-          hasArmor && secret.armor"#
+          builtins.deepSeq result result"#
     );
 
     let current_dir = current_dir()?;
@@ -239,16 +243,19 @@ fn get_explicit_output_info(rules_path: &str, file: &str) -> Result<Option<Secre
         r#"let
           rules = import {rules_path};
           secretExists = builtins.hasAttr "{file}" rules;
-          secret = if secretExists then rules."{file}" else throw "Secret '{file}' is not defined in {rules_path}. Please add it to the secrets configuration.";
-          hasSecretAttr = builtins.hasAttr "hasSecret" secret;
-          hasPublicAttr = builtins.hasAttr "hasPublic" secret;
           
-          result = {{
-            hasSecretAttr = hasSecretAttr;
-            hasPublicAttr = hasPublicAttr;
-            hasSecret = if hasSecretAttr then secret.hasSecret else null;
-            hasPublic = if hasPublicAttr then secret.hasPublic else null;
-          }};
+          result = if !secretExists then throw "Secret '{file}' is not defined in {rules_path}. Please add it to the secrets configuration."
+          else
+            let
+              secret = rules."{file}";
+              hasSecretAttr = builtins.hasAttr "hasSecret" secret;
+              hasPublicAttr = builtins.hasAttr "hasPublic" secret;
+            in {{
+              hasSecretAttr = hasSecretAttr;
+              hasPublicAttr = hasPublicAttr;
+              hasSecret = if hasSecretAttr then secret.hasSecret else null;
+              hasPublic = if hasPublicAttr then secret.hasPublic else null;
+            }};
         in
           builtins.deepSeq result result"#
     );
@@ -546,12 +553,15 @@ pub fn get_secret_dependencies(rules_path: &str, file: &str) -> Result<Vec<Strin
         r#"let
           rules = import {rules_path};
           secretExists = builtins.hasAttr "{file}" rules;
-          secret = if secretExists then rules."{file}" else throw "Secret '{file}' is not defined in {rules_path}. Please add it to the secrets configuration.";
-          hasGenerator = builtins.hasAttr "generator" secret;
-          hasDeps = hasGenerator && builtins.hasAttr "dependencies" secret;
-          deps = if hasDeps then secret.dependencies else [];
+          result = if !secretExists then throw "Secret '{file}' is not defined in {rules_path}. Please add it to the secrets configuration."
+                   else
+                     let
+                       secret = rules."{file}";
+                       hasGenerator = builtins.hasAttr "generator" secret;
+                       hasDeps = hasGenerator && builtins.hasAttr "dependencies" secret;
+                     in if hasDeps then secret.dependencies else [];
         in
-          builtins.deepSeq deps deps"#
+          builtins.deepSeq result result"#
     );
 
     let current_dir = current_dir()?;
@@ -573,14 +583,19 @@ fn build_generator_test_expr(rules_path: &str, file: &str, params: &str) -> Stri
         r#"let
           rules = import {rules_path};
           secretExists = builtins.hasAttr "{file}" rules;
-          secret = if secretExists then rules."{file}" else throw "Secret '{file}' is not defined in {rules_path}. Please add it to the secrets configuration.";
-          hasGenerator = builtins.hasAttr "generator" secret;
-          generator = secret.generator;
           
           result =
-            if hasGenerator
-            then (if builtins.isFunction generator then generator {params} else generator)
-            else null;
+            if !secretExists
+            then throw "Secret '{file}' is not defined in {rules_path}. Please add it to the secrets configuration."
+            else
+              let
+                secret = rules."{file}";
+                hasGenerator = builtins.hasAttr "generator" secret;
+                generator = secret.generator;
+              in
+                if hasGenerator
+                then (if builtins.isFunction generator then generator {params} else generator)
+                else null;
         in
           builtins.deepSeq result result"#
     )
@@ -802,13 +817,13 @@ mod tests {
 
         let result = get_public_keys(temp_file.path().to_str().unwrap(), "nonexistent.age");
         assert!(result.is_err());
-        
+
         // Verify the error message is user-friendly (not raw Nix evaluation error)
         let error_msg = result.unwrap_err().to_string();
         eprintln!("Error message: {}", error_msg);
         assert!(error_msg.contains("nonexistent.age"));
         assert!(error_msg.contains("not defined") || error_msg.contains("Please add it"));
-        
+
         Ok(())
     }
 
