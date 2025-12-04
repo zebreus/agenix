@@ -9,7 +9,7 @@ echo "=== Test: Multiple identities with -i flag ==="
 reset_secret1
 
 # Test that -i flag works with the known identity
-decrypted=$(agenix decrypt secret1.age -i "$HOME/.ssh/id_ed25519" --no-system-identities)
+decrypted=$(agenix decrypt secret1 -i "$HOME/.ssh/id_ed25519" --no-system-identities)
 if [ "$decrypted" = "hello" ]; then
   echo "✓ Single identity with --no-system-identities works"
 else
@@ -18,7 +18,7 @@ else
 fi
 
 # Test that the same identity specified multiple times works (deduplication)
-decrypted=$(agenix decrypt secret1.age -i "$HOME/.ssh/id_ed25519" -i "$HOME/.ssh/id_ed25519" --no-system-identities)
+decrypted=$(agenix decrypt secret1 -i "$HOME/.ssh/id_ed25519" -i "$HOME/.ssh/id_ed25519" --no-system-identities)
 if [ "$decrypted" = "hello" ]; then
   echo "✓ Same identity specified multiple times works"
 else

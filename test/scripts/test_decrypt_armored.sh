@@ -4,7 +4,7 @@
 source "$(dirname "$0")/common_setup.sh"
 
 echo "=== Test 7: Decrypt armored secret ==="
-decrypted=$(agenix decrypt armored-secret.age)
+decrypted=$(agenix decrypt armored-secret)
 expected="Hello World!"
 if [ "$decrypted" = "$expected" ]; then
   echo "✓ Decrypt armored secret works"

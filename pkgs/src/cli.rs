@@ -220,27 +220,27 @@ mod tests {
 
     #[test]
     fn test_edit_subcommand() {
-        let args = Args::try_parse_from(["agenix", "edit", "test.age"]).unwrap();
+        let args = Args::try_parse_from(["agenix", "edit", "test"]).unwrap();
         assert!(matches!(args.command, Some(Command::Edit { .. })));
         assert!(!args.verbose);
         assert!(args.identity.is_empty());
         if let Some(Command::Edit { file, force, .. }) = args.command {
-            assert_eq!(file, "test.age".to_string());
+            assert_eq!(file, "test".to_string());
             assert!(!force);
         }
     }
 
     #[test]
     fn test_edit_short_alias() {
-        let args = Args::try_parse_from(["agenix", "e", "test.age"]).unwrap();
+        let args = Args::try_parse_from(["agenix", "e", "test"]).unwrap();
         assert!(matches!(args.command, Some(Command::Edit { .. })));
     }
 
     #[test]
     fn test_edit_with_force() {
-        let args = Args::try_parse_from(["agenix", "edit", "--force", "test.age"]).unwrap();
+        let args = Args::try_parse_from(["agenix", "edit", "--force", "test"]).unwrap();
         if let Some(Command::Edit { file, force, .. }) = args.command {
-            assert_eq!(file, "test.age".to_string());
+            assert_eq!(file, "test".to_string());
             assert!(force);
         } else {
             panic!("Expected Edit command");
@@ -249,9 +249,9 @@ mod tests {
 
     #[test]
     fn test_edit_with_force_short() {
-        let args = Args::try_parse_from(["agenix", "edit", "-f", "test.age"]).unwrap();
+        let args = Args::try_parse_from(["agenix", "edit", "-f", "test"]).unwrap();
         if let Some(Command::Edit { file, force, .. }) = args.command {
-            assert_eq!(file, "test.age".to_string());
+            assert_eq!(file, "test".to_string());
             assert!(force);
         } else {
             panic!("Expected Edit command");
@@ -260,9 +260,9 @@ mod tests {
 
     #[test]
     fn test_edit_with_dry_run() {
-        let args = Args::try_parse_from(["agenix", "--dry-run", "edit", "test.age"]).unwrap();
+        let args = Args::try_parse_from(["agenix", "--dry-run", "edit", "test"]).unwrap();
         if let Some(Command::Edit { file, .. }) = args.command {
-            assert_eq!(file, "test.age".to_string());
+            assert_eq!(file, "test".to_string());
             assert!(args.dry_run);
         } else {
             panic!("Expected Edit command");
@@ -271,9 +271,9 @@ mod tests {
 
     #[test]
     fn test_edit_with_dry_run_short() {
-        let args = Args::try_parse_from(["agenix", "-n", "edit", "test.age"]).unwrap();
+        let args = Args::try_parse_from(["agenix", "-n", "edit", "test"]).unwrap();
         if let Some(Command::Edit { file, .. }) = args.command {
-            assert_eq!(file, "test.age".to_string());
+            assert_eq!(file, "test".to_string());
             assert!(args.dry_run);
         } else {
             panic!("Expected Edit command");
@@ -294,11 +294,11 @@ mod tests {
 
     #[test]
     fn test_decrypt_subcommand_with_identity() {
-        let args = Args::try_parse_from(["agenix", "-i", "/path/to/key", "decrypt", "secret.age"])
-            .unwrap();
+        let args =
+            Args::try_parse_from(["agenix", "-i", "/path/to/key", "decrypt", "secret"]).unwrap();
         assert_eq!(args.identity, vec!["/path/to/key".to_string()]);
         if let Some(Command::Decrypt { file, .. }) = args.command {
-            assert_eq!(file, "secret.age".to_string());
+            assert_eq!(file, "secret".to_string());
         } else {
             panic!("Expected Decrypt command");
         }
@@ -306,19 +306,19 @@ mod tests {
 
     #[test]
     fn test_decrypt_short_alias() {
-        let args = Args::try_parse_from(["agenix", "d", "secret.age"]).unwrap();
+        let args = Args::try_parse_from(["agenix", "d", "secret"]).unwrap();
         assert!(matches!(args.command, Some(Command::Decrypt { .. })));
     }
 
     #[test]
     fn test_encrypt_subcommand() {
-        let args = Args::try_parse_from(["agenix", "encrypt", "test.age"]).unwrap();
+        let args = Args::try_parse_from(["agenix", "encrypt", "test"]).unwrap();
         assert!(matches!(args.command, Some(Command::Encrypt { .. })));
         if let Some(Command::Encrypt {
             file, input, force, ..
         }) = args.command
         {
-            assert_eq!(file, "test.age".to_string());
+            assert_eq!(file, "test".to_string());
             assert!(input.is_none());
             assert!(!force);
         } else {
@@ -328,18 +328,18 @@ mod tests {
 
     #[test]
     fn test_encrypt_short_alias() {
-        let args = Args::try_parse_from(["agenix", "c", "test.age"]).unwrap();
+        let args = Args::try_parse_from(["agenix", "c", "test"]).unwrap();
         assert!(matches!(args.command, Some(Command::Encrypt { .. })));
     }
 
     #[test]
     fn test_encrypt_with_force() {
-        let args = Args::try_parse_from(["agenix", "encrypt", "--force", "test.age"]).unwrap();
+        let args = Args::try_parse_from(["agenix", "encrypt", "--force", "test"]).unwrap();
         if let Some(Command::Encrypt {
             file, input, force, ..
         }) = args.command
         {
-            assert_eq!(file, "test.age".to_string());
+            assert_eq!(file, "test".to_string());
             assert!(input.is_none());
             assert!(force);
         } else {
@@ -349,12 +349,12 @@ mod tests {
 
     #[test]
     fn test_encrypt_with_force_short() {
-        let args = Args::try_parse_from(["agenix", "encrypt", "-f", "test.age"]).unwrap();
+        let args = Args::try_parse_from(["agenix", "encrypt", "-f", "test"]).unwrap();
         if let Some(Command::Encrypt {
             file, input, force, ..
         }) = args.command
         {
-            assert_eq!(file, "test.age".to_string());
+            assert_eq!(file, "test".to_string());
             assert!(input.is_none());
             assert!(force);
         } else {
@@ -364,19 +364,14 @@ mod tests {
 
     #[test]
     fn test_encrypt_with_input_file() {
-        let args = Args::try_parse_from([
-            "agenix",
-            "encrypt",
-            "--input",
-            "/path/to/input.txt",
-            "test.age",
-        ])
-        .unwrap();
+        let args =
+            Args::try_parse_from(["agenix", "encrypt", "--input", "/path/to/input.txt", "test"])
+                .unwrap();
         if let Some(Command::Encrypt {
             file, input, force, ..
         }) = args.command
         {
-            assert_eq!(file, "test.age".to_string());
+            assert_eq!(file, "test".to_string());
             assert_eq!(input, Some("/path/to/input.txt".to_string()));
             assert!(!force);
         } else {
@@ -387,19 +382,14 @@ mod tests {
     #[test]
     fn test_encrypt_with_input_short() {
         // Note: --input doesn't have a short flag because -i is used by global --identity
-        let args = Args::try_parse_from([
-            "agenix",
-            "encrypt",
-            "--input",
-            "/path/to/input.txt",
-            "test.age",
-        ])
-        .unwrap();
+        let args =
+            Args::try_parse_from(["agenix", "encrypt", "--input", "/path/to/input.txt", "test"])
+                .unwrap();
         if let Some(Command::Encrypt {
             file, input, force, ..
         }) = args.command
         {
-            assert_eq!(file, "test.age".to_string());
+            assert_eq!(file, "test".to_string());
             assert_eq!(input, Some("/path/to/input.txt".to_string()));
             assert!(!force);
         } else {
@@ -415,14 +405,14 @@ mod tests {
             "--input",
             "/path/to/input.txt",
             "-f",
-            "test.age",
+            "test",
         ])
         .unwrap();
         if let Some(Command::Encrypt {
             file, input, force, ..
         }) = args.command
         {
-            assert_eq!(file, "test.age".to_string());
+            assert_eq!(file, "test".to_string());
             assert_eq!(input, Some("/path/to/input.txt".to_string()));
             assert!(force);
         } else {
@@ -432,14 +422,14 @@ mod tests {
 
     #[test]
     fn test_verbose_flag_with_edit() {
-        let args = Args::try_parse_from(["agenix", "-v", "edit", "test.age"]).unwrap();
+        let args = Args::try_parse_from(["agenix", "-v", "edit", "test"]).unwrap();
         assert!(args.verbose);
         assert!(matches!(args.command, Some(Command::Edit { .. })));
     }
 
     #[test]
     fn test_verbose_flag_after_subcommand() {
-        let args = Args::try_parse_from(["agenix", "edit", "-v", "test.age"]).unwrap();
+        let args = Args::try_parse_from(["agenix", "edit", "-v", "test"]).unwrap();
         assert!(args.verbose);
         assert!(matches!(args.command, Some(Command::Edit { .. })));
     }
@@ -447,9 +437,9 @@ mod tests {
     #[test]
     fn test_args_parsing_default_editor() {
         with_env_var("EDITOR", None, || {
-            let args = Args::try_parse_from(["agenix", "edit", "test.age"]).unwrap();
+            let args = Args::try_parse_from(["agenix", "edit", "test"]).unwrap();
             if let Some(Command::Edit { file, editor, .. }) = args.command {
-                assert_eq!(file, "test.age".to_string());
+                assert_eq!(file, "test".to_string());
                 assert_eq!(editor, None);
             } else {
                 panic!("Expected Edit command");
@@ -460,7 +450,7 @@ mod tests {
     #[test]
     fn test_editor_env_overrides_default() {
         with_env_var("EDITOR", Some("nano"), || {
-            let args = Args::try_parse_from(["agenix", "edit", "test.age"]).unwrap();
+            let args = Args::try_parse_from(["agenix", "edit", "test"]).unwrap();
             if let Some(Command::Edit { editor, .. }) = args.command {
                 assert_eq!(editor, Some("nano".to_string()));
             } else {
@@ -472,8 +462,7 @@ mod tests {
     #[test]
     fn test_editor_flag_overrides_env() {
         with_env_var("EDITOR", Some("nano"), || {
-            let args =
-                Args::try_parse_from(["agenix", "edit", "--editor", "vim", "test.age"]).unwrap();
+            let args = Args::try_parse_from(["agenix", "edit", "--editor", "vim", "test"]).unwrap();
             if let Some(Command::Edit { editor, .. }) = args.command {
                 assert_eq!(editor, Some("vim".to_string()));
             } else {
@@ -486,7 +475,7 @@ mod tests {
     fn test_editor_flag_without_env() {
         with_env_var("EDITOR", None, || {
             let args =
-                Args::try_parse_from(["agenix", "edit", "--editor", "micro", "test.age"]).unwrap();
+                Args::try_parse_from(["agenix", "edit", "--editor", "micro", "test"]).unwrap();
             if let Some(Command::Edit { editor, .. }) = args.command {
                 assert_eq!(editor, Some("micro".to_string()));
             } else {
@@ -649,10 +638,9 @@ mod tests {
     #[test]
     fn test_decrypt_with_output() {
         let args =
-            Args::try_parse_from(["agenix", "decrypt", "secret.age", "-o", "/path/to/output"])
-                .unwrap();
+            Args::try_parse_from(["agenix", "decrypt", "secret", "-o", "/path/to/output"]).unwrap();
         if let Some(Command::Decrypt { file, output, .. }) = args.command {
-            assert_eq!(file, "secret.age".to_string());
+            assert_eq!(file, "secret".to_string());
             assert_eq!(output, Some("/path/to/output".to_string()));
         } else {
             panic!("Expected Decrypt command");
@@ -670,7 +658,7 @@ mod tests {
 
     #[test]
     fn test_edit_editor_short_flag() {
-        let args = Args::try_parse_from(["agenix", "edit", "-e", "nano", "test.age"]).unwrap();
+        let args = Args::try_parse_from(["agenix", "edit", "-e", "nano", "test"]).unwrap();
         if let Some(Command::Edit { editor, .. }) = args.command {
             assert_eq!(editor, Some("nano".to_string()));
         } else {
@@ -685,14 +673,14 @@ mod tests {
     fn test_old_edit_flag_rejected() {
         // Old: agenix -e file.age
         // New: agenix edit file.age
-        let result = Args::try_parse_from(["agenix", "-e", "test.age"]);
+        let result = Args::try_parse_from(["agenix", "-e", "test"]);
         assert!(result.is_err(), "Old -e flag should be rejected");
     }
 
     #[test]
     fn test_old_edit_long_flag_rejected() {
         // Old: agenix --edit file.age
-        let result = Args::try_parse_from(["agenix", "--edit", "test.age"]);
+        let result = Args::try_parse_from(["agenix", "--edit", "test"]);
         assert!(result.is_err(), "Old --edit flag should be rejected");
     }
 
@@ -700,14 +688,14 @@ mod tests {
     fn test_old_decrypt_flag_rejected() {
         // Old: agenix -d file.age
         // New: agenix decrypt file.age
-        let result = Args::try_parse_from(["agenix", "-d", "test.age"]);
+        let result = Args::try_parse_from(["agenix", "-d", "test"]);
         assert!(result.is_err(), "Old -d flag should be rejected");
     }
 
     #[test]
     fn test_old_decrypt_long_flag_rejected() {
         // Old: agenix --decrypt file.age
-        let result = Args::try_parse_from(["agenix", "--decrypt", "test.age"]);
+        let result = Args::try_parse_from(["agenix", "--decrypt", "test"]);
         assert!(result.is_err(), "Old --decrypt flag should be rejected");
     }
 
@@ -736,7 +724,7 @@ mod tests {
     #[test]
     fn test_global_identity_flag_at_root_works() {
         // Now: agenix -i key edit file.age (identity at root level works)
-        let result = Args::try_parse_from(["agenix", "-i", "/path/to/key", "edit", "test.age"]);
+        let result = Args::try_parse_from(["agenix", "-i", "/path/to/key", "edit", "test"]);
         assert!(
             result.is_ok(),
             "Global -i flag at root level should be accepted"
@@ -749,7 +737,7 @@ mod tests {
     fn test_old_output_flag_at_root_rejected() {
         // Old: agenix -o output -d file.age (output at root level)
         // New: agenix decrypt -o output file.age (output in subcommand)
-        let result = Args::try_parse_from(["agenix", "-o", "output.txt", "decrypt", "test.age"]);
+        let result = Args::try_parse_from(["agenix", "-o", "output.txt", "decrypt", "test"]);
         assert!(
             result.is_err(),
             "Old -o flag at root level should be rejected"
@@ -761,15 +749,15 @@ mod tests {
     #[test]
     fn test_identity_before_subcommand() {
         let args =
-            Args::try_parse_from(["agenix", "-i", "/path/to/key", "edit", "secret.age"]).unwrap();
+            Args::try_parse_from(["agenix", "-i", "/path/to/key", "edit", "secret"]).unwrap();
         assert_eq!(args.identity, vec!["/path/to/key".to_string()]);
         assert!(matches!(args.command, Some(Command::Edit { .. })));
     }
 
     #[test]
     fn test_identity_after_subcommand() {
-        let args = Args::try_parse_from(["agenix", "decrypt", "-i", "/path/to/key", "secret.age"])
-            .unwrap();
+        let args =
+            Args::try_parse_from(["agenix", "decrypt", "-i", "/path/to/key", "secret"]).unwrap();
         assert_eq!(args.identity, vec!["/path/to/key".to_string()]);
         assert!(matches!(args.command, Some(Command::Decrypt { .. })));
     }
@@ -777,15 +765,7 @@ mod tests {
     #[test]
     fn test_multiple_identities_order_preserved() {
         let args = Args::try_parse_from([
-            "agenix",
-            "-i",
-            "/first",
-            "-i",
-            "/second",
-            "-i",
-            "/third",
-            "decrypt",
-            "secret.age",
+            "agenix", "-i", "/first", "-i", "/second", "-i", "/third", "decrypt", "secret",
         ])
         .unwrap();
         assert_eq!(
@@ -800,9 +780,8 @@ mod tests {
 
     #[test]
     fn test_no_system_identities_flag() {
-        let args =
-            Args::try_parse_from(["agenix", "--no-system-identities", "decrypt", "secret.age"])
-                .unwrap();
+        let args = Args::try_parse_from(["agenix", "--no-system-identities", "decrypt", "secret"])
+            .unwrap();
         assert!(args.no_system_identities);
     }
 
@@ -814,7 +793,7 @@ mod tests {
             "/key1",
             "--no-system-identities",
             "decrypt",
-            "secret.age",
+            "secret",
         ])
         .unwrap();
         assert_eq!(args.identity, vec!["/key1".to_string()]);
@@ -825,12 +804,9 @@ mod tests {
 
     #[test]
     fn test_rekey_with_positional_secrets() {
-        let args = Args::try_parse_from(["agenix", "rekey", "secret1.age", "secret2.age"]).unwrap();
+        let args = Args::try_parse_from(["agenix", "rekey", "secret1", "secret2"]).unwrap();
         if let Some(Command::Rekey { secrets, .. }) = args.command {
-            assert_eq!(
-                secrets,
-                vec!["secret1.age".to_string(), "secret2.age".to_string()]
-            );
+            assert_eq!(secrets, vec!["secret1".to_string(), "secret2".to_string()]);
         } else {
             panic!("Expected Rekey command");
         }
@@ -860,13 +836,9 @@ mod tests {
 
     #[test]
     fn test_generate_with_positional_secrets() {
-        let args =
-            Args::try_parse_from(["agenix", "generate", "secret1.age", "secret2.age"]).unwrap();
+        let args = Args::try_parse_from(["agenix", "generate", "secret1", "secret2"]).unwrap();
         if let Some(Command::Generate { secrets, .. }) = args.command {
-            assert_eq!(
-                secrets,
-                vec!["secret1.age".to_string(), "secret2.age".to_string()]
-            );
+            assert_eq!(secrets, vec!["secret1".to_string(), "secret2".to_string()]);
         } else {
             panic!("Expected Generate command");
         }
@@ -894,8 +866,8 @@ mod tests {
 
     #[test]
     fn test_generate_no_dependencies_flag() {
-        let args = Args::try_parse_from(["agenix", "generate", "--no-dependencies", "secret.age"])
-            .unwrap();
+        let args =
+            Args::try_parse_from(["agenix", "generate", "--no-dependencies", "secret"]).unwrap();
         if let Some(Command::Generate {
             no_dependencies,
             secrets,
@@ -903,7 +875,7 @@ mod tests {
         }) = args.command
         {
             assert!(no_dependencies);
-            assert_eq!(secrets, vec!["secret.age".to_string()]);
+            assert_eq!(secrets, vec!["secret".to_string()]);
         } else {
             panic!("Expected Generate command");
         }
@@ -916,17 +888,14 @@ mod tests {
             "--dry-run",
             "generate",
             "--force",
-            "secret1.age",
-            "secret2.age",
+            "secret1",
+            "secret2",
         ])
         .unwrap();
         if let Some(Command::Generate { force, secrets, .. }) = args.command {
             assert!(force);
             assert!(args.dry_run);
-            assert_eq!(
-                secrets,
-                vec!["secret1.age".to_string(), "secret2.age".to_string()]
-            );
+            assert_eq!(secrets, vec!["secret1".to_string(), "secret2".to_string()]);
         } else {
             panic!("Expected Generate command");
         }
@@ -992,17 +961,13 @@ mod tests {
     #[test]
     fn test_rekey_partial_with_secrets() {
         let args =
-            Args::try_parse_from(["agenix", "rekey", "--partial", "secret1.age", "secret2.age"])
-                .unwrap();
+            Args::try_parse_from(["agenix", "rekey", "--partial", "secret1", "secret2"]).unwrap();
         if let Some(Command::Rekey {
             partial, secrets, ..
         }) = args.command
         {
             assert!(partial);
-            assert_eq!(
-                secrets,
-                vec!["secret1.age".to_string(), "secret2.age".to_string()]
-            );
+            assert_eq!(secrets, vec!["secret1".to_string(), "secret2".to_string()]);
         } else {
             panic!("Expected Rekey command");
         }
@@ -1044,7 +1009,7 @@ mod tests {
 
     #[test]
     fn test_encrypt_dry_run_flag() {
-        let args = Args::try_parse_from(["agenix", "--dry-run", "encrypt", "test.age"]).unwrap();
+        let args = Args::try_parse_from(["agenix", "--dry-run", "encrypt", "test"]).unwrap();
         if let Some(Command::Encrypt { .. }) = args.command {
             assert!(args.dry_run);
         } else {
@@ -1054,7 +1019,7 @@ mod tests {
 
     #[test]
     fn test_encrypt_dry_run_short_flag() {
-        let args = Args::try_parse_from(["agenix", "-n", "encrypt", "test.age"]).unwrap();
+        let args = Args::try_parse_from(["agenix", "-n", "encrypt", "test"]).unwrap();
         if let Some(Command::Encrypt { .. }) = args.command {
             assert!(args.dry_run);
         } else {
@@ -1106,13 +1071,10 @@ mod tests {
 
     #[test]
     fn test_list_with_secrets() {
-        let args = Args::try_parse_from(["agenix", "list", "secret1.age", "secret2.age"]).unwrap();
+        let args = Args::try_parse_from(["agenix", "list", "secret1", "secret2"]).unwrap();
         if let Some(Command::List { status, secrets }) = args.command {
             assert!(!status);
-            assert_eq!(
-                secrets,
-                vec!["secret1.age".to_string(), "secret2.age".to_string()]
-            );
+            assert_eq!(secrets, vec!["secret1".to_string(), "secret2".to_string()]);
         } else {
             panic!("Expected List command");
         }
@@ -1121,14 +1083,10 @@ mod tests {
     #[test]
     fn test_list_with_status_and_secrets() {
         let args =
-            Args::try_parse_from(["agenix", "list", "--status", "secret1.age", "secret2.age"])
-                .unwrap();
+            Args::try_parse_from(["agenix", "list", "--status", "secret1", "secret2"]).unwrap();
         if let Some(Command::List { status, secrets }) = args.command {
             assert!(status);
-            assert_eq!(
-                secrets,
-                vec!["secret1.age".to_string(), "secret2.age".to_string()]
-            );
+            assert_eq!(secrets, vec!["secret1".to_string(), "secret2".to_string()]);
         } else {
             panic!("Expected List command");
         }
@@ -1187,7 +1145,7 @@ mod tests {
             "--no-system-identities",
             "list",
             "--status",
-            "secret1.age",
+            "secret1",
         ])
         .unwrap();
         assert!(args.verbose);
@@ -1196,7 +1154,7 @@ mod tests {
         assert!(args.no_system_identities);
         if let Some(Command::List { status, secrets }) = args.command {
             assert!(status);
-            assert_eq!(secrets, vec!["secret1.age".to_string()]);
+            assert_eq!(secrets, vec!["secret1".to_string()]);
         } else {
             panic!("Expected List command");
         }
@@ -1223,9 +1181,9 @@ mod tests {
 
     #[test]
     fn test_check_single_secret() {
-        let args = Args::try_parse_from(["agenix", "check", "secret1.age"]).unwrap();
+        let args = Args::try_parse_from(["agenix", "check", "secret1"]).unwrap();
         if let Some(Command::Check { secrets }) = args.command {
-            assert_eq!(secrets, vec!["secret1.age".to_string()]);
+            assert_eq!(secrets, vec!["secret1".to_string()]);
         } else {
             panic!("Expected Check command");
         }
@@ -1233,21 +1191,15 @@ mod tests {
 
     #[test]
     fn test_check_multiple_secrets() {
-        let args = Args::try_parse_from([
-            "agenix",
-            "check",
-            "secret1.age",
-            "secret2.age",
-            "secret3.age",
-        ])
-        .unwrap();
+        let args =
+            Args::try_parse_from(["agenix", "check", "secret1", "secret2", "secret3"]).unwrap();
         if let Some(Command::Check { secrets }) = args.command {
             assert_eq!(
                 secrets,
                 vec![
-                    "secret1.age".to_string(),
-                    "secret2.age".to_string(),
-                    "secret3.age".to_string()
+                    "secret1".to_string(),
+                    "secret2".to_string(),
+                    "secret3".to_string()
                 ]
             );
         } else {
@@ -1267,10 +1219,10 @@ mod tests {
     #[test]
     fn test_check_with_identity_flag() {
         let args =
-            Args::try_parse_from(["agenix", "-i", "/path/to/key", "check", "secret.age"]).unwrap();
+            Args::try_parse_from(["agenix", "-i", "/path/to/key", "check", "secret"]).unwrap();
         assert_eq!(args.identity, vec!["/path/to/key".to_string()]);
         if let Some(Command::Check { secrets }) = args.command {
-            assert_eq!(secrets, vec!["secret.age".to_string()]);
+            assert_eq!(secrets, vec!["secret".to_string()]);
         } else {
             panic!("Expected Check command");
         }
@@ -1278,16 +1230,9 @@ mod tests {
 
     #[test]
     fn test_check_with_multiple_identities() {
-        let args = Args::try_parse_from([
-            "agenix",
-            "-i",
-            "/key1",
-            "-i",
-            "/key2",
-            "check",
-            "secret.age",
-        ])
-        .unwrap();
+        let args =
+            Args::try_parse_from(["agenix", "-i", "/key1", "-i", "/key2", "check", "secret"])
+                .unwrap();
         assert_eq!(
             args.identity,
             vec!["/key1".to_string(), "/key2".to_string()]
@@ -1310,10 +1255,10 @@ mod tests {
 
     #[test]
     fn test_check_verbose_after_subcommand() {
-        let args = Args::try_parse_from(["agenix", "check", "-v", "secret.age"]).unwrap();
+        let args = Args::try_parse_from(["agenix", "check", "-v", "secret"]).unwrap();
         assert!(args.verbose);
         if let Some(Command::Check { secrets }) = args.command {
-            assert_eq!(secrets, vec!["secret.age".to_string()]);
+            assert_eq!(secrets, vec!["secret".to_string()]);
         } else {
             panic!("Expected Check command");
         }
@@ -1330,8 +1275,8 @@ mod tests {
             "/key",
             "--no-system-identities",
             "check",
-            "secret1.age",
-            "secret2.age",
+            "secret1",
+            "secret2",
         ])
         .unwrap();
         assert!(args.verbose);
@@ -1339,10 +1284,7 @@ mod tests {
         assert_eq!(args.identity, vec!["/key".to_string()]);
         assert!(args.no_system_identities);
         if let Some(Command::Check { secrets }) = args.command {
-            assert_eq!(
-                secrets,
-                vec!["secret1.age".to_string(), "secret2.age".to_string()]
-            );
+            assert_eq!(secrets, vec!["secret1".to_string(), "secret2".to_string()]);
         } else {
             panic!("Expected Check command");
         }
@@ -1485,10 +1427,10 @@ mod tests {
 
     #[test]
     fn test_quiet_with_decrypt() {
-        let args = Args::try_parse_from(["agenix", "-q", "decrypt", "secret.age"]).unwrap();
+        let args = Args::try_parse_from(["agenix", "-q", "decrypt", "secret"]).unwrap();
         assert!(args.quiet);
         if let Some(Command::Decrypt { file, .. }) = args.command {
-            assert_eq!(file, "secret.age");
+            assert_eq!(file, "secret");
         } else {
             panic!("Expected Decrypt command");
         }
@@ -1542,7 +1484,7 @@ mod tests {
     #[test]
     fn test_edit_no_editor_when_env_not_set() {
         with_env_var("EDITOR", None, || {
-            let args = Args::try_parse_from(["agenix", "edit", "test.age"]).unwrap();
+            let args = Args::try_parse_from(["agenix", "edit", "test"]).unwrap();
             if let Some(Command::Edit { editor, .. }) = args.command {
                 assert_eq!(editor, None);
             } else {
@@ -1554,7 +1496,7 @@ mod tests {
     #[test]
     fn test_edit_explicit_editor_overrides_none() {
         with_env_var("EDITOR", None, || {
-            let args = Args::try_parse_from(["agenix", "edit", "-e", "emacs", "test.age"]).unwrap();
+            let args = Args::try_parse_from(["agenix", "edit", "-e", "emacs", "test"]).unwrap();
             if let Some(Command::Edit { editor, .. }) = args.command {
                 assert_eq!(editor, Some("emacs".to_string()));
             } else {
@@ -1566,7 +1508,7 @@ mod tests {
     #[test]
     fn test_edit_env_editor_is_used() {
         with_env_var("EDITOR", Some("helix"), || {
-            let args = Args::try_parse_from(["agenix", "edit", "test.age"]).unwrap();
+            let args = Args::try_parse_from(["agenix", "edit", "test"]).unwrap();
             if let Some(Command::Edit { editor, .. }) = args.command {
                 assert_eq!(editor, Some("helix".to_string()));
             } else {
@@ -1581,9 +1523,9 @@ mod tests {
 
     #[test]
     fn test_edit_public_flag() {
-        let args = Args::try_parse_from(["agenix", "edit", "--public", "test.age"]).unwrap();
+        let args = Args::try_parse_from(["agenix", "edit", "--public", "test"]).unwrap();
         if let Some(Command::Edit { file, public, .. }) = args.command {
-            assert_eq!(file, "test.age");
+            assert_eq!(file, "test");
             assert!(public);
         } else {
             panic!("Expected Edit command");
@@ -1592,9 +1534,9 @@ mod tests {
 
     #[test]
     fn test_edit_public_short_flag() {
-        let args = Args::try_parse_from(["agenix", "edit", "-p", "test.age"]).unwrap();
+        let args = Args::try_parse_from(["agenix", "edit", "-p", "test"]).unwrap();
         if let Some(Command::Edit { file, public, .. }) = args.command {
-            assert_eq!(file, "test.age");
+            assert_eq!(file, "test");
             assert!(public);
         } else {
             panic!("Expected Edit command");
@@ -1603,7 +1545,7 @@ mod tests {
 
     #[test]
     fn test_edit_public_with_force() {
-        let args = Args::try_parse_from(["agenix", "edit", "-p", "-f", "test.age"]).unwrap();
+        let args = Args::try_parse_from(["agenix", "edit", "-p", "-f", "test"]).unwrap();
         if let Some(Command::Edit {
             file,
             public,
@@ -1611,7 +1553,7 @@ mod tests {
             ..
         }) = args.command
         {
-            assert_eq!(file, "test.age");
+            assert_eq!(file, "test");
             assert!(public);
             assert!(force);
         } else {
@@ -1621,9 +1563,9 @@ mod tests {
 
     #[test]
     fn test_encrypt_public_flag() {
-        let args = Args::try_parse_from(["agenix", "encrypt", "--public", "test.age"]).unwrap();
+        let args = Args::try_parse_from(["agenix", "encrypt", "--public", "test"]).unwrap();
         if let Some(Command::Encrypt { file, public, .. }) = args.command {
-            assert_eq!(file, "test.age");
+            assert_eq!(file, "test");
             assert!(public);
         } else {
             panic!("Expected Encrypt command");
@@ -1632,9 +1574,9 @@ mod tests {
 
     #[test]
     fn test_encrypt_public_short_flag() {
-        let args = Args::try_parse_from(["agenix", "encrypt", "-p", "test.age"]).unwrap();
+        let args = Args::try_parse_from(["agenix", "encrypt", "-p", "test"]).unwrap();
         if let Some(Command::Encrypt { file, public, .. }) = args.command {
-            assert_eq!(file, "test.age");
+            assert_eq!(file, "test");
             assert!(public);
         } else {
             panic!("Expected Encrypt command");
@@ -1643,7 +1585,7 @@ mod tests {
 
     #[test]
     fn test_encrypt_public_with_force() {
-        let args = Args::try_parse_from(["agenix", "encrypt", "-p", "-f", "test.age"]).unwrap();
+        let args = Args::try_parse_from(["agenix", "encrypt", "-p", "-f", "test"]).unwrap();
         if let Some(Command::Encrypt {
             file,
             public,
@@ -1651,7 +1593,7 @@ mod tests {
             ..
         }) = args.command
         {
-            assert_eq!(file, "test.age");
+            assert_eq!(file, "test");
             assert!(public);
             assert!(force);
         } else {
@@ -1667,7 +1609,7 @@ mod tests {
             "-p",
             "--input",
             "/path/to/input",
-            "test.age",
+            "test",
         ])
         .unwrap();
         if let Some(Command::Encrypt {
@@ -1677,7 +1619,7 @@ mod tests {
             ..
         }) = args.command
         {
-            assert_eq!(file, "test.age");
+            assert_eq!(file, "test");
             assert!(public);
             assert_eq!(input, Some("/path/to/input".to_string()));
         } else {
@@ -1687,9 +1629,9 @@ mod tests {
 
     #[test]
     fn test_decrypt_public_flag() {
-        let args = Args::try_parse_from(["agenix", "decrypt", "--public", "test.age"]).unwrap();
+        let args = Args::try_parse_from(["agenix", "decrypt", "--public", "test"]).unwrap();
         if let Some(Command::Decrypt { file, public, .. }) = args.command {
-            assert_eq!(file, "test.age");
+            assert_eq!(file, "test");
             assert!(public);
         } else {
             panic!("Expected Decrypt command");
@@ -1698,9 +1640,9 @@ mod tests {
 
     #[test]
     fn test_decrypt_public_short_flag() {
-        let args = Args::try_parse_from(["agenix", "decrypt", "-p", "test.age"]).unwrap();
+        let args = Args::try_parse_from(["agenix", "decrypt", "-p", "test"]).unwrap();
         if let Some(Command::Decrypt { file, public, .. }) = args.command {
-            assert_eq!(file, "test.age");
+            assert_eq!(file, "test");
             assert!(public);
         } else {
             panic!("Expected Decrypt command");
@@ -1709,22 +1651,16 @@ mod tests {
 
     #[test]
     fn test_decrypt_public_with_output() {
-        let args = Args::try_parse_from([
-            "agenix",
-            "decrypt",
-            "-p",
-            "-o",
-            "/path/to/output",
-            "test.age",
-        ])
-        .unwrap();
+        let args =
+            Args::try_parse_from(["agenix", "decrypt", "-p", "-o", "/path/to/output", "test"])
+                .unwrap();
         if let Some(Command::Decrypt {
             file,
             public,
             output,
         }) = args.command
         {
-            assert_eq!(file, "test.age");
+            assert_eq!(file, "test");
             assert!(public);
             assert_eq!(output, Some("/path/to/output".to_string()));
         } else {
@@ -1734,7 +1670,7 @@ mod tests {
 
     #[test]
     fn test_edit_default_not_public() {
-        let args = Args::try_parse_from(["agenix", "edit", "test.age"]).unwrap();
+        let args = Args::try_parse_from(["agenix", "edit", "test"]).unwrap();
         if let Some(Command::Edit { public, .. }) = args.command {
             assert!(!public);
         } else {
@@ -1744,7 +1680,7 @@ mod tests {
 
     #[test]
     fn test_encrypt_default_not_public() {
-        let args = Args::try_parse_from(["agenix", "encrypt", "test.age"]).unwrap();
+        let args = Args::try_parse_from(["agenix", "encrypt", "test"]).unwrap();
         if let Some(Command::Encrypt { public, .. }) = args.command {
             assert!(!public);
         } else {
@@ -1754,7 +1690,7 @@ mod tests {
 
     #[test]
     fn test_decrypt_default_not_public() {
-        let args = Args::try_parse_from(["agenix", "decrypt", "test.age"]).unwrap();
+        let args = Args::try_parse_from(["agenix", "decrypt", "test"]).unwrap();
         if let Some(Command::Decrypt { public, .. }) = args.command {
             assert!(!public);
         } else {

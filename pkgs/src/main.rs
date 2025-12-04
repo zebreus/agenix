@@ -14,7 +14,7 @@ mod tests {
         let args = vec![
             "agenix".to_string(),
             "edit".to_string(),
-            "nonexistent.age".to_string(),
+            "nonexistent".to_string(),
             "--secrets-nix".to_string(),
             "./test_secrets.nix".to_string(),
             "--editor".to_string(),
@@ -29,7 +29,7 @@ mod tests {
         let args = vec![
             "agenix".to_string(),
             "decrypt".to_string(),
-            "nonexistent.age".to_string(),
+            "nonexistent".to_string(),
             "--secrets-nix".to_string(),
             "./test_secrets.nix".to_string(),
         ];

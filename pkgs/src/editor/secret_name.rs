@@ -30,22 +30,17 @@ pub struct SecretName {
 impl SecretName {
     /// Create a new SecretName from a string.
     ///
-    /// If the input has .age suffix, it will be stripped to get the secret name.
-    /// This allows the CLI to accept both forms for backwards compatibility.
-    ///
     /// **Note**: This method does NOT validate that the name is not a path.
     /// Use `validate_and_create()` for validation at entry points.
     pub fn new(name: &str) -> Self {
-        // Strip .age suffix if present to get the actual secret name
-        let secret_name = name.strip_suffix(".age").unwrap_or(name).to_string();
-
-        Self { name: secret_name }
+        Self {
+            name: name.to_string(),
+        }
     }
 
     /// Validate a secret name and create a SecretName if valid.
     ///
-    /// The name must be a simple name without path separators (`/` or `\`).
-    /// If the input has .age suffix, it will be stripped to get the secret name.
+    /// The name must be a simple name without path separators (`/` or `\`) or .age suffix.
     ///
     /// # Errors
     ///
@@ -53,6 +48,7 @@ impl SecretName {
     /// - The name contains path separators (`/` or `\`)
     /// - The name is empty
     /// - The name starts with `.`
+    /// - The name ends with `.age`
     ///
     /// # Examples
     ///
@@ -61,24 +57,32 @@ impl SecretName {
     ///
     /// // Valid names
     /// assert!(SecretName::validate_and_create("my_secret").is_ok());
-    /// assert!(SecretName::validate_and_create("my_secret.age").is_ok());
     ///
     /// // Invalid names (paths)
     /// assert!(SecretName::validate_and_create("./my_secret").is_err());
     /// assert!(SecretName::validate_and_create("/path/to/secret").is_err());
     /// assert!(SecretName::validate_and_create("../secret").is_err());
+    /// assert!(SecretName::validate_and_create("my_secret.age").is_err());
     /// ```
     pub fn validate_and_create(name: &str) -> Result<Self> {
-        // Strip .age suffix if present to get the actual secret name
-        let secret_name = name.strip_suffix(".age").unwrap_or(name);
-
         // Validate that the name is not empty
-        if secret_name.is_empty() {
+        if name.is_empty() {
             bail!("Secret name cannot be empty");
         }
 
+        // Validate that the name doesn't end with .age
+        if name.ends_with(".age") {
+            bail!(
+                "Secret name '{}' ends with '.age'. \
+                Secret names in secrets.nix do not include the .age suffix. \
+                Please use '{}' instead.",
+                name,
+                name.strip_suffix(".age").unwrap()
+            );
+        }
+
         // Validate that the name is not a path
-        if secret_name.contains('/') || secret_name.contains('\\') {
+        if name.contains('/') || name.contains('\\') {
             bail!(
                 "Secret name '{}' contains path separators. \
                 Secret names must be simple names, not paths. \
@@ -88,7 +92,7 @@ impl SecretName {
         }
 
         // Validate that the name doesn't start with '.'
-        if secret_name.starts_with('.') {
+        if name.starts_with('.') {
             bail!(
                 "Secret name '{}' starts with '.'. \
                 Secret names must not start with a dot. \
@@ -98,7 +102,7 @@ impl SecretName {
         }
 
         Ok(Self {
-            name: secret_name.to_string(),
+            name: name.to_string(),
         })
     }
 
@@ -189,9 +193,9 @@ mod tests {
     }
 
     #[test]
-    fn test_secret_name_with_age_suffix() {
-        // For backwards compatibility, strip .age if provided
-        let name = SecretName::new("cool_key_ed25519.age");
+    fn test_secret_name_new_does_not_strip_age() {
+        // new() does not strip .age - it's used internally after validation
+        let name = SecretName::new("cool_key_ed25519");
         assert_eq!(name.name(), "cool_key_ed25519");
         assert_eq!(name.secret_file(), "cool_key_ed25519.age");
         assert_eq!(name.public_file(), "cool_key_ed25519.pub");
@@ -200,7 +204,7 @@ mod tests {
     #[test]
     fn test_secret_name_matches() {
         let name1 = SecretName::new("cool_key_ed25519");
-        let name2 = SecretName::new("cool_key_ed25519.age");
+        let name2 = SecretName::new("cool_key_ed25519");
         let name3 = SecretName::new("other_key");
 
         assert!(name1.matches(&name2));
@@ -225,9 +229,12 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_name_with_age_suffix() {
-        let name = SecretName::validate_and_create("my_secret.age").unwrap();
-        assert_eq!(name.name(), "my_secret");
+    fn test_validate_rejects_age_suffix() {
+        let result = SecretName::validate_and_create("my_secret.age");
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("ends with '.age'"));
+        assert!(err.contains("my_secret"));
     }
 
     #[test]
@@ -274,7 +281,8 @@ mod tests {
         let result = SecretName::validate_and_create("./cool_key_ed25519.age");
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("path separators"));
+        // Should fail on .age suffix check first (happens before path check)
+        assert!(err.contains("ends with '.age'"));
     }
 
     #[test]
@@ -289,6 +297,9 @@ mod tests {
     fn test_validate_rejects_absolute_path_with_age() {
         let result = SecretName::validate_and_create("/path/to/secret.age");
         assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        // Should fail on .age suffix check first
+        assert!(err.contains("ends with '.age'"));
     }
 
     #[test]
@@ -384,7 +395,8 @@ mod tests {
         let result = SecretName::validate_and_create(".secret.age");
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("starts with '.'"));
+        // Should fail on .age suffix check first
+        assert!(err.contains("ends with '.age'"));
     }
 
     #[test]
@@ -415,7 +427,9 @@ mod tests {
     fn test_validate_rejects_only_age_suffix() {
         let result = SecretName::validate_and_create(".age");
         assert!(result.is_err());
-        // This should fail because after stripping .age, it's empty
+        let err = result.unwrap_err().to_string();
+        // Should fail on .age suffix check first
+        assert!(err.contains("ends with '.age'"));
     }
 
     // ========================================

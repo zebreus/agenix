@@ -19,7 +19,7 @@ EOF
 
 cd "$TMPDIR"
 # Use TEST_USER_KEY environment variable provided by the test runner
-decrypted=$(agenix decrypt interop-secret.age --secrets-nix "$TMPDIR/interop-secrets.nix" -i "$TEST_USER_KEY" --no-system-identities)
+decrypted=$(agenix decrypt interop-secret --secrets-nix "$TMPDIR/interop-secrets.nix" -i "$TEST_USER_KEY" --no-system-identities)
 if [ "$decrypted" = "age-interop-test" ]; then
   echo "✓ Age CLI -> agenix interop works"
 else

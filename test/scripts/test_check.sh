@@ -115,13 +115,17 @@ else
   exit 1
 fi
 
-# Test 10: Check with .age suffix in argument
-echo "--- Test 10: Check with .age suffix ---"
-check_suffix=$(agenix check secret1.age 2>&1)
-if echo "$check_suffix" | grep -q "secret1"; then
-  echo "✓ Check works with .age suffix"
+# Test 10: Check rejects .age suffix in argument
+echo "--- Test 10: Check rejects .age suffix ---"
+if ! check_suffix=$(agenix check secret1.age 2>&1); then
+  if echo "$check_suffix" | grep -q "ends with '.age'"; then
+    echo "✓ Check correctly rejects .age suffix"
+  else
+    echo "✗ Check failed with unexpected error: $check_suffix"
+    exit 1
+  fi
 else
-  echo "✗ Check with .age suffix failed"
+  echo "✗ Check should have rejected .age suffix"
   exit 1
 fi
 

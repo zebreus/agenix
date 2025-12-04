@@ -12,10 +12,10 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
 fi
 
 # First, reset secret1.age to a known state
-echo "rekey-test-content" | agenix encrypt --force secret1.age
+echo "rekey-test-content" | agenix encrypt --force secret1
 
 # Verify it was set correctly
-before_decrypt=$(agenix decrypt secret1.age)
+before_decrypt=$(agenix decrypt secret1)
 if [ "$before_decrypt" != "rekey-test-content" ]; then
   echo "✗ Failed to set up secret1.age: got '$before_decrypt'"
   exit 1
@@ -42,7 +42,7 @@ else
 fi
 
 # Verify content is preserved after rekey
-after_decrypt=$(agenix decrypt secret1.age)
+after_decrypt=$(agenix decrypt secret1)
 if [ "$after_decrypt" = "rekey-test-content" ]; then
   echo "✓ Content preserved after rekey"
 else
