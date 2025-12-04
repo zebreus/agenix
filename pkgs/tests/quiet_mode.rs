@@ -272,12 +272,13 @@ fn test_generate_normal_produces_output() {
     let path = temp_dir.path().to_str().unwrap();
 
     // Secret that already exists (will show skip message)
-    let secret_path = format!("{}/existing.age", path);
+    let secret_name = format!("{}/existing", path);
+    let secret_path = format!("{}.age", secret_name);
     fs::write(&secret_path, "existing-content").unwrap();
 
     let rules = format!(
         r#"{{ "{}" = {{ publicKeys = [ "{}" ]; generator = {{ }}: "test"; }}; }}"#,
-        secret_path, TEST_PUBKEY
+        secret_name, TEST_PUBKEY
     );
     let temp_rules = create_rules_file(&rules);
 
