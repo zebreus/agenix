@@ -1490,7 +1490,7 @@ mod tests {
         let mut temp_rules = NamedTempFile::new()?;
         writeln!(temp_rules, "{}", rules_content)?;
         temp_rules.flush()?;
-        // Test with .age suffix
+        // Test that .age suffix is rejected
         let args = vec![
             "agenix".to_string(),
             "generate".to_string(),
@@ -1500,17 +1500,14 @@ mod tests {
         ];
         let result = crate::run(args);
         assert!(
-            result.is_ok(),
-            "Generate with .age suffix should succeed: {:?}",
-            result.err()
+            result.is_err(),
+            "Generate with .age suffix should be rejected"
         );
+        let err = result.unwrap_err().to_string();
         assert!(
-            temp_dir.path().join("secret1.age").exists(),
-            "secret1.age should be created"
-        );
-        assert!(
-            !temp_dir.path().join("secret2.age").exists(),
-            "secret2.age should NOT be created"
+            err.contains("ends with '.age'"),
+            "Error should mention .age suffix: {}",
+            err
         );
         Ok(())
     }
