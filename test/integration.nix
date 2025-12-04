@@ -29,7 +29,7 @@ pkgs.testers.nixosTest {
 
       age.secrets = {
         passwordfile-user1 = { };
-        "-leading-hyphen-filename" = { };
+        leading-hyphen = { };
         # Test secret files that correspond to publics defined below
         secret-with-public = { };
         "secret-with-public-custom-path" = {
