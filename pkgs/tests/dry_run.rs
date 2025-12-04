@@ -4,8 +4,10 @@
 //! and edit commands, ensuring they follow the same code paths as normal mode but
 //! without modifying files.
 
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::Write;
+use std::path::Path;
 use std::process::Command;
 use tempfile::{NamedTempFile, tempdir};
 
@@ -658,36 +660,39 @@ fn test_edit_dry_run_short_flag() {
 // COMPREHENSIVE FILE SYSTEM VERIFICATION TESTS
 // ============================================
 
-use std::collections::{HashMap, HashSet};
-use std::path::Path;
-
 /// Capture the state of all files in a directory (recursively).
 /// Returns a map of relative paths to file content (as Vec<u8>).
 fn capture_directory_state(dir: &Path) -> HashMap<String, Vec<u8>> {
     let mut state = HashMap::new();
+    capture_directory_state_recursive(dir, dir, &mut state);
+    state
+}
 
-    if let Ok(entries) = fs::read_dir(dir) {
+/// Helper function to recursively capture directory state.
+fn capture_directory_state_recursive(
+    base_dir: &Path,
+    current_dir: &Path,
+    state: &mut HashMap<String, Vec<u8>>,
+) {
+    if let Ok(entries) = fs::read_dir(current_dir) {
         for entry in entries.flatten() {
             let path = entry.path();
-            let rel_path = path
-                .strip_prefix(dir)
-                .unwrap()
-                .to_string_lossy()
-                .to_string();
 
             if path.is_file() {
                 if let Ok(content) = fs::read(&path) {
+                    let rel_path = path
+                        .strip_prefix(base_dir)
+                        .expect("Path should be within base directory")
+                        .to_string_lossy()
+                        .to_string();
                     state.insert(rel_path, content);
                 }
             } else if path.is_dir() {
                 // Recursively capture subdirectory state
-                let sub_state = capture_directory_state(&path);
-                state.extend(sub_state);
+                capture_directory_state_recursive(base_dir, &path, state);
             }
         }
     }
-
-    state
 }
 
 /// Verify that two directory states are identical.
