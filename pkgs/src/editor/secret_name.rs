@@ -65,12 +65,22 @@ impl SecretName {
     /// assert!(SecretName::validate_and_create("my_secret.age").is_err());
     /// ```
     pub fn validate_and_create(name: &str) -> Result<Self> {
-        // Validate that the name is not empty
+        Self::validate_name(name)?;
+        Ok(Self {
+            name: name.to_string(),
+        })
+    }
+
+    /// Validate a secret name without creating the instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the name is invalid.
+    fn validate_name(name: &str) -> Result<()> {
         if name.is_empty() {
             bail!("Secret name cannot be empty");
         }
 
-        // Validate that the name doesn't end with .age
         if name.ends_with(".age") {
             bail!(
                 "Secret name '{}' ends with '.age'. \
@@ -81,7 +91,6 @@ impl SecretName {
             );
         }
 
-        // Validate that the name is not a path
         if name.contains('/') || name.contains('\\') {
             bail!(
                 "Secret name '{}' contains path separators. \
@@ -91,7 +100,6 @@ impl SecretName {
             );
         }
 
-        // Validate that the name doesn't start with '.'
         if name.starts_with('.') {
             bail!(
                 "Secret name '{}' starts with '.'. \
@@ -101,9 +109,7 @@ impl SecretName {
             );
         }
 
-        Ok(Self {
-            name: name.to_string(),
-        })
+        Ok(())
     }
 
     /// Get the secret name (without .age suffix).
@@ -130,25 +136,16 @@ impl SecretName {
     /// Note: User input is validated to NOT be paths via `validate_and_create()`,
     /// but Nix evaluation may still return paths in some contexts.
     pub fn matches(&self, other: &SecretName) -> bool {
+        // Direct match
         if self.name == other.name {
             return true;
         }
 
-        // Support matching by basename for internal filtering
-        // (Nix evaluation may return paths in some contexts)
-        if let Some(basename) = self.name.rsplit('/').next()
-            && basename == other.name
-        {
-            return true;
-        }
+        // Try basename matching (for internal use with Nix-evaluated paths)
+        let self_basename = self.name.rsplit('/').next().unwrap_or(&self.name);
+        let other_basename = other.name.rsplit('/').next().unwrap_or(&other.name);
 
-        if let Some(basename) = other.name.rsplit('/').next()
-            && self.name == basename
-        {
-            return true;
-        }
-
-        false
+        self_basename == other.name || other_basename == self.name
     }
 }
 

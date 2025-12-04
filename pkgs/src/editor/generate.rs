@@ -2631,10 +2631,7 @@ mod tests {
 
         // .pub file should NOT be created (no public output)
         let pub_path = temp_dir.path().join("secret-only.pub");
-        assert!(
-            !pub_path.exists(),
-            "secret-only.pub should NOT be created"
-        );
+        assert!(!pub_path.exists(), "secret-only.pub should NOT be created");
 
         Ok(())
     }

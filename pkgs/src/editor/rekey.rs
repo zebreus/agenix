@@ -557,11 +557,13 @@ publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" 
 
         assert!(
             err_msg.contains("existing_invalid1") || err_msg.contains("existing_invalid1.age"),
-            "Error should mention existing_invalid1: {}", err_msg
+            "Error should mention existing_invalid1: {}",
+            err_msg
         );
         assert!(
             err_msg.contains("existing_invalid2") || err_msg.contains("existing_invalid2.age"),
-            "Error should mention existing_invalid2: {}", err_msg
+            "Error should mention existing_invalid2: {}",
+            err_msg
         );
         assert!(
             !err_msg.contains("nonexistent1.age"),
@@ -662,15 +664,18 @@ publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" 
 
         assert!(
             err_msg.contains("secret1") || err_msg.contains("secret1.age"),
-            "Error should mention secret1: {}", err_msg
+            "Error should mention secret1: {}",
+            err_msg
         );
         assert!(
             err_msg.contains("secret2") || err_msg.contains("secret2.age"),
-            "Error should mention secret2: {}", err_msg
+            "Error should mention secret2: {}",
+            err_msg
         );
         assert!(
             err_msg.contains("secret3") || err_msg.contains("secret3.age"),
-            "Error should mention secret3: {}", err_msg
+            "Error should mention secret3: {}",
+            err_msg
         );
     }
 
@@ -720,11 +725,13 @@ publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" 
 
         assert!(
             err_msg.contains("secret1") || err_msg.contains("secret1.age"),
-            "Should mention secret1: {}", err_msg
+            "Should mention secret1: {}",
+            err_msg
         );
         assert!(
             err_msg.contains("secret2") || err_msg.contains("secret2.age"),
-            "Should mention secret2: {}", err_msg
+            "Should mention secret2: {}",
+            err_msg
         );
         assert!(
             !err_msg.contains("secret3") || !err_msg.contains("secret3.age"),
@@ -785,11 +792,13 @@ publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" 
 
         assert!(
             err_implicit.contains("secret1") || err_implicit.contains("secret1.age"),
-            "Implicit all should mention secret1: {}", err_implicit
+            "Implicit all should mention secret1: {}",
+            err_implicit
         );
         assert!(
             err_implicit.contains("secret2") || err_implicit.contains("secret2.age"),
-            "Implicit all should mention secret2: {}", err_implicit
+            "Implicit all should mention secret2: {}",
+            err_implicit
         );
         assert!(
             err_explicit.contains("secret1") || err_explicit.contains("secret1.age"),
@@ -797,7 +806,8 @@ publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" 
         );
         assert!(
             err_explicit.contains("secret2") || err_explicit.contains("secret2.age"),
-            "Explicit all should mention secret2: {}", err_explicit
+            "Explicit all should mention secret2: {}",
+            err_explicit
         );
         assert!(
             err_implicit.contains("2"),

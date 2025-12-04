@@ -625,10 +625,8 @@ mod tests {
     #[test]
     fn test_check_without_age_suffix_in_filter() {
         let temp_dir = tempdir().unwrap();
-        let rules = single_secret_rules(
-            &format!("{}/secret", temp_dir.path().to_str().unwrap()),
-            "",
-        );
+        let rules =
+            single_secret_rules(&format!("{}/secret", temp_dir.path().to_str().unwrap()), "");
         let temp_rules = create_rules_file(&rules);
 
         let result = check_secrets(
@@ -809,8 +807,7 @@ mod tests {
     #[test]
     fn test_get_secret_status_missing_file() {
         // Create a minimal rules file
-        let temp_rules =
-            create_rules_file(r#"{ "nonexistent" = { publicKeys = ["age1..."]; }; }"#);
+        let temp_rules = create_rules_file(r#"{ "nonexistent" = { publicKeys = ["age1..."]; }; }"#);
         let status = get_secret_status(
             temp_rules.path().to_str().unwrap(),
             "/nonexistent/file.age",
@@ -840,6 +837,10 @@ mod tests {
             &[],
             false,
         );
-        assert!(matches!(status, SecretStatus::CannotDecrypt(_)), "Got status: {:?}", status);
+        assert!(
+            matches!(status, SecretStatus::CannotDecrypt(_)),
+            "Got status: {:?}",
+            status
+        );
     }
 }
