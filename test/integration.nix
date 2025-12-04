@@ -27,48 +27,57 @@ pkgs.testers.nixosTest {
       age.secrets = {
         passwordfile-user1.file = ./example/passwordfile-user1.age;
         leading-hyphen.file = ./example/-leading-hyphen-filename.age;
-        # Test secret with public file using public.installPath
-        secret-with-public = {
-          file = ./example/secret-with-public.age;
-          public.file = ./example/secret-with-public.pub;
-          public.installPath = "/run/agenix-public/secret-with-public.pub";
-        };
-        # Test secret with public file at custom path with permissions
-        secret-with-public-custom-path = {
-          file = ./example/secret-with-public.age;
-          public.file = ./example/secret-with-public.pub;
-          public.installPath = "/etc/my-public-key.pub";
-          public.mode = "0644";
-          public.owner = "root";
-          public.group = "root";
-        };
-        # Test secret with public file without symlink (copy mode)
-        secret-with-public-copy = {
-          file = ./example/secret-with-public.age;
-          public.file = ./example/secret-with-public.pub;
-          public.installPath = "/etc/my-public-key-copy.pub";
-          public.symlink = false;
-          public.mode = "0600";
-        };
-        # Real-world scenario: SSH host key with public key
+        # Test secret files that correspond to publics defined below
+        secret-with-public.file = ./example/secret-with-public.age;
+        secret-with-public-custom-path.file = ./example/secret-with-public.age;
+        secret-with-public-copy.file = ./example/secret-with-public.age;
         ssh-host-key = {
           file = ./example/secret-with-public.age;
           path = "/etc/ssh/ssh_host_ed25519_key_test";
           mode = "0600";
-          public.file = ./example/secret-with-public.pub;
-          public.installPath = "/etc/ssh/ssh_host_ed25519_key_test.pub";
-          public.mode = "0644";
         };
-        # Real-world scenario: Deploy key with public part for authorized_keys
         deploy-key = {
           file = ./example/secret-with-public.age;
           path = "/var/lib/deploy/.ssh/id_ed25519";
           mode = "0400";
           owner = "root";
-          public.file = ./example/secret-with-public.pub;
-          public.installPath = "/var/lib/deploy/.ssh/id_ed25519.pub";
-          public.mode = "0444";
-          public.owner = "root";
+        };
+      };
+
+      # NEW: Public files configuration at top-level
+      age.publics = {
+        # Test public file using installPath
+        secret-with-public = {
+          file = ./example/secret-with-public.pub;
+          installPath = "/run/agenix-public/secret-with-public.pub";
+        };
+        # Test public file at custom path with permissions
+        secret-with-public-custom-path = {
+          file = ./example/secret-with-public.pub;
+          installPath = "/etc/my-public-key.pub";
+          mode = "0644";
+          owner = "root";
+          group = "root";
+        };
+        # Test public file without symlink (copy mode)
+        secret-with-public-copy = {
+          file = ./example/secret-with-public.pub;
+          installPath = "/etc/my-public-key-copy.pub";
+          symlink = false;
+          mode = "0600";
+        };
+        # Real-world scenario: SSH host key with public key
+        ssh-host-key = {
+          file = ./example/secret-with-public.pub;
+          installPath = "/etc/ssh/ssh_host_ed25519_key_test.pub";
+          mode = "0644";
+        };
+        # Real-world scenario: Deploy key with public part for authorized_keys
+        deploy-key = {
+          file = ./example/secret-with-public.pub;
+          installPath = "/var/lib/deploy/.ssh/id_ed25519.pub";
+          mode = "0444";
+          owner = "root";
         };
       };
 
@@ -108,27 +117,34 @@ pkgs.testers.nixosTest {
             secrets.armored-secret = {
               file = ./example/armored-secret.age;
             };
-            # Test home-manager public file symlinking using public.installPath
-            secrets.hm-secret-with-public = {
-              file = ./example/secret-with-public.age;
-              public.file = ./example/secret-with-public.pub;
-              public.installPath = "${config.age.publicKeysDir}/hm-secret-with-public.pub";
-            };
-            # Test home-manager public file at custom path
-            secrets.hm-secret-with-public-custom = {
-              file = ./example/secret-with-public.age;
-              public.file = ./example/secret-with-public.pub;
-              public.installPath = "/home/user1/.config/my-public-key.pub";
-              public.mode = "0644";
-            };
-            # Real-world scenario: User SSH key with public part
+            # Test secret files that correspond to publics defined below
+            secrets.hm-secret-with-public.file = ./example/secret-with-public.age;
+            secrets.hm-secret-with-public-custom.file = ./example/secret-with-public.age;
             secrets.hm-user-ssh-key = {
               file = ./example/secret-with-public.age;
               path = "/home/user1/.ssh/id_ed25519_test";
               mode = "0600";
-              public.file = ./example/secret-with-public.pub;
-              public.installPath = "/home/user1/.ssh/id_ed25519_test.pub";
-              public.mode = "0644";
+            };
+
+            # NEW: Home-manager publics at top-level
+            publics = {
+              # Test home-manager public file symlinking using installPath
+              hm-secret-with-public = {
+                file = ./example/secret-with-public.pub;
+                installPath = "${config.age.publicKeysDir}/hm-secret-with-public.pub";
+              };
+              # Test home-manager public file at custom path
+              hm-secret-with-public-custom = {
+                file = ./example/secret-with-public.pub;
+                installPath = "/home/user1/.config/my-public-key.pub";
+                mode = "0644";
+              };
+              # Real-world scenario: User SSH key with public part
+              hm-user-ssh-key = {
+                file = ./example/secret-with-public.pub;
+                installPath = "/home/user1/.ssh/id_ed25519_test.pub";
+                mode = "0644";
+              };
             };
           };
         };
