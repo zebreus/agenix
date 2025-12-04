@@ -6,10 +6,15 @@ source "$(dirname "$0")/common_setup.sh"
 echo "=== Test: Encrypt command basic functionality ==="
 
 # Test 1: Create a new secret with encrypt
-NEW_SECRET="$TMPDIR/new-secret.age"
+NEW_SECRET="new-secret"
+
+# Move to a temp directory where the secret file will be created
+ENCRYPT_TEST_DIR="$TMPDIR/encrypt-test"
+mkdir -p "$ENCRYPT_TEST_DIR"
+cd "$ENCRYPT_TEST_DIR"
 
 # Create a temporary rules file that includes our new secret using the test user's key
-TEMP_RULES="$TMPDIR/temp-secrets.nix"
+TEMP_RULES="$ENCRYPT_TEST_DIR/temp-secrets.nix"
 cat > "$TEMP_RULES" << EOF
 {
   "$NEW_SECRET" = {
@@ -20,7 +25,7 @@ EOF
 
 echo "new-secret-content" | agenix encrypt --secrets-nix "$TEMP_RULES" "$NEW_SECRET"
 
-if [ ! -f "$NEW_SECRET" ]; then
+if [ ! -f "${NEW_SECRET}.age" ]; then
   echo "✗ Encrypt failed: file not created"
   exit 1
 fi
@@ -53,3 +58,5 @@ else
 fi
 
 echo "All encrypt tests passed!"
+
+cd "$HOME/secrets"
