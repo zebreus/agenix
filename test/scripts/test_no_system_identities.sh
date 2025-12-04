@@ -9,7 +9,7 @@ echo "=== Test: --no-system-identities flag ==="
 reset_secret1
 
 # With --no-system-identities and no explicit identity, decryption should fail
-if agenix decrypt secret1.age --no-system-identities 2>/dev/null; then
+if agenix decrypt secret1 --no-system-identities 2>/dev/null; then
   echo "✗ Decrypt without any identity should have failed"
   exit 1
 else
@@ -17,7 +17,7 @@ else
 fi
 
 # With --no-system-identities and explicit identity, decryption should succeed
-decrypted=$(agenix decrypt secret1.age -i "$HOME/.ssh/id_ed25519" --no-system-identities)
+decrypted=$(agenix decrypt secret1 -i "$HOME/.ssh/id_ed25519" --no-system-identities)
 if [ "$decrypted" = "hello" ]; then
   echo "✓ Decrypt with explicit identity and --no-system-identities works"
 else

@@ -4,8 +4,8 @@
 source "$(dirname "$0")/common_setup.sh"
 
 echo "=== Test 5: Encrypt via stdin (non-interactive) ==="
-echo "test-content-12345" | agenix encrypt --force secret1.age
-decrypted=$(agenix decrypt secret1.age)
+echo "test-content-12345" | agenix encrypt --force secret1
+decrypted=$(agenix decrypt secret1)
 if [ "$decrypted" = "test-content-12345" ]; then
   echo "✓ Encrypt via stdin works"
 else

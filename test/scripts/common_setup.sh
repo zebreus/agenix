@@ -15,5 +15,5 @@ enable_pipefail() {
 
 # Reset secret1.age to known content (useful since tests may modify it)
 reset_secret1() {
-  echo "hello" | agenix encrypt --force secret1.age
+  echo "hello" | agenix encrypt --force secret1
 }

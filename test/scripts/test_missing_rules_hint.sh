@@ -45,7 +45,7 @@ fi
 
 # Test 2: Hint works with other commands too
 echo "--- Test 2: Hint works with encrypt command ---"
-ERROR_OUTPUT=$(echo "test" | agenix encrypt test.age 2>&1) || true
+ERROR_OUTPUT=$(echo "test" | agenix encrypt test 2>&1) || true
 
 if echo "$ERROR_OUTPUT" | grep -q "secrets.nix not found"; then
   echo "✓ Encrypt command shows secrets.nix hint"
