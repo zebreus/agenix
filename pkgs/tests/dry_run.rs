@@ -808,6 +808,8 @@ fn test_rekey_dry_run_no_filesystem_changes() {
     let state_before = capture_directory_state(secrets_nix_dir);
 
     // Run rekey with --dry-run (use --partial to continue even if decryption fails)
+    // We don't check the exit status because we want to verify no filesystem changes
+    // occur regardless of whether the command succeeds or fails
     let _output = Command::new(agenix_bin())
         .args([
             "rekey",
