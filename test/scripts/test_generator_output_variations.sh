@@ -15,31 +15,31 @@ cd "$TMPDIR/generator-variations"
 cat > "generator-variations.nix" << 'EOF'
 {
   # Public-only generator - should create .pub file but no .age file
-  "public-only.age" = {
+  "public-only" = {
     publicKeys = [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH" ];
     generator = {}: { public = "my-public-metadata"; };
   };
   
   # Secret-only attrset generator - should create .age file but no .pub file
-  "secret-only-attrset.age" = {
+  "secret-only-attrset" = {
     publicKeys = [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH" ];
     generator = {}: { secret = "my-secret-only"; };
   };
   
   # String generator - should create .age file but no .pub file
-  "string-generator.age" = {
+  "string-generator" = {
     publicKeys = [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH" ];
     generator = {}: "plain-string-secret";
   };
   
   # Both secret and public - should create both .age and .pub files
-  "both-outputs.age" = {
+  "both-outputs" = {
     publicKeys = [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH" ];
     generator = {}: { secret = "my-secret"; public = "my-public"; };
   };
   
   # Dependency that uses public from public-only generator
-  "uses-public-only.age" = {
+  "uses-public-only" = {
     publicKeys = [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH" ];
     dependencies = [ "public-only" ];
     generator = { publics }: "derived-from-" + publics."public-only";
@@ -51,7 +51,7 @@ EOF
 agenix generate --secrets-nix "$TMPDIR/generator-variations/generator-variations.nix"
 
 # Test 1: Public-only generator creates .pub but not .age
-if [ -f "public-only.age.pub" ]; then
+if [ -f "public-only.pub" ]; then
   echo "✓ Public-only: .pub file created"
 else
   echo "✗ Public-only: .pub file not created"
@@ -66,7 +66,7 @@ else
 fi
 
 # Verify public content
-public_content=$(cat "public-only.age.pub")
+public_content=$(cat "public-only.pub")
 if [ "$public_content" = "my-public-metadata" ]; then
   echo "✓ Public-only: content is correct"
 else
@@ -82,7 +82,7 @@ else
   exit 1
 fi
 
-if [ ! -f "secret-only-attrset.age.pub" ]; then
+if [ ! -f "secret-only-attrset.pub" ]; then
   echo "✓ Secret-only attrset: .pub file NOT created (correct)"
 else
   echo "✗ Secret-only attrset: .pub file was incorrectly created"
@@ -90,7 +90,7 @@ else
 fi
 
 # Verify secret content
-decrypted=$(agenix decrypt secret-only-attrset.age --secrets-nix "$TMPDIR/generator-variations/generator-variations.nix" -i "$TEST_USER_KEY" --no-system-identities)
+decrypted=$(agenix decrypt secret-only-attrset --secrets-nix "$TMPDIR/generator-variations/generator-variations.nix" -i "$TEST_USER_KEY" --no-system-identities)
 if [ "$decrypted" = "my-secret-only" ]; then
   echo "✓ Secret-only attrset: decrypts correctly"
 else
@@ -106,14 +106,14 @@ else
   exit 1
 fi
 
-if [ ! -f "string-generator.age.pub" ]; then
+if [ ! -f "string-generator.pub" ]; then
   echo "✓ String generator: .pub file NOT created (correct)"
 else
   echo "✗ String generator: .pub file was incorrectly created"
   exit 1
 fi
 
-decrypted=$(agenix decrypt string-generator.age --secrets-nix "$TMPDIR/generator-variations/generator-variations.nix" -i "$TEST_USER_KEY" --no-system-identities)
+decrypted=$(agenix decrypt string-generator --secrets-nix "$TMPDIR/generator-variations/generator-variations.nix" -i "$TEST_USER_KEY" --no-system-identities)
 if [ "$decrypted" = "plain-string-secret" ]; then
   echo "✓ String generator: decrypts correctly"
 else
@@ -122,14 +122,14 @@ else
 fi
 
 # Test 4: Both outputs creates both files
-if [ -f "both-outputs.age" ] && [ -f "both-outputs.age.pub" ]; then
+if [ -f "both-outputs.age" ] && [ -f "both-outputs.pub" ]; then
   echo "✓ Both outputs: both files created"
 else
   echo "✗ Both outputs: one or both files missing"
   exit 1
 fi
 
-decrypted=$(agenix decrypt both-outputs.age --secrets-nix "$TMPDIR/generator-variations/generator-variations.nix" -i "$TEST_USER_KEY" --no-system-identities)
+decrypted=$(agenix decrypt both-outputs --secrets-nix "$TMPDIR/generator-variations/generator-variations.nix" -i "$TEST_USER_KEY" --no-system-identities)
 if [ "$decrypted" = "my-secret" ]; then
   echo "✓ Both outputs: secret decrypts correctly"
 else
@@ -137,7 +137,7 @@ else
   exit 1
 fi
 
-public_content=$(cat "both-outputs.age.pub")
+public_content=$(cat "both-outputs.pub")
 if [ "$public_content" = "my-public" ]; then
   echo "✓ Both outputs: public content is correct"
 else
@@ -153,7 +153,7 @@ else
   exit 1
 fi
 
-decrypted=$(agenix decrypt uses-public-only.age --secrets-nix "$TMPDIR/generator-variations/generator-variations.nix" -i "$TEST_USER_KEY" --no-system-identities)
+decrypted=$(agenix decrypt uses-public-only --secrets-nix "$TMPDIR/generator-variations/generator-variations.nix" -i "$TEST_USER_KEY" --no-system-identities)
 if [ "$decrypted" = "derived-from-my-public-metadata" ]; then
   echo "✓ Dependency on public-only: correctly uses public from dependency"
 else
