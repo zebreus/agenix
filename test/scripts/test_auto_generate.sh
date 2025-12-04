@@ -11,25 +11,25 @@ cd "$TMPDIR/auto-generate-test"
 # Create a rules file without explicit generators
 cat > "auto-generate-secrets.nix" << 'EOF'
 {
-  "server-ed25519.age" = {
+  "server-ed25519" = {
     publicKeys = [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH" ];
   };
-  "deploy-ssh.age" = {
+  "deploy-ssh" = {
     publicKeys = [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH" ];
   };
-  "id_ssh_key.age" = {
+  "id_ssh_key" = {
     publicKeys = [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH" ];
   };
-  "identity-x25519.age" = {
+  "identity-x25519" = {
     publicKeys = [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH" ];
   };
-  "database-password.age" = {
+  "database-password" = {
     publicKeys = [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH" ];
   };
-  "backup-passphrase.age" = {
+  "backup-passphrase" = {
     publicKeys = [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH" ];
   };
-  "random-secret.age" = {
+  "random-secret" = {
     publicKeys = [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH" ];
   };
 }
@@ -39,28 +39,28 @@ EOF
 agenix generate --secrets-nix "$TMPDIR/auto-generate-test/auto-generate-secrets.nix"
 
 # Check that SSH key files were created with .pub files
-if [ -f "server-ed25519.age" ] && [ -f "server-ed25519.age.pub" ]; then
+if [ -f "server-ed25519.age" ] && [ -f "server-ed25519.pub" ]; then
   echo "✓ server-ed25519.age generated with public key"
 else
   echo "✗ server-ed25519.age or its public key not generated"
   exit 1
 fi
 
-if [ -f "deploy-ssh.age" ] && [ -f "deploy-ssh.age.pub" ]; then
+if [ -f "deploy-ssh.age" ] && [ -f "deploy-ssh.pub" ]; then
   echo "✓ deploy-ssh.age generated with public key"
 else
   echo "✗ deploy-ssh.age or its public key not generated"
   exit 1
 fi
 
-if [ -f "id_ssh_key.age" ] && [ -f "id_ssh_key.age.pub" ]; then
+if [ -f "id_ssh_key.age" ] && [ -f "id_ssh_key.pub" ]; then
   echo "✓ id_ssh_key.age generated with public key"
 else
   echo "✗ id_ssh_key.age or its public key not generated"
   exit 1
 fi
 
-if [ -f "identity-x25519.age" ] && [ -f "identity-x25519.age.pub" ]; then
+if [ -f "identity-x25519.age" ] && [ -f "identity-x25519.pub" ]; then
   echo "✓ identity-x25519.age generated with public key"
 else
   echo "✗ identity-x25519.age or its public key not generated"
@@ -68,14 +68,14 @@ else
 fi
 
 # Check that password files were created without .pub files
-if [ -f "database-password.age" ] && [ ! -f "database-password.age.pub" ]; then
+if [ -f "database-password.age" ] && [ ! -f "database-password.pub" ]; then
   echo "✓ database-password.age generated without public key"
 else
   echo "✗ database-password.age incorrectly generated"
   exit 1
 fi
 
-if [ -f "backup-passphrase.age" ] && [ ! -f "backup-passphrase.age.pub" ]; then
+if [ -f "backup-passphrase.age" ] && [ ! -f "backup-passphrase.pub" ]; then
   echo "✓ backup-passphrase.age generated without public key"
 else
   echo "✗ backup-passphrase.age incorrectly generated"
@@ -91,7 +91,7 @@ else
 fi
 
 # Verify SSH keys have correct format
-ssh_pub=$(cat "server-ed25519.age.pub")
+ssh_pub=$(cat "server-ed25519.pub")
 if echo "$ssh_pub" | grep -q "^ssh-ed25519 "; then
   echo "✓ SSH public key has correct format"
 else
@@ -100,7 +100,7 @@ else
 fi
 
 # Verify age x25519 key has correct format
-age_pub=$(cat "identity-x25519.age.pub")
+age_pub=$(cat "identity-x25519.pub")
 if echo "$age_pub" | grep -q "^age1"; then
   echo "✓ age x25519 public key has correct format"
 else
@@ -110,7 +110,7 @@ fi
 
 # Verify we can decrypt the auto-generated secrets
 # Use TEST_USER_KEY environment variable provided by the test runner
-decrypted_ssh=$(agenix decrypt server-ed25519.age --secrets-nix "$TMPDIR/auto-generate-test/auto-generate-secrets.nix" -i "$TEST_USER_KEY" --no-system-identities)
+decrypted_ssh=$(agenix decrypt server-ed25519 --secrets-nix "$TMPDIR/auto-generate-test/auto-generate-secrets.nix" -i "$TEST_USER_KEY" --no-system-identities)
 if echo "$decrypted_ssh" | grep -q "BEGIN PRIVATE KEY"; then
   echo "✓ Auto-generated SSH key decrypts correctly"
 else
@@ -118,7 +118,7 @@ else
   exit 1
 fi
 
-decrypted_x25519=$(agenix decrypt identity-x25519.age --secrets-nix "$TMPDIR/auto-generate-test/auto-generate-secrets.nix" -i "$TEST_USER_KEY" --no-system-identities)
+decrypted_x25519=$(agenix decrypt identity-x25519 --secrets-nix "$TMPDIR/auto-generate-test/auto-generate-secrets.nix" -i "$TEST_USER_KEY" --no-system-identities)
 if echo "$decrypted_x25519" | grep -q "^AGE-SECRET-KEY-"; then
   echo "✓ Auto-generated x25519 key decrypts correctly"
 else
@@ -126,7 +126,7 @@ else
   exit 1
 fi
 
-decrypted_password=$(agenix decrypt database-password.age --secrets-nix "$TMPDIR/auto-generate-test/auto-generate-secrets.nix" -i "$TEST_USER_KEY" --no-system-identities)
+decrypted_password=$(agenix decrypt database-password --secrets-nix "$TMPDIR/auto-generate-test/auto-generate-secrets.nix" -i "$TEST_USER_KEY" --no-system-identities)
 password_len=${#decrypted_password}
 if [ "$password_len" = "32" ]; then
   echo "✓ Auto-generated password has correct length (32 chars)"
