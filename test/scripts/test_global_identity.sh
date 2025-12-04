@@ -9,7 +9,7 @@ echo "=== Test: Global identity option with different commands ==="
 reset_secret1
 
 # Test with decrypt command
-decrypted=$(agenix -i "$HOME/.ssh/id_ed25519" --no-system-identities decrypt secret1.age)
+decrypted=$(agenix -i "$HOME/.ssh/id_ed25519" --no-system-identities decrypt secret1)
 if [ "$decrypted" = "hello" ]; then
   echo "✓ Global identity with decrypt works"
 else
@@ -18,8 +18,8 @@ else
 fi
 
 # Test with encrypt command via stdin
-echo "global-identity-test" | agenix -i "$HOME/.ssh/id_ed25519" --no-system-identities encrypt --force secret1.age
-decrypted=$(agenix -i "$HOME/.ssh/id_ed25519" --no-system-identities decrypt secret1.age)
+echo "global-identity-test" | agenix -i "$HOME/.ssh/id_ed25519" --no-system-identities encrypt --force secret1
+decrypted=$(agenix -i "$HOME/.ssh/id_ed25519" --no-system-identities decrypt secret1)
 if [ "$decrypted" = "global-identity-test" ]; then
   echo "✓ Global identity with encrypt works"
 else

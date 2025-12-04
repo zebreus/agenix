@@ -38,7 +38,7 @@ unset EDITOR
 
 # Test 3: Explicit -e flag overrides default stdin behavior
 echo "--- Test 3: Explicit -e flag overrides stdin ---"
-echo "new-content-from-stdin" | agenix edit -e "cat" secret1.age 2>&1
+echo "new-content-from-stdin" | agenix edit -e "cat" secret1 2>&1
 # With EDITOR=cat, the file content is shown but not changed
 # because cat just outputs the existing file
 decrypted=$(agenix decrypt secret1)

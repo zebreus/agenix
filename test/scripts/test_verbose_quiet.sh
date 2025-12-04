@@ -72,7 +72,7 @@ fi
 # Test 7: Quiet flag with decrypt
 echo "--- Test 7: Quiet flag with decrypt ---"
 reset_secret1
-output=$(agenix -q decrypt secret1.age 2>&1)
+output=$(agenix -q decrypt secret1 2>&1)
 # Should only output the decrypted content, no warnings
 if [ "$output" = "hello" ]; then
   echo "✓ Quiet flag with decrypt works"
@@ -83,7 +83,7 @@ fi
 
 # Test 8: Verbose flag with decrypt
 echo "--- Test 8: Verbose flag with decrypt ---"
-output=$(agenix -v decrypt secret1.age 2>&1)
+output=$(agenix -v decrypt secret1 2>&1)
 if [[ "$output" == *"Decrypting secret:"* ]]; then
   echo "✓ Verbose flag with decrypt shows info"
 else
@@ -93,7 +93,7 @@ fi
 
 # Test 9: Quiet flag with check
 echo "--- Test 9: Quiet flag with check ---"
-output=$(agenix -q check secret1.age 2>&1)
+output=$(agenix -q check secret1 2>&1)
 exit_code=$?
 if [ $exit_code -eq 0 ]; then
   echo "✓ Quiet flag with check works"
