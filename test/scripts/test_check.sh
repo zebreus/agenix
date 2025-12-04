@@ -155,14 +155,16 @@ fi
 # Test 13: Check multiple invalid secrets shows count
 echo "--- Test 13: Multiple invalid secrets count ---"
 MULTI_RULES="$TMPDIR/multi-check-rules.nix"
+MULTI_SECRET1_NAME="$TMPDIR/multi-invalid1"
+MULTI_SECRET2_NAME="$TMPDIR/multi-invalid2"
 MULTI_SECRET1="$TMPDIR/multi-invalid1.age"
 MULTI_SECRET2="$TMPDIR/multi-invalid2.age"
 cat > "$MULTI_RULES" << EOF
 {
-  "$MULTI_SECRET1" = {
+  "$MULTI_SECRET1_NAME" = {
     publicKeys = [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH" ];
   };
-  "$MULTI_SECRET2" = {
+  "$MULTI_SECRET2_NAME" = {
     publicKeys = [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH" ];
   };
 }
