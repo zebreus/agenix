@@ -120,7 +120,7 @@ rm -f "$TMPDIR/dep-edge-cases/"*.age "$TMPDIR/dep-edge-cases/"*.pub
 
 cat > "unknown-key.nix" << 'EOF'
 {
-  "unknown.age" = {
+  "unknown" = {
     publicKeys = [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH" ];
     generator = {}: { unknown_key = "some-value"; };
   };
@@ -152,11 +152,11 @@ rm -f "$TMPDIR/dep-edge-cases/"*.age "$TMPDIR/dep-edge-cases/"*.pub
 
 cat > "valid-public-chain.nix" << 'EOF'
 {
-  "meta.age" = {
+  "meta" = {
     publicKeys = [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH" ];
     generator = {}: { public = "metadata-v1"; };
   };
-  "config.age" = {
+  "config" = {
     publicKeys = [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH" ];
     dependencies = [ "meta" ];
     generator = { publics }: { secret = "config-" + publics."meta"; public = "config-pub"; };
@@ -171,13 +171,13 @@ set -e
 
 if [ $exit_code -eq 0 ]; then
   echo "✓ Test 5: Valid public-only chain succeeds"
-  if [ -f "meta.age.pub" ] && [ ! -f "meta.age" ]; then
+  if [ -f "meta.pub" ] && [ ! -f "meta.age" ]; then
     echo "✓ Test 5: meta has only .pub file"
   else
     echo "✗ Test 5: meta file state incorrect"
     exit 1
   fi
-  if [ -f "config.age" ] && [ -f "config.age.pub" ]; then
+  if [ -f "config.age" ] && [ -f "config.pub" ]; then
     echo "✓ Test 5: config has both files"
   else
     echo "✗ Test 5: config file state incorrect"
