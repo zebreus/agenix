@@ -824,22 +824,22 @@ mod tests {
     fn test_get_secret_status_invalid_file() {
         let temp_dir = tempdir().unwrap();
         let secret_name = "invalid";
-        let path = temp_dir.path().join(format!("{}.age", secret_name));
-        fs::write(&path, "not-valid-age-content").unwrap();
+        let secret_path_without_age = temp_dir.path().join(secret_name);
+        let secret_path_with_age = temp_dir.path().join(format!("{}.age", secret_name));
+        fs::write(&secret_path_with_age, "not-valid-age-content").unwrap();
 
         // Create a minimal rules file
         let temp_rules = create_rules_file(&format!(
-            r#"{{ "{}/{}" = {{ publicKeys = ["age1..."]; }}; }}"#,
-            temp_dir.path().to_str().unwrap(),
-            secret_name
+            r#"{{ "{}" = {{ publicKeys = ["age1..."]; }}; }}"#,
+            secret_path_without_age.to_str().unwrap()
         ));
 
         let status = get_secret_status(
             temp_rules.path().to_str().unwrap(),
-            path.to_str().unwrap(),
+            secret_path_without_age.to_str().unwrap(),
             &[],
             false,
         );
-        assert!(matches!(status, SecretStatus::CannotDecrypt(_)));
+        assert!(matches!(status, SecretStatus::CannotDecrypt(_)), "Got status: {:?}", status);
     }
 }

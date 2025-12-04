@@ -669,8 +669,8 @@ publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" 
             "Error should mention secret2: {}", err_msg
         );
         assert!(
-            err_msg.contains("secret3.age"),
-            "Error should mention secret3.age"
+            err_msg.contains("secret3") || err_msg.contains("secret3.age"),
+            "Error should mention secret3: {}", err_msg
         );
     }
 

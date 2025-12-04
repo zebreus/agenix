@@ -3014,8 +3014,8 @@ mod tests {
             "final.age should be created"
         );
         assert!(
-            temp_dir.path().join("final.age.pub").exists(),
-            "final.age.pub should be created"
+            temp_dir.path().join("final.pub").exists(),
+            "final.pub should be created"
         );
 
         Ok(())
@@ -3045,7 +3045,7 @@ mod tests {
         temp_rules.flush()?;
 
         // Pre-create .pub file with old content
-        let pub_path = temp_dir.path().join("force-public.age.pub");
+        let pub_path = temp_dir.path().join("force-public.pub");
         fs::write(&pub_path, "old-public-value")?;
 
         let args = vec![
