@@ -35,7 +35,7 @@ fn test_list_quiet_outputs_secrets_but_no_summary() {
     let path = temp_dir.path().to_str().unwrap();
 
     let rules = format!(
-        r#"{{ "{}/s1.age" = {{ publicKeys = [ "{}" ]; }}; "{}/s2.age" = {{ publicKeys = [ "{}" ]; }}; }}"#,
+        r#"{{ "{}/s1" = {{ publicKeys = [ "{}" ]; }}; "{}/s2" = {{ publicKeys = [ "{}" ]; }}; }}"#,
         path, TEST_PUBKEY, path, TEST_PUBKEY
     );
     let temp_rules = create_rules_file(&rules);
@@ -79,7 +79,7 @@ fn test_list_normal_produces_output() {
     let path = temp_dir.path().to_str().unwrap();
 
     let rules = format!(
-        r#"{{ "{}/s1.age" = {{ publicKeys = [ "{}" ]; }}; "{}/s2.age" = {{ publicKeys = [ "{}" ]; }}; }}"#,
+        r#"{{ "{}/s1" = {{ publicKeys = [ "{}" ]; }}; "{}/s2" = {{ publicKeys = [ "{}" ]; }}; }}"#,
         path, TEST_PUBKEY, path, TEST_PUBKEY
     );
     let temp_rules = create_rules_file(&rules);
@@ -105,7 +105,7 @@ fn test_list_status_produces_status_output() {
     let path = temp_dir.path().to_str().unwrap();
 
     let rules = format!(
-        r#"{{ "{}/s1.age" = {{ publicKeys = [ "{}" ]; }}; "{}/s2.age" = {{ publicKeys = [ "{}" ]; }}; }}"#,
+        r#"{{ "{}/s1" = {{ publicKeys = [ "{}" ]; }}; "{}/s2" = {{ publicKeys = [ "{}" ]; }}; }}"#,
         path, TEST_PUBKEY, path, TEST_PUBKEY
     );
     let temp_rules = create_rules_file(&rules);
@@ -147,7 +147,7 @@ fn test_check_quiet_produces_no_output_on_success() {
 
     // Rules with nonexistent secrets (so check succeeds but has nothing to verify)
     let rules = format!(
-        r#"{{ "{}/missing.age" = {{ publicKeys = [ "{}" ]; }}; }}"#,
+        r#"{{ "{}/missing" = {{ publicKeys = [ "{}" ]; }}; }}"#,
         path, TEST_PUBKEY
     );
     let temp_rules = create_rules_file(&rules);
@@ -177,7 +177,7 @@ fn test_check_normal_produces_output() {
     let path = temp_dir.path().to_str().unwrap();
 
     let rules = format!(
-        r#"{{ "{}/missing.age" = {{ publicKeys = [ "{}" ]; }}; }}"#,
+        r#"{{ "{}/missing" = {{ publicKeys = [ "{}" ]; }}; }}"#,
         path, TEST_PUBKEY
     );
     let temp_rules = create_rules_file(&rules);
@@ -242,7 +242,7 @@ fn test_generate_dry_run_quiet_produces_no_output() {
     let path = temp_dir.path().to_str().unwrap();
 
     let rules = format!(
-        r#"{{ "{}/new-secret.age" = {{ publicKeys = [ "{}" ]; generator = {{ }}: "test"; }}; }}"#,
+        r#"{{ "{}/new-secret" = {{ publicKeys = [ "{}" ]; generator = {{ }}: "test"; }}; }}"#,
         path, TEST_PUBKEY
     );
     let temp_rules = create_rules_file(&rules);
@@ -310,7 +310,7 @@ fn test_rekey_quiet_produces_no_output_on_no_files() {
 
     // Nonexistent secrets - nothing to rekey
     let rules = format!(
-        r#"{{ "{}/nonexistent.age" = {{ publicKeys = [ "{}" ]; }}; }}"#,
+        r#"{{ "{}/nonexistent" = {{ publicKeys = [ "{}" ]; }}; }}"#,
         path, TEST_PUBKEY
     );
     let temp_rules = create_rules_file(&rules);
@@ -352,13 +352,13 @@ fn test_decrypt_quiet_still_outputs_content() {
     let path = temp_dir.path().to_str().unwrap();
 
     let rules = format!(
-        r#"{{ "{}/secret.age" = {{ publicKeys = [ "{}" ]; }}; }}"#,
+        r#"{{ "{}/secret" = {{ publicKeys = [ "{}" ]; }}; }}"#,
         path, TEST_PUBKEY
     );
     let temp_rules = create_rules_file(&rules);
 
     // Create a dummy (invalid) secret file
-    let secret_path = format!("{}/secret.age", path);
+    let secret_path = format!("{}/secret", path);
     fs::write(&secret_path, "invalid-age-content").unwrap();
 
     let output = Command::new(agenix_bin())

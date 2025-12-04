@@ -433,15 +433,15 @@ mod tests {
         let rules_content_with_abs_paths = format!(
             r#"
     {{
-      "{}/static-secret.age" = {{
+      "{}/static-secret" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ }}: "static-password-123";
       }};
-      "{}/random-secret.age" = {{
+      "{}/random-secret" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ }}: builtins.randomString 16;
       }};
-      "{}/no-generator.age" = {{
+      "{}/no-generator" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
       }};
     }}
@@ -519,7 +519,7 @@ mod tests {
         let rules_content = format!(
             r#"
     {{
-      "{}/existing-secret.age" = {{
+      "{}/existing-secret" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ }}: "should-not-overwrite";
       }};
@@ -624,7 +624,7 @@ mod tests {
         let rules_content = format!(
             r#"
     {{
-      "{}/dependent-secret.age" = {{
+      "{}/dependent-secret" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     dependencies = [ "nonexistent-secret" ];
     generator = {{ secrets }}: "dependent";
@@ -672,7 +672,7 @@ mod tests {
         let rules_content = format!(
             r#"
     {{
-      "{}/derived.age" = {{
+      "{}/derived" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     dependencies = [ "base" ];
     generator = {{ publics }}: "derived-from-" + publics.base;
@@ -721,26 +721,26 @@ mod tests {
         let rules_content = format!(
             r#"
     {{
-      "{}/base-secret.age" = {{
+      "{}/base-secret" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ }}: {{ secret = "base-secret-value"; public = "base-public-value"; }};
       }};
-      "{}/only-publics.age" = {{
+      "{}/only-publics" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     dependencies = [ "base-secret" ];
     generator = {{ publics }}: "public: " + publics."base-secret";
       }};
-      "{}/only-secrets.age" = {{
+      "{}/only-secrets" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     dependencies = [ "base-secret" ];
     generator = {{ secrets }}: "secret: " + secrets."base-secret";
       }};
-      "{}/both-secrets-and-publics.age" = {{
+      "{}/both-secrets-and-publics" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     dependencies = [ "base-secret" ];
     generator = {{ secrets, publics }}: "secret: " + secrets."base-secret" + ", public: " + publics."base-secret";
       }};
-      "{}/ignore-deps-with-empty.age" = {{
+      "{}/ignore-deps-with-empty" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     dependencies = [ "base-secret" ];
     generator = {{ }}: "ignoring-all-params";
@@ -1002,11 +1002,11 @@ mod tests {
         let rules_content = format!(
             r#"
     {{
-      "{}/source.age" = {{
+      "{}/source" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ }}: {{ secret = "source-secret"; public = "source-public"; }};
       }};
-      "{}/combined.age" = {{
+      "{}/combined" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ secrets, publics }}: secrets."source" + ":" + publics."source";
       }};
@@ -1047,7 +1047,7 @@ mod tests {
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ }}: {{ secret = "base"; public = "base-pub"; }};
       }};
-      "{}/derived.age" = {{
+      "{}/derived" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     dependencies = [ "base.age" ];
     generator = {{ publics }}: {{ secret = "derived-" + publics."base"; public = "derived-pub"; }};
@@ -1092,7 +1092,7 @@ mod tests {
         let rules_content = format!(
             r#"
     {{
-      "{}/force-test.age" = {{
+      "{}/force-test" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ }}: "new-generated-content";
       }};
@@ -1136,7 +1136,7 @@ mod tests {
         let rules_content = format!(
             r#"
     {{
-      "{}/dry-run-test.age" = {{
+      "{}/dry-run-test" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ }}: "should-not-be-created";
       }};
@@ -1177,7 +1177,7 @@ mod tests {
         let rules_content = format!(
             r#"
     {{
-      "{}/existing-dry-run.age" = {{
+      "{}/existing-dry-run" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ }}: "should-not-overwrite";
       }};
@@ -1223,11 +1223,11 @@ mod tests {
         let rules_content = format!(
             r#"
     {{
-      "{}/base-secret.age" = {{
+      "{}/base-secret" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ }}: {{ secret = "base-secret"; public = "base-public"; }};
       }};
-      "{}/derived-secret.age" = {{
+      "{}/derived-secret" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     dependencies = [ "base-secret" ];
     generator = {{ publics }}: "derived-from-" + publics."base-secret";
@@ -1273,7 +1273,7 @@ mod tests {
         let rules_content = format!(
             r#"
     {{
-      "{}/force-short.age" = {{
+      "{}/force-short" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ }}: "new-content";
       }};
@@ -1316,7 +1316,7 @@ mod tests {
         let rules_content = format!(
             r#"
     {{
-      "{}/dry-run-short.age" = {{
+      "{}/dry-run-short" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ }}: "should-not-be-created";
       }};
@@ -1357,15 +1357,15 @@ mod tests {
         let rules_content = format!(
             r#"
     {{
-      "{}/secret1.age" = {{
+      "{}/secret1" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ }}: "content1";
       }};
-      "{}/secret2.age" = {{
+      "{}/secret2" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ }}: "content2";
       }};
-      "{}/secret3.age" = {{
+      "{}/secret3" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ }}: "content3";
       }};
@@ -1415,15 +1415,15 @@ mod tests {
         let rules_content = format!(
             r#"
     {{
-      "{}/secret1.age" = {{
+      "{}/secret1" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ }}: "content1";
       }};
-      "{}/secret2.age" = {{
+      "{}/secret2" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ }}: "content2";
       }};
-      "{}/secret3.age" = {{
+      "{}/secret3" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ }}: "content3";
       }};
@@ -1474,11 +1474,11 @@ mod tests {
         let rules_content = format!(
             r#"
     {{
-      "{}/secret1.age" = {{
+      "{}/secret1" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ }}: "content1";
       }};
-      "{}/secret2.age" = {{
+      "{}/secret2" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ }}: "content2";
       }};
@@ -1522,7 +1522,7 @@ mod tests {
         let rules_content = format!(
             r#"
     {{
-      "{}/existing.age" = {{
+      "{}/existing" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ }}: "content";
       }};
@@ -1563,12 +1563,12 @@ mod tests {
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ }}: {{ secret = "base-secret"; public = "base-public"; }};
       }};
-      "{}/derived.age" = {{
+      "{}/derived" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     dependencies = [ "base" ];
     generator = {{ publics }}: "derived-" + publics."base";
       }};
-      "{}/unrelated.age" = {{
+      "{}/unrelated" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ }}: "unrelated";
       }};
@@ -1624,7 +1624,7 @@ mod tests {
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ }}: {{ secret = "base-secret"; public = "base-public"; }};
       }};
-      "{}/derived.age" = {{
+      "{}/derived" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     dependencies = [ "base" ];
     generator = {{ publics }}: "derived-" + publics."base";
@@ -1668,16 +1668,16 @@ mod tests {
         let rules_content = format!(
             r#"
     {{
-      "{}/a.age" = {{
+      "{}/a" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ }}: {{ secret = "a-secret"; public = "a-public"; }};
       }};
-      "{}/b.age" = {{
+      "{}/b" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     dependencies = [ "a" ];
     generator = {{ publics }}: {{ secret = "b-" + publics."a"; public = "b-public"; }};
       }};
-      "{}/c.age" = {{
+      "{}/c" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     dependencies = [ "b" ];
     generator = {{ publics }}: "c-" + publics."b";
@@ -1730,15 +1730,15 @@ mod tests {
         let rules_content = format!(
             r#"
     {{
-      "{}/secret1.age" = {{
+      "{}/secret1" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ }}: "content1";
       }};
-      "{}/secret2.age" = {{
+      "{}/secret2" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ }}: "content2";
       }};
-      "{}/secret3.age" = {{
+      "{}/secret3" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ }}: "content3";
       }};
@@ -1793,7 +1793,7 @@ mod tests {
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ }}: {{ secret = "base-secret"; public = "base-public"; }};
       }};
-      "{}/derived.age" = {{
+      "{}/derived" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     dependencies = [ "base" ];
     generator = {{ publics }}: "derived-" + publics."base";
@@ -1850,7 +1850,7 @@ mod tests {
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ }}: {{ secret = "base-secret"; public = "base-public"; }};
       }};
-      "{}/derived.age" = {{
+      "{}/derived" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     dependencies = [ "base" ];
     generator = {{ publics }}: "derived-" + publics."base";
@@ -1896,7 +1896,7 @@ mod tests {
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ }}: {{ secret = "base-secret"; public = "base-public"; }};
       }};
-      "{}/derived.age" = {{
+      "{}/derived" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     dependencies = [ "base" ];
     generator = {{ publics }}: "derived-" + publics."base";
@@ -1950,16 +1950,16 @@ mod tests {
         let rules_content = format!(
             r#"
     {{
-      "{}/a.age" = {{
+      "{}/a" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ }}: {{ secret = "a-secret"; public = "a-public"; }};
       }};
-      "{}/b.age" = {{
+      "{}/b" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     dependencies = [ "a" ];
     generator = {{ publics }}: {{ secret = "b-" + publics."a"; public = "b-public"; }};
       }};
-      "{}/c.age" = {{
+      "{}/c" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     dependencies = [ "b" ];
     generator = {{ publics }}: "c-" + publics."b";
@@ -2020,21 +2020,21 @@ mod tests {
         let rules_content = format!(
             r#"
     {{
-      "{}/shared.age" = {{
+      "{}/shared" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ }}: {{ secret = "shared-secret"; public = "shared-public"; }};
       }};
-      "{}/derived1.age" = {{
+      "{}/derived1" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     dependencies = [ "shared" ];
     generator = {{ publics }}: "derived1-" + publics."shared";
       }};
-      "{}/derived2.age" = {{
+      "{}/derived2" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     dependencies = [ "shared" ];
     generator = {{ publics }}: "derived2-" + publics."shared";
       }};
-      "{}/unrelated.age" = {{
+      "{}/unrelated" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ }}: "unrelated";
       }};
@@ -2097,7 +2097,7 @@ mod tests {
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ }}: {{ secret = "base-secret"; public = "base-public"; }};
       }};
-      "{}/derived.age" = {{
+      "{}/derived" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     dependencies = [ "base" ];
     generator = {{ publics }}: "derived-" + publics."base";
@@ -2147,11 +2147,11 @@ mod tests {
         let rules_content1 = format!(
             r#"
     {{
-      "{}/secret1.age" = {{
+      "{}/secret1" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ }}: "content1";
       }};
-      "{}/secret2.age" = {{
+      "{}/secret2" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ }}: "content2";
       }};
@@ -2163,11 +2163,11 @@ mod tests {
         let rules_content2 = format!(
             r#"
     {{
-      "{}/secret1.age" = {{
+      "{}/secret1" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ }}: "content1";
       }};
-      "{}/secret2.age" = {{
+      "{}/secret2" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ }}: "content2";
       }};
@@ -2243,7 +2243,7 @@ mod tests {
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ }}: {{ secret = "base-secret"; public = "base-public"; }};
       }};
-      "{}/derived.age" = {{
+      "{}/derived" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     dependencies = [ "base" ];
     generator = {{ publics }}: "derived-" + publics."base";
@@ -2260,7 +2260,7 @@ mod tests {
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ }}: {{ secret = "base-secret"; public = "base-public"; }};
       }};
-      "{}/derived.age" = {{
+      "{}/derived" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     dependencies = [ "base" ];
     generator = {{ publics }}: "derived-" + publics."base";
@@ -2340,7 +2340,7 @@ mod tests {
         let rules_content = format!(
             r#"
     {{
-      "{}/secret1.age" = {{
+      "{}/secret1" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ }}: "content1";
       }};
@@ -2387,7 +2387,7 @@ mod tests {
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ }}: {{ secret = "base-secret"; public = "base-public"; }};
       }};
-      "{}/derived.age" = {{
+      "{}/derived" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     dependencies = [ "base" ];
     generator = {{ publics }}: "derived-" + publics."base";
@@ -2404,7 +2404,7 @@ mod tests {
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ }}: {{ secret = "base-secret"; public = "base-public"; }};
       }};
-      "{}/derived.age" = {{
+      "{}/derived" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     dependencies = [ "base" ];
     generator = {{ publics }}: "derived-" + publics."base";
@@ -2484,7 +2484,7 @@ mod tests {
         let rules_content = format!(
             r#"
     {{
-      "{}/public-only.age" = {{
+      "{}/public-only" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ }}: {{ public = "my-public-metadata"; }};
       }};
@@ -2539,11 +2539,11 @@ mod tests {
         let rules_content = format!(
             r#"
     {{
-      "{}/metadata.age" = {{
+      "{}/metadata" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ }}: {{ public = "config-version-1.0"; }};
       }};
-      "{}/derived.age" = {{
+      "{}/derived" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     dependencies = [ "metadata" ];
     generator = {{ publics }}: "derived-from-" + publics."metadata";
@@ -2601,7 +2601,7 @@ mod tests {
         let rules_content = format!(
             r#"
     {{
-      "{}/secret-only.age" = {{
+      "{}/secret-only" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ }}: {{ secret = "my-secret-value"; }};
       }};
@@ -2652,7 +2652,7 @@ mod tests {
         let rules_content = format!(
             r#"
     {{
-      "{}/both.age" = {{
+      "{}/both" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ }}: {{ secret = "my-secret"; public = "my-public"; }};
       }};
@@ -2706,7 +2706,7 @@ mod tests {
         let rules_content = format!(
             r#"
     {{
-      "{}/string-gen.age" = {{
+      "{}/string-gen" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ }}: "plain-string-secret";
       }};
@@ -2758,7 +2758,7 @@ mod tests {
         let rules_content = format!(
             r#"
     {{
-      "{}/empty-attrset.age" = {{
+      "{}/empty-attrset" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ }}: {{ }};
       }};
@@ -2800,7 +2800,7 @@ mod tests {
         let rules_content = format!(
             r#"
     {{
-      "{}/unknown-key.age" = {{
+      "{}/unknown-key" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ }}: {{ unknown = "value"; }};
       }};
@@ -2850,7 +2850,7 @@ mod tests {
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ }}: {{ public = "base-public-only"; }};
       }};
-      "{}/derived.age" = {{
+      "{}/derived" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     dependencies = [ "base" ];
     generator = {{ secrets }}: "needs-" + secrets."base";
@@ -2904,7 +2904,7 @@ mod tests {
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ }}: {{ secret = "base-secret-only"; }};
       }};
-      "{}/derived.age" = {{
+      "{}/derived" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     dependencies = [ "base" ];
     generator = {{ publics }}: "needs-" + publics."base";
@@ -2954,16 +2954,16 @@ mod tests {
         let rules_content = format!(
             r#"
     {{
-      "{}/meta1.age" = {{
+      "{}/meta1" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ }}: {{ public = "meta1-value"; }};
       }};
-      "{}/meta2.age" = {{
+      "{}/meta2" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     dependencies = [ "meta1" ];
     generator = {{ publics }}: {{ public = "meta2-from-" + publics."meta1"; }};
       }};
-      "{}/final.age" = {{
+      "{}/final" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     dependencies = [ "meta2" ];
     generator = {{ publics }}: {{ secret = "secret-from-" + publics."meta2"; public = "public-" + publics."meta2"; }};
@@ -3034,7 +3034,7 @@ mod tests {
         let rules_content = format!(
             r#"
     {{
-      "{}/force-public.age" = {{
+      "{}/force-public" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ }}: {{ public = "new-public-value"; }};
       }};
@@ -3083,7 +3083,7 @@ mod tests {
         let rules_content = format!(
             r#"
     {{
-      "{}/dry-public.age" = {{
+      "{}/dry-public" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
     generator = {{ }}: {{ public = "dry-public-value"; }};
       }};
@@ -3136,11 +3136,11 @@ mod tests {
         let rules_content = format!(
             r#"
     {{
-      "{}/key1.age" = {{
+      "{}/key1" = {{
         publicKeys = [ ];
         hasSecret = false;
       }};
-      "{}/key2.age" = {{
+      "{}/key2" = {{
         publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
         generator = {{ publics }}: publics."key1";
       }};

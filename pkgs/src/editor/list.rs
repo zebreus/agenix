@@ -354,7 +354,7 @@ mod tests {
         let temp_dir = tempdir().unwrap();
         let path = temp_dir.path().to_str().unwrap();
         let rules = format!(
-            r#"{{ "{}/s1.age" = {{ publicKeys = [ "{}" ]; }}; "{}/s2.age" = {{ publicKeys = [ "{}" ]; }}; }}"#,
+            r#"{{ "{}/s1" = {{ publicKeys = [ "{}" ]; }}; "{}/s2" = {{ publicKeys = [ "{}" ]; }}; }}"#,
             path, TEST_PUBKEY, path, TEST_PUBKEY
         );
         let temp_rules = create_rules_file(&rules);
@@ -388,7 +388,7 @@ mod tests {
         let entries: String = (0..20)
             .map(|i| {
                 format!(
-                    r#""{}/secret{}.age" = {{ publicKeys = [ "{}" ]; }};"#,
+                    r#""{}/secret{}" = {{ publicKeys = [ "{}" ]; }};"#,
                     path, i, TEST_PUBKEY
                 )
             })
@@ -433,7 +433,7 @@ mod tests {
         let temp_dir = tempdir().unwrap();
         let path = temp_dir.path().to_str().unwrap();
         let rules = format!(
-            r#"{{ "{}/s1.age" = {{ publicKeys = [ "{}" ]; }}; }}"#,
+            r#"{{ "{}/s1" = {{ publicKeys = [ "{}" ]; }}; }}"#,
             path, TEST_PUBKEY
         );
         let temp_rules = create_rules_file(&rules);
@@ -446,7 +446,7 @@ mod tests {
         let temp_dir = tempdir().unwrap();
         let path = temp_dir.path().to_str().unwrap();
         let rules = format!(
-            r#"{{ "{}/s1.age" = {{ publicKeys = [ "{}" ]; }}; "{}/s2.age" = {{ publicKeys = [ "{}" ]; }}; "{}/s3.age" = {{ publicKeys = [ "{}" ]; }}; }}"#,
+            r#"{{ "{}/s1" = {{ publicKeys = [ "{}" ]; }}; "{}/s2" = {{ publicKeys = [ "{}" ]; }}; "{}/s3" = {{ publicKeys = [ "{}" ]; }}; }}"#,
             path, TEST_PUBKEY, path, TEST_PUBKEY, path, TEST_PUBKEY
         );
         let temp_rules = create_rules_file(&rules);
@@ -525,7 +525,7 @@ mod tests {
         let temp_dir = tempdir().unwrap();
         let path = temp_dir.path().to_str().unwrap();
         let rules = format!(
-            r#"{{ "{}/s1.age" = {{ publicKeys = [ "{}" ]; }}; "{}/s2.age" = {{ publicKeys = [ "{}" ]; }}; }}"#,
+            r#"{{ "{}/s1" = {{ publicKeys = [ "{}" ]; }}; "{}/s2" = {{ publicKeys = [ "{}" ]; }}; }}"#,
             path, TEST_PUBKEY, path, TEST_PUBKEY
         );
         let temp_rules = create_rules_file(&rules);
@@ -565,14 +565,14 @@ mod tests {
         let temp_dir = tempdir().unwrap();
         let path = temp_dir.path().to_str().unwrap();
         let rules = format!(
-            r#"{{ "{}/inv1.age" = {{ publicKeys = [ "{}" ]; }}; "{}/inv2.age" = {{ publicKeys = [ "{}" ]; }}; }}"#,
+            r#"{{ "{}/inv1" = {{ publicKeys = [ "{}" ]; }}; "{}/inv2" = {{ publicKeys = [ "{}" ]; }}; }}"#,
             path, TEST_PUBKEY, path, TEST_PUBKEY
         );
         let temp_rules = create_rules_file(&rules);
 
         // Create two invalid secret files
-        fs::write(format!("{}/inv1.age", path), "invalid1").unwrap();
-        fs::write(format!("{}/inv2.age", path), "invalid2").unwrap();
+        fs::write(format!("{}/inv1", path), "invalid1").unwrap();
+        fs::write(format!("{}/inv2", path), "invalid2").unwrap();
 
         let result = check_secrets(temp_rules.path().to_str().unwrap(), &[], &[], false);
         assert!(result.is_err());
@@ -645,7 +645,7 @@ mod tests {
         let temp_dir = tempdir().unwrap();
         let path = temp_dir.path().to_str().unwrap();
         let rules = format!(
-            r#"{{ "{}/s1.age" = {{ publicKeys = [ "{}" ]; }}; "{}/s2.age" = {{ publicKeys = [ "{}" ]; }}; "{}/s3.age" = {{ publicKeys = [ "{}" ]; }}; }}"#,
+            r#"{{ "{}/s1" = {{ publicKeys = [ "{}" ]; }}; "{}/s2" = {{ publicKeys = [ "{}" ]; }}; "{}/s3" = {{ publicKeys = [ "{}" ]; }}; }}"#,
             path, TEST_PUBKEY, path, TEST_PUBKEY, path, TEST_PUBKEY
         );
         let temp_rules = create_rules_file(&rules);
@@ -810,7 +810,7 @@ mod tests {
     fn test_get_secret_status_missing_file() {
         // Create a minimal rules file
         let temp_rules =
-            create_rules_file(r#"{ "nonexistent.age" = { publicKeys = ["age1..."]; }; }"#);
+            create_rules_file(r#"{ "nonexistent" = { publicKeys = ["age1..."]; }; }"#);
         let status = get_secret_status(
             temp_rules.path().to_str().unwrap(),
             "/nonexistent/file.age",

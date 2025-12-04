@@ -512,16 +512,16 @@ publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" 
         let rules_content = format!(
             r#"
 {{
-  "{}/existing_invalid1.age" = {{
+  "{}/existing_invalid1" = {{
 publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
   }};
-  "{}/existing_invalid2.age" = {{
+  "{}/existing_invalid2" = {{
 publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
   }};
-  "{}/nonexistent1.age" = {{
+  "{}/nonexistent1" = {{
 publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
   }};
-  "{}/nonexistent2.age" = {{
+  "{}/nonexistent2" = {{
 publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
   }};
 }}
@@ -584,10 +584,10 @@ publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" 
         let rules_content = format!(
             r#"
 {{
-  "{}/secret1.age" = {{
+  "{}/secret1" = {{
 publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
   }};
-  "{}/secret2.age" = {{
+  "{}/secret2" = {{
 publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
   }};
 }}
@@ -625,13 +625,13 @@ publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" 
         let rules_content = format!(
             r#"
 {{
-  "{}/secret1.age" = {{
+  "{}/secret1" = {{
 publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
   }};
-  "{}/secret2.age" = {{
+  "{}/secret2" = {{
 publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
   }};
-  "{}/secret3.age" = {{
+  "{}/secret3" = {{
 publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
   }};
 }}
@@ -681,13 +681,13 @@ publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" 
         let rules_content = format!(
             r#"
 {{
-  "{}/secret1.age" = {{
+  "{}/secret1" = {{
 publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
   }};
-  "{}/secret2.age" = {{
+  "{}/secret2" = {{
 publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
   }};
-  "{}/secret3.age" = {{
+  "{}/secret3" = {{
 publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
   }};
 }}
@@ -740,10 +740,10 @@ publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" 
         let rules_content = format!(
             r#"
 {{
-  "{}/secret1.age" = {{
+  "{}/secret1" = {{
 publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
   }};
-  "{}/secret2.age" = {{
+  "{}/secret2" = {{
 publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
   }};
 }}
@@ -824,10 +824,10 @@ publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" 
         let rules_content = format!(
             r#"
 {{
-  "{}/secret1.age" = {{
+  "{}/secret1" = {{
 publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
   }};
-  "{}/secret2.age" = {{
+  "{}/secret2" = {{
 publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
   }};
 }}
@@ -895,7 +895,7 @@ publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" 
         let rules_content = format!(
             r#"
 {{
-  "{}/secret1.age" = {{
+  "{}/secret1" = {{
 publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
   }};
 }}
