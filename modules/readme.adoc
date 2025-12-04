@@ -56,14 +56,38 @@ Attribute set of secrets to decrypt. Each key is the secret name, each value is 
 }
 ----
 
+=== age.secretsPath
+
+Path to the directory containing `secrets.nix` and all secret files. When set, the `file` option becomes optional and defaults to `${secretsPath}/${name}.age`.
+
+[source,nix]
+----
+{
+  # All secrets auto-resolve to files in ./secrets/
+  age.secretsPath = ./secrets;
+  age.secrets.database-password = {};  # Uses ./secrets/database-password.age
+  age.secrets.api-key = {};            # Uses ./secrets/api-key.age
+}
+----
+
 === age.secrets.<name>.file
 
-**Required.** Path to the encrypted `.age` file.
+Path to the encrypted `.age` file. **Required** unless `secretsPath` is set.
 
 [source,nix]
 ----
 {
   age.secrets.database-password.file = ../secrets/db-pass.age;
+}
+----
+
+With `secretsPath`, you can omit the `file` option:
+
+[source,nix]
+----
+{
+  age.secretsPath = ./secrets;
+  age.secrets.database-password = {};  # Auto-resolves to ./secrets/database-password.age
 }
 ----
 
@@ -168,53 +192,58 @@ When `false`, the secret is copied directly to `path` instead of symlinking. Use
 
 NOTE: When `symlink = false`, you are responsible for cleaning up old secrets if you remove them from your configuration.
 
-=== age.secrets.<name>.public.path
+=== age.publics
 
-**Read-only.** Path to the `.pub` file if it exists. This is created by generators that return both `secret` and `public` values.
+Attribute set of public keys to install. Each key corresponds to a secret name, and each value configures how the public key should be installed.
 
-[source,nix]
-----
-{
-  # If deploy-key.age.pub exists:
-  users.users.deploy.openssh.authorizedKeys.keys = [
-    (builtins.readFile config.age.secrets.deploy-key.public.path)
-  ];
-}
-----
-
-=== age.secrets.<name>.public.content
-
-**Read-only.** Content of the `.pub` file if it exists.
+Public keys are typically generated alongside secrets (e.g., SSH keys) and stored as `.pub` files next to the encrypted `.age` secret files.
 
 [source,nix]
 ----
 {
-  # Include the public key directly in configuration
-  services.openssh.extraConfig = ''
-    TrustedUserCAKeys ${config.age.secrets.ca-key.public.path}
-  '';
-}
-----
-
-=== age.secrets.<name>.public.installPath
-
-Path where the public file should be installed on the system. Default: `null` (not installed).
-
-When set, the public file will be symlinked (or copied if `public.symlink = false`) to this path during system activation. This is useful for making public keys available at well-known locations.
-
-[source,nix]
-----
-{
-  age.secrets.ssh-host-key = {
-    file = ./secrets/ssh-host.age;
-    path = "/etc/ssh/ssh_host_ed25519_key";
-    public.file = ./secrets/ssh-host.age.pub;
-    public.installPath = "/etc/ssh/ssh_host_ed25519_key.pub";
+  age.secretsPath = ./secrets;
+  age.secrets.ssh-host-key = {};  # Uses ./secrets/ssh-host-key.age
+  
+  # Public key automatically detected at ./secrets/ssh-host-key.pub
+  age.publics.ssh-host-key = {
+    installPath = "/etc/ssh/ssh_host_ed25519_key.pub";
   };
 }
 ----
 
-=== age.secrets.<name>.public.symlink
+=== age.publics.<name>.file
+
+Path to the public key file. Default: auto-detected as `${secretsPath}/${name}.pub` if `secretsPath` is set.
+
+[source,nix]
+----
+{
+  # Explicit path:
+  age.publics.deploy-key.file = ./secrets/deploy-key.pub;
+  
+  # Or use secretsPath for auto-detection:
+  age.secretsPath = ./secrets;
+  age.publics.deploy-key = {};  # Uses ./secrets/deploy-key.pub
+}
+----
+
+=== age.publics.<name>.installPath
+
+Path where the public key should be installed on the system. Default: `null` (not installed).
+
+When set, the public file will be symlinked (or copied if `symlink = false`) to this path during system activation.
+
+[source,nix]
+----
+{
+  age.secretsPath = ./secrets;
+  age.publics.ssh-host-key = {
+    installPath = "/etc/ssh/ssh_host_ed25519_key.pub";
+  };
+}
+----
+
+=== age.publics.<name>.symlink
 
 Whether to symlink or copy the public file. Default: `true`.
 
@@ -224,61 +253,84 @@ When `false`, copies the public file to `installPath`.
 [source,nix]
 ----
 {
-  age.secrets.app-key = {
-    file = ./secrets/app.age;
-    public.file = ./secrets/app.age.pub;
-    public.installPath = "/etc/myapp/key.pub";
-    public.symlink = false;  # Copy instead of symlink
+  age.secretsPath = ./secrets;
+  age.publics.app-key = {
+    installPath = "/etc/myapp/key.pub";
+    symlink = false;  # Copy instead of symlink
   };
 }
 ----
 
-=== age.secrets.<name>.public.mode
+=== age.publics.<name>.mode
 
 File permissions for the installed public file. Default: `"0444"` (readable by all).
 
 [source,nix]
 ----
 {
-  age.secrets.private-pub = {
-    file = ./secrets/private.age;
-    public.file = ./secrets/private.age.pub;
-    public.installPath = "/etc/myapp/key.pub";
-    public.mode = "0400";  # Owner read-only
+  age.publics.private-pub = {
+    file = ./secrets/private.pub;
+    installPath = "/etc/myapp/key.pub";
+    mode = "0400";  # Owner read-only
   };
 }
 ----
 
-=== age.secrets.<name>.public.owner
+=== age.publics.<name>.owner
 
 Username of the installed public file owner (NixOS only). Default: `"root"`.
 
 [source,nix]
 ----
 {
-  age.secrets.app-key = {
-    file = ./secrets/app.age;
-    public.file = ./secrets/app.age.pub;
-    public.installPath = "/home/myapp/.ssh/id_ed25519.pub";
-    public.owner = "myapp";
+  age.publics.app-key = {
+    file = ./secrets/app.pub;
+    installPath = "/home/myapp/.ssh/id_ed25519.pub";
+    owner = "myapp";
   };
 }
 ----
 
-=== age.secrets.<name>.public.group
+=== age.publics.<name>.group
 
 Group name of the installed public file (NixOS only). Default: `"keys"` or derived from owner.
 
 [source,nix]
 ----
 {
-  age.secrets.app-key = {
-    file = ./secrets/app.age;
-    public.file = ./secrets/app.age.pub;
-    public.installPath = "/home/myapp/.ssh/id_ed25519.pub";
-    public.owner = "myapp";
-    public.group = "myapp";
+  age.publics.app-key = {
+    file = ./secrets/app.pub;
+    installPath = "/home/myapp/.ssh/id_ed25519.pub";
+    owner = "myapp";
+    group = "myapp";
   };
+}
+----
+
+=== age.publics.<name>.content
+
+**Read-only.** Content of the public key file.
+
+[source,nix]
+----
+{
+  # Use the public key content directly
+  users.users.deploy.openssh.authorizedKeys.keys = [
+    config.age.publics.deploy-key.content
+  ];
+}
+----
+
+=== age.publics.<name>.path
+
+**Read-only.** Path to the public key file in the Nix store.
+
+[source,nix]
+----
+{
+  services.openssh.extraConfig = ''
+    TrustedUserCAKeys ${config.age.publics.ca-key.path}
+  '';
 }
 ----
 
@@ -446,7 +498,8 @@ Directory for decrypted secrets before symlinking. Default varies by platform:
 [source,nix]
 ----
 { config, ... }: {
-  age.secrets.db-password.file = ./secrets/db-password.age;
+  age.secretsPath = ./secrets;
+  age.secrets.db-password = {};  # Uses ./secrets/db-password.age
 
   services.postgresql = {
     enable = true;
@@ -469,15 +522,15 @@ Directory for decrypted secrets before symlinking. Default varies by platform:
 [source,nix]
 ----
 { config, ... }: {
+  age.secretsPath = ./secrets;
+  
   age.secrets = {
     nginx-cert = {
-      file = ./secrets/nginx.crt.age;
       owner = "nginx";
       group = "nginx";
       mode = "0400";
     };
     nginx-key = {
-      file = ./secrets/nginx.key.age;
       owner = "nginx";
       group = "nginx";
       mode = "0400";
@@ -499,12 +552,16 @@ Directory for decrypted secrets before symlinking. Default varies by platform:
 [source,nix]
 ----
 { config, ... }: {
-  age.secrets.deploy-key.file = ./secrets/deploy-key.age;
+  age.secretsPath = ./secrets;
+  age.secrets.deploy-key = {};  # Uses ./secrets/deploy-key.age
+  
+  # Public key automatically available at ./secrets/deploy-key.pub
+  age.publics.deploy-key = {};
 
-  # If deploy-key.age.pub exists, use it
-  users.users.deploy.openssh.authorizedKeys.keys =
-    lib.optional (config.age.secrets.deploy-key.public.content != null)
-      config.age.secrets.deploy-key.public.content;
+  # Use the public key content
+  users.users.deploy.openssh.authorizedKeys.keys = [
+    config.age.publics.deploy-key.content
+  ];
 }
 ----
 
@@ -513,14 +570,18 @@ Directory for decrypted secrets before symlinking. Default varies by platform:
 [source,nix]
 ----
 { config, ... }: {
+  age.secretsPath = ./secrets;
+  
   age.secrets.ssh-host-key = {
-    file = ./secrets/ssh-host-ed25519.age;
-    public.file = ./secrets/ssh-host-ed25519.age.pub;
-    # Install the public key at a well-known location
-    public.installPath = "/etc/ssh/ssh_host_ed25519_key.pub";
-    public.mode = "0644";
-    public.owner = "root";
-    public.group = "root";
+    path = "/etc/ssh/ssh_host_ed25519_key";
+  };
+  
+  # Install the public key at a well-known location
+  age.publics.ssh-host-key = {
+    installPath = "/etc/ssh/ssh_host_ed25519_key.pub";
+    mode = "0644";
+    owner = "root";
+    group = "root";
   };
 }
 ----
@@ -530,23 +591,24 @@ Directory for decrypted secrets before symlinking. Default varies by platform:
 [source,nix]
 ----
 { config, ... }: {
+  age.secretsPath = ./secrets;
+  
   age.secrets = {
-    github-token = {
-      file = ./secrets/github-token.age;
-    };
+    github-token = {};
     gpg-key = {
-      file = ./secrets/gpg.key.age;
       path = "${config.home.homeDirectory}/.gnupg/private-keys-v1.d/key.key";
     };
-    # SSH key with public part installed
+    # SSH key with public part
     ssh-key = {
-      file = ./secrets/id_ed25519.age;
       path = "${config.home.homeDirectory}/.ssh/id_ed25519";
       mode = "0600";
-      public.file = ./secrets/id_ed25519.age.pub;
-      public.installPath = "${config.home.homeDirectory}/.ssh/id_ed25519.pub";
-      public.mode = "0644";
     };
+  };
+  
+  # Install the SSH public key
+  age.publics.ssh-key = {
+    installPath = "${config.home.homeDirectory}/.ssh/id_ed25519.pub";
+    mode = "0644";
   };
 
   programs.git.extraConfig = {
@@ -566,6 +628,7 @@ Directory for decrypted secrets before symlinking. Default varies by platform:
     "/persist/etc/ssh/ssh_host_rsa_key"
   ];
 
-  age.secrets.my-secret.file = ./secrets/my-secret.age;
+  age.secretsPath = ./secrets;
+  age.secrets.my-secret = {};
 }
 ----
