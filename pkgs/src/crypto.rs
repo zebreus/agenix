@@ -66,10 +66,10 @@ pub fn can_decrypt(
         no_system_identities,
     )?;
 
-    // Read a small amount to verify decryption actually works
-    let mut buf = [0u8; 1];
+    // Try to read to verify decryption works, but allow empty files
+    let mut buf = Vec::new();
     reader
-        .read(&mut buf)
+        .read_to_end(&mut buf)
         .with_context(|| format!("Failed to read decrypted content from {input_file}"))?;
 
     Ok(())
@@ -957,6 +957,146 @@ mod tests {
                 || full_error.contains("No matching keys found"),
             "Error chain should mention failed identity loading or no matching keys: {}",
             full_error
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_encrypt_decrypt_empty_content() -> Result<()> {
+        // Generate a test key pair
+        let secret_key = age::x25519::Identity::generate();
+        let public_key = secret_key.to_public();
+
+        // Create temporary files
+        let mut plaintext_file = NamedTempFile::new()?;
+        let encrypted_file = NamedTempFile::new()?;
+        let decrypted_file = NamedTempFile::new()?;
+        let mut identity_file = NamedTempFile::new()?;
+
+        // Write empty content
+        plaintext_file.write_all(b"")?;
+        plaintext_file.flush()?;
+
+        // Write identity to file
+        writeln!(identity_file, "{}", secret_key.to_string().expose_secret())?;
+        identity_file.flush()?;
+
+        // Test encryption
+        encrypt_from_file(
+            plaintext_file.path().to_str().unwrap(),
+            encrypted_file.path().to_str().unwrap(),
+            &[public_key.to_string()],
+            false,
+        )?;
+
+        // Test decryption
+        let identities = vec![identity_file.path().to_str().unwrap().to_string()];
+
+        decrypt_to_file(
+            encrypted_file.path().to_str().unwrap(),
+            decrypted_file.path(),
+            &identities,
+            true,
+        )?;
+
+        // Verify content is empty
+        let decrypted_content = fs::read(decrypted_file.path())?;
+        assert_eq!(
+            decrypted_content.len(),
+            0,
+            "Decrypted content should be empty"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_can_decrypt_empty_content() -> Result<()> {
+        // Generate a test key pair
+        let secret_key = age::x25519::Identity::generate();
+        let public_key = secret_key.to_public();
+
+        // Create temporary files
+        let mut plaintext_file = NamedTempFile::new()?;
+        let encrypted_file = NamedTempFile::new()?;
+        let mut identity_file = NamedTempFile::new()?;
+
+        // Write empty content
+        plaintext_file.write_all(b"")?;
+        plaintext_file.flush()?;
+
+        // Write identity to file
+        writeln!(identity_file, "{}", secret_key.to_string().expose_secret())?;
+        identity_file.flush()?;
+
+        // Encrypt empty content
+        encrypt_from_file(
+            plaintext_file.path().to_str().unwrap(),
+            encrypted_file.path().to_str().unwrap(),
+            &[public_key.to_string()],
+            false,
+        )?;
+
+        // Test can_decrypt with empty content
+        let identities = vec![identity_file.path().to_str().unwrap().to_string()];
+
+        let result = can_decrypt(encrypted_file.path().to_str().unwrap(), &identities, true);
+
+        assert!(result.is_ok(), "Should be able to decrypt empty content");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_encrypt_decrypt_empty_content_armored() -> Result<()> {
+        // Generate a test key pair
+        let secret_key = age::x25519::Identity::generate();
+        let public_key = secret_key.to_public();
+
+        // Create temporary files
+        let mut plaintext_file = NamedTempFile::new()?;
+        let encrypted_file = NamedTempFile::new()?;
+        let decrypted_file = NamedTempFile::new()?;
+        let mut identity_file = NamedTempFile::new()?;
+
+        // Write empty content
+        plaintext_file.write_all(b"")?;
+        plaintext_file.flush()?;
+
+        // Write identity to file
+        writeln!(identity_file, "{}", secret_key.to_string().expose_secret())?;
+        identity_file.flush()?;
+
+        // Test armored encryption
+        encrypt_from_file(
+            plaintext_file.path().to_str().unwrap(),
+            encrypted_file.path().to_str().unwrap(),
+            &[public_key.to_string()],
+            true, // armor = true
+        )?;
+
+        // Verify the encrypted file contains ASCII armor
+        let encrypted_content = fs::read_to_string(encrypted_file.path())?;
+        assert!(encrypted_content.contains("-----BEGIN AGE ENCRYPTED FILE-----"));
+        assert!(encrypted_content.contains("-----END AGE ENCRYPTED FILE-----"));
+
+        // Test decryption
+        let identities = vec![identity_file.path().to_str().unwrap().to_string()];
+
+        decrypt_to_file(
+            encrypted_file.path().to_str().unwrap(),
+            decrypted_file.path(),
+            &identities,
+            true,
+        )?;
+
+        // Verify content is empty
+        let decrypted_content = fs::read(decrypted_file.path())?;
+        assert_eq!(
+            decrypted_content.len(),
+            0,
+            "Decrypted content should be empty"
         );
 
         Ok(())

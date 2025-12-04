@@ -198,10 +198,7 @@ pub fn edit_file(
                 .read_to_end(&mut stdin_content)
                 .context("Failed to read from stdin")?;
 
-            if stdin_content.is_empty() {
-                return Err(anyhow!("No input provided on stdin"));
-            }
-
+            // Allow empty content for stdin
             fs::write(&cleartext_file, stdin_content).context("Failed to write stdin content")?;
             false
         }
@@ -274,7 +271,7 @@ pub fn encrypt_file(
     let temp_filename = get_temp_filename(secret_name)?;
     let (_temp_dir, cleartext_file) = create_temp_cleartext(&temp_filename)?;
 
-    // Read content from input file or stdin
+    // Read content from input file or stdin (allow empty content)
     let content = match input {
         Some(input_path) => {
             verbose!("Reading content from file: {}", input_path);
@@ -290,16 +287,6 @@ pub fn encrypt_file(
             stdin_content
         }
     };
-
-    if content.is_empty() {
-        return Err(anyhow!(
-            "{}",
-            match input {
-                Some(path) => format!("Input file is empty: {}", path),
-                None => "No input provided on stdin".to_string(),
-            }
-        ));
-    }
 
     // Write content to temp file (same code path for both modes)
     fs::write(&cleartext_file, content).context("Failed to write content to file")?;
@@ -408,9 +395,7 @@ fn run_editor_binary(editor_cmd: Option<&str>, temp_file: &Path) -> Result<bool>
             io::stdin()
                 .read_to_end(&mut content)
                 .context("Failed to read from stdin")?;
-            if content.is_empty() {
-                return Err(anyhow!("No input provided on stdin"));
-            }
+            // Allow empty content for stdin
             fs::write(temp_file, content).context("Failed to write stdin content")?;
             Ok(false)
         }
@@ -546,10 +531,8 @@ pub fn write_public_file(
         ));
     }
 
+    // Allow empty content for public files
     let content = read_input_binary(input)?;
-    if content.is_empty() {
-        return Err(anyhow!("No input provided"));
-    }
 
     if dry_run {
         log!("Dry-run: would write to {}", pub_file.display());
