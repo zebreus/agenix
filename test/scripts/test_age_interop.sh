@@ -13,7 +13,7 @@ age -r "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcW
 # Create a minimal secrets.nix for this test
 cat > "$TMPDIR/interop-secrets.nix" << 'EOF'
 {
-  "interop-secret.age" = { publicKeys = [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH" ]; };
+  "interop-secret" = { publicKeys = [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH" ]; };
 }
 EOF
 

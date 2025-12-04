@@ -381,8 +381,9 @@ fn test_encrypt_public_fails_without_force_when_exists() {
         .spawn()
         .expect("Failed to spawn agenix");
 
+    // Try to write to stdin, but ignore broken pipe errors since the command may exit early
     if let Some(mut stdin) = child.stdin.take() {
-        stdin.write_all(b"new-content").unwrap();
+        let _ = stdin.write_all(b"new-content");
     }
 
     let output = child.wait_with_output().expect("Failed to wait for agenix");

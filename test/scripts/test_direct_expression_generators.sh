@@ -13,37 +13,37 @@ cd "$TMPDIR/direct-expr-test"
 cat > "direct-expr-secrets.nix" << 'EOF'
 {
   # Direct string expression (instead of `generator = {}: "value"`)
-  "direct-string.age" = {
+  "direct-string" = {
     publicKeys = [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH" ];
     generator = "my-direct-string-secret";
   };
   # Direct attrset expression with secret and public
-  "direct-attrset.age" = {
+  "direct-attrset" = {
     publicKeys = [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH" ];
     generator = { secret = "direct-secret-part"; public = "direct-public-part"; };
   };
   # Direct builtins.sshKey call (instead of `generator = builtins.sshKey`)
-  "direct-ssh-call.age" = {
+  "direct-ssh-call" = {
     publicKeys = [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH" ];
     generator = builtins.sshKey {};
   };
   # Direct builtins.randomString call (instead of `generator = {}: builtins.randomString 16`)
-  "direct-random.age" = {
+  "direct-random" = {
     publicKeys = [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH" ];
     generator = builtins.randomString 16;
   };
   # Direct builtins.ageKey call
-  "direct-age-key.age" = {
+  "direct-age-key" = {
     publicKeys = [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH" ];
     generator = builtins.ageKey {};
   };
   # Function-based generator still works (existing behavior)
-  "func-based.age" = {
+  "func-based" = {
     publicKeys = [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH" ];
     generator = {}: "function-based-secret";
   };
   # No generator - should not be auto-generated (name doesn't match patterns)
-  "no-generator.age" = {
+  "no-generator" = {
     publicKeys = [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH" ];
   };
 }
@@ -60,7 +60,7 @@ else
   exit 1
 fi
 
-decrypted=$(agenix decrypt direct-string.age --secrets-nix "$TMPDIR/direct-expr-test/direct-expr-secrets.nix" -i "$TEST_USER_KEY" --no-system-identities)
+decrypted=$(agenix decrypt direct-string --secrets-nix "$TMPDIR/direct-expr-test/direct-expr-secrets.nix" -i "$TEST_USER_KEY" --no-system-identities)
 if [ "$decrypted" = "my-direct-string-secret" ]; then
   echo "✓ Direct string secret decrypts correctly"
 else
@@ -69,14 +69,14 @@ else
 fi
 
 # Test 2: Direct attrset generator
-if [ -f "direct-attrset.age" ] && [ -f "direct-attrset.age.pub" ]; then
+if [ -f "direct-attrset.age" ] && [ -f "direct-attrset.pub" ]; then
   echo "✓ Direct attrset secret and public key generated"
 else
   echo "✗ Direct attrset secret or public key not generated"
   exit 1
 fi
 
-decrypted=$(agenix decrypt direct-attrset.age --secrets-nix "$TMPDIR/direct-expr-test/direct-expr-secrets.nix" -i "$TEST_USER_KEY" --no-system-identities)
+decrypted=$(agenix decrypt direct-attrset --secrets-nix "$TMPDIR/direct-expr-test/direct-expr-secrets.nix" -i "$TEST_USER_KEY" --no-system-identities)
 if [ "$decrypted" = "direct-secret-part" ]; then
   echo "✓ Direct attrset secret decrypts correctly"
 else
@@ -84,7 +84,7 @@ else
   exit 1
 fi
 
-public_content=$(cat "direct-attrset.age.pub")
+public_content=$(cat "direct-attrset.pub")
 if [ "$public_content" = "direct-public-part" ]; then
   echo "✓ Direct attrset public key contains correct content"
 else
@@ -93,14 +93,14 @@ else
 fi
 
 # Test 3: Direct SSH key call
-if [ -f "direct-ssh-call.age" ] && [ -f "direct-ssh-call.age.pub" ]; then
+if [ -f "direct-ssh-call.age" ] && [ -f "direct-ssh-call.pub" ]; then
   echo "✓ Direct SSH key call generated with public key"
 else
   echo "✗ Direct SSH key call not generated properly"
   exit 1
 fi
 
-decrypted=$(agenix decrypt direct-ssh-call.age --secrets-nix "$TMPDIR/direct-expr-test/direct-expr-secrets.nix" -i "$TEST_USER_KEY" --no-system-identities)
+decrypted=$(agenix decrypt direct-ssh-call --secrets-nix "$TMPDIR/direct-expr-test/direct-expr-secrets.nix" -i "$TEST_USER_KEY" --no-system-identities)
 if echo "$decrypted" | grep -q "BEGIN PRIVATE KEY"; then
   echo "✓ Direct SSH key call produces valid private key"
 else
@@ -108,7 +108,7 @@ else
   exit 1
 fi
 
-ssh_pub=$(cat "direct-ssh-call.age.pub")
+ssh_pub=$(cat "direct-ssh-call.pub")
 if echo "$ssh_pub" | grep -q "^ssh-ed25519 "; then
   echo "✓ Direct SSH key call public key has correct format"
 else
@@ -124,7 +124,7 @@ else
   exit 1
 fi
 
-decrypted=$(agenix decrypt direct-random.age --secrets-nix "$TMPDIR/direct-expr-test/direct-expr-secrets.nix" -i "$TEST_USER_KEY" --no-system-identities)
+decrypted=$(agenix decrypt direct-random --secrets-nix "$TMPDIR/direct-expr-test/direct-expr-secrets.nix" -i "$TEST_USER_KEY" --no-system-identities)
 decrypted_len=${#decrypted}
 if [ "$decrypted_len" = "16" ]; then
   echo "✓ Direct random string has correct length (16 chars)"
@@ -134,14 +134,14 @@ else
 fi
 
 # Test 5: Direct age key call
-if [ -f "direct-age-key.age" ] && [ -f "direct-age-key.age.pub" ]; then
+if [ -f "direct-age-key.age" ] && [ -f "direct-age-key.pub" ]; then
   echo "✓ Direct age key call generated with public key"
 else
   echo "✗ Direct age key call not generated properly"
   exit 1
 fi
 
-decrypted=$(agenix decrypt direct-age-key.age --secrets-nix "$TMPDIR/direct-expr-test/direct-expr-secrets.nix" -i "$TEST_USER_KEY" --no-system-identities)
+decrypted=$(agenix decrypt direct-age-key --secrets-nix "$TMPDIR/direct-expr-test/direct-expr-secrets.nix" -i "$TEST_USER_KEY" --no-system-identities)
 if echo "$decrypted" | grep -q "^AGE-SECRET-KEY-"; then
   echo "✓ Direct age key call produces valid age secret key"
 else
@@ -149,7 +149,7 @@ else
   exit 1
 fi
 
-age_pub=$(cat "direct-age-key.age.pub")
+age_pub=$(cat "direct-age-key.pub")
 if echo "$age_pub" | grep -q "^age1"; then
   echo "✓ Direct age key call public key has correct format"
 else
@@ -165,7 +165,7 @@ else
   exit 1
 fi
 
-decrypted=$(agenix decrypt func-based.age --secrets-nix "$TMPDIR/direct-expr-test/direct-expr-secrets.nix" -i "$TEST_USER_KEY" --no-system-identities)
+decrypted=$(agenix decrypt func-based --secrets-nix "$TMPDIR/direct-expr-test/direct-expr-secrets.nix" -i "$TEST_USER_KEY" --no-system-identities)
 if [ "$decrypted" = "function-based-secret" ]; then
   echo "✓ Function-based secret decrypts correctly"
 else
