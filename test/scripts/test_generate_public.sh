@@ -11,19 +11,19 @@ cd "$TMPDIR/generate-public-test"
 # Create a rules file with generators that produce public output
 cat > "generate-public-secrets.nix" << 'EOF'
 {
-  "string-only.age" = {
+  "string-only" = {
     publicKeys = [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH" ];
     generator = {}: "just-a-secret-string";
   };
-  "with-public.age" = {
+  "with-public" = {
     publicKeys = [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH" ];
     generator = {}: { secret = "my-secret-value"; public = "my-public-value"; };
   };
-  "secret-only-attrset.age" = {
+  "secret-only-attrset" = {
     publicKeys = [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH" ];
     generator = {}: { secret = "only-secret-in-attrset"; };
   };
-  "ssh-keypair.age" = {
+  "ssh-keypair" = {
     publicKeys = [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH" ];
     generator = builtins.sshKey;
   };
@@ -41,7 +41,7 @@ else
   exit 1
 fi
 
-if [ ! -f "string-only.age.pub" ]; then
+if [ ! -f "string-only.pub" ]; then
   echo "✓ String-only secret has no .pub file (correct)"
 else
   echo "✗ String-only secret has unexpected .pub file"
@@ -56,7 +56,7 @@ else
   exit 1
 fi
 
-if [ -f "with-public.age.pub" ]; then
+if [ -f "with-public.pub" ]; then
   echo "✓ Public file created for secret with public output"
 else
   echo "✗ Public file not created for secret with public output"
@@ -64,7 +64,7 @@ else
 fi
 
 # Verify the content of the public file
-public_content=$(cat "with-public.age.pub")
+public_content=$(cat "with-public.pub")
 if [ "$public_content" = "my-public-value" ]; then
   echo "✓ Public file contains correct content"
 else
@@ -80,7 +80,7 @@ else
   exit 1
 fi
 
-if [ ! -f "secret-only-attrset.age.pub" ]; then
+if [ ! -f "secret-only-attrset.pub" ]; then
   echo "✓ Secret-only attrset has no .pub file (correct)"
 else
   echo "✗ Secret-only attrset has unexpected .pub file"
@@ -95,7 +95,7 @@ else
   exit 1
 fi
 
-if [ -f "ssh-keypair.age.pub" ]; then
+if [ -f "ssh-keypair.pub" ]; then
   echo "✓ SSH keypair public file created"
 else
   echo "✗ SSH keypair public file not created"
@@ -103,7 +103,7 @@ else
 fi
 
 # Verify the SSH public key format
-ssh_public=$(cat "ssh-keypair.age.pub")
+ssh_public=$(cat "ssh-keypair.pub")
 if echo "$ssh_public" | grep -q "^ssh-ed25519 "; then
   echo "✓ SSH public key has correct format"
 else
@@ -113,7 +113,7 @@ fi
 
 # Verify we can decrypt the secrets
 # Use TEST_USER_KEY environment variable provided by the test runner
-decrypted_string=$(agenix decrypt string-only.age --secrets-nix "$TMPDIR/generate-public-test/generate-public-secrets.nix" -i "$TEST_USER_KEY" --no-system-identities)
+decrypted_string=$(agenix decrypt string-only --secrets-nix "$TMPDIR/generate-public-test/generate-public-secrets.nix" -i "$TEST_USER_KEY" --no-system-identities)
 if [ "$decrypted_string" = "just-a-secret-string" ]; then
   echo "✓ String-only secret decrypts correctly"
 else
@@ -121,7 +121,7 @@ else
   exit 1
 fi
 
-decrypted_with_pub=$(agenix decrypt with-public.age --secrets-nix "$TMPDIR/generate-public-test/generate-public-secrets.nix" -i "$TEST_USER_KEY" --no-system-identities)
+decrypted_with_pub=$(agenix decrypt with-public --secrets-nix "$TMPDIR/generate-public-test/generate-public-secrets.nix" -i "$TEST_USER_KEY" --no-system-identities)
 if [ "$decrypted_with_pub" = "my-secret-value" ]; then
   echo "✓ Secret with public output decrypts correctly"
 else

@@ -11,15 +11,15 @@ cd "$TMPDIR/generate-test"
 # Create a rules file with generators
 cat > "generate-secrets.nix" << 'EOF'
 {
-  "fixed-secret.age" = {
+  "fixed-secret" = {
     publicKeys = [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH" ];
     generator = {}: "fixed-password-123";
   };
-  "random-secret.age" = {
+  "random-secret" = {
     publicKeys = [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH" ];
     generator = {}: builtins.randomString 32;
   };
-  "no-generator.age" = {
+  "no-generator" = {
     publicKeys = [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH" ];
   };
 }
@@ -53,7 +53,7 @@ fi
 
 # Verify we can decrypt the generated secrets
 # Use TEST_USER_KEY environment variable provided by the test runner
-decrypted_fixed=$(agenix decrypt fixed-secret.age --secrets-nix "$TMPDIR/generate-test/generate-secrets.nix" -i "$TEST_USER_KEY" --no-system-identities)
+decrypted_fixed=$(agenix decrypt fixed-secret --secrets-nix "$TMPDIR/generate-test/generate-secrets.nix" -i "$TEST_USER_KEY" --no-system-identities)
 if [ "$decrypted_fixed" = "fixed-password-123" ]; then
   echo "✓ Generated fixed secret decrypts correctly"
 else

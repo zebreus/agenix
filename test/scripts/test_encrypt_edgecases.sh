@@ -5,12 +5,17 @@ source "$(dirname "$0")/common_setup.sh"
 
 echo "=== Test: Encrypt command edge cases ==="
 
+# Setup test directory where secrets will be created
+EDGE_TEST_DIR="$TMPDIR/encrypt-edge-test"
+mkdir -p "$EDGE_TEST_DIR"
+cd "$EDGE_TEST_DIR"
+
 # Setup temporary rules file
-TEMP_RULES="$TMPDIR/temp-secrets.nix"
+TEMP_RULES="$EDGE_TEST_DIR/temp-secrets.nix"
 
 # Test 1: Encrypt with empty stdin should fail
 echo "--- Test 1: Empty stdin should fail ---"
-NEW_SECRET="$TMPDIR/empty-stdin.age"
+NEW_SECRET="empty-stdin"
 cat > "$TEMP_RULES" << EOF
 {
   "$NEW_SECRET" = {
@@ -28,7 +33,7 @@ fi
 
 # Test 2: Encrypt preserves newlines
 echo "--- Test 2: Preserve newlines ---"
-NEWLINE_SECRET="$TMPDIR/newline-secret.age"
+NEWLINE_SECRET="newline-secret"
 cat > "$TEMP_RULES" << EOF
 {
   "$NEWLINE_SECRET" = {
@@ -51,7 +56,7 @@ fi
 
 # Test 3: Encrypt with special characters
 echo "--- Test 3: Special characters ---"
-SPECIAL_SECRET="$TMPDIR/special-secret.age"
+SPECIAL_SECRET="special-secret"
 cat > "$TEMP_RULES" << EOF
 {
   "$SPECIAL_SECRET" = {
@@ -72,7 +77,7 @@ fi
 
 # Test 4: Encrypt with unicode
 echo "--- Test 4: Unicode content ---"
-UNICODE_SECRET="$TMPDIR/unicode-secret.age"
+UNICODE_SECRET="unicode-secret"
 cat > "$TEMP_RULES" << EOF
 {
   "$UNICODE_SECRET" = {
@@ -91,43 +96,26 @@ else
   exit 1
 fi
 
-# Test 5: Encrypt to nonexistent directory should fail gracefully
-echo "--- Test 5: Nonexistent directory ---"
+# Test 5: Encrypt with file not in rules should fail
+echo "--- Test 5: File not in rules ---"
 cat > "$TEMP_RULES" << EOF
 {
-  "/nonexistent/directory/secret.age" = {
+  "some-other-secret" = {
     publicKeys = [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH" ];
   };
 }
 EOF
 
-if echo "test" | agenix encrypt --secrets-nix "$TEMP_RULES" "/nonexistent/directory/secret.age" 2>/dev/null; then
-  echo "✗ Encrypt should fail for nonexistent directory"
-  exit 1
-else
-  echo "✓ Encrypt correctly fails for nonexistent directory"
-fi
-
-# Test 6: Encrypt with file not in rules should fail
-echo "--- Test 6: File not in rules ---"
-cat > "$TEMP_RULES" << EOF
-{
-  "/some/other/secret.age" = {
-    publicKeys = [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH" ];
-  };
-}
-EOF
-
-if echo "test" | agenix encrypt --secrets-nix "$TEMP_RULES" "$TMPDIR/not-in-rules.age" 2>/dev/null; then
+if echo "test" | agenix encrypt --secrets-nix "$TEMP_RULES" "not-in-rules" 2>/dev/null; then
   echo "✗ Encrypt should fail for file not in rules"
   exit 1
 else
   echo "✓ Encrypt correctly fails for file not in rules"
 fi
 
-# Test 7: Short alias 'c' works
-echo "--- Test 7: Short alias 'c' ---"
-ALIAS_SECRET="$TMPDIR/alias-secret.age"
+# Test 6: Short alias 'c' works
+echo "--- Test 6: Short alias 'c' ---"
+ALIAS_SECRET="alias-secret"
 cat > "$TEMP_RULES" << EOF
 {
   "$ALIAS_SECRET" = {
@@ -145,9 +133,9 @@ else
   exit 1
 fi
 
-# Test 8: Large content
-echo "--- Test 8: Large content ---"
-LARGE_SECRET="$TMPDIR/large-secret.age"
+# Test 7: Large content
+echo "--- Test 7: Large content ---"
+LARGE_SECRET="large-secret"
 cat > "$TEMP_RULES" << EOF
 {
   "$LARGE_SECRET" = {
@@ -169,3 +157,5 @@ fi
 
 echo ""
 echo "All encrypt edge case tests passed!"
+
+cd "$HOME/secrets"

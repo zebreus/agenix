@@ -5,12 +5,18 @@ source "$(dirname "$0")/common_setup.sh"
 
 echo "=== Test: Edit command edge cases ==="
 
-# Test 1: Edit with --force on undecryptable file should start with empty content
-echo "--- Test 1: Edit --force on undecryptable file ---"
-FORCE_SECRET="$TMPDIR/force-edit.age"
+# Setup test directory where secrets will be created
+EDIT_EDGE_TEST_DIR="$TMPDIR/edit-edge-test"
+mkdir -p "$EDIT_EDGE_TEST_DIR"
+cd "$EDIT_EDGE_TEST_DIR"
 
 # Create a temporary rules file
-TEMP_RULES="$TMPDIR/temp-secrets.nix"
+TEMP_RULES="$EDIT_EDGE_TEST_DIR/temp-secrets.nix"
+
+# Test 1: Edit with --force on undecryptable file should start with empty content
+echo "--- Test 1: Edit --force on undecryptable file ---"
+FORCE_SECRET="force-edit"
+
 cat > "$TEMP_RULES" << EOF
 {
   "$FORCE_SECRET" = {
@@ -23,7 +29,7 @@ EOF
 echo "original-content" | agenix encrypt --secrets-nix "$TEMP_RULES" "$FORCE_SECRET"
 
 # Now corrupt it (write garbage)
-echo "not-valid-age-format" > "$FORCE_SECRET"
+echo "not-valid-age-format" > "${FORCE_SECRET}.age"
 
 # Try to edit without --force (should fail)
 if EDITOR="echo 'new-content' >" agenix edit --secrets-nix "$TEMP_RULES" "$FORCE_SECRET" 2>/dev/null; then
@@ -45,7 +51,7 @@ fi
 
 # Test 2: Edit creates new file when it doesn't exist
 echo "--- Test 2: Edit creates new file ---"
-NEW_EDIT_SECRET="$TMPDIR/new-edit.age"
+NEW_EDIT_SECRET="new-edit"
 cat > "$TEMP_RULES" << EOF
 {
   "$NEW_EDIT_SECRET" = {
@@ -55,11 +61,11 @@ cat > "$TEMP_RULES" << EOF
 EOF
 
 # Ensure file doesn't exist
-rm -f "$NEW_EDIT_SECRET"
+rm -f "${NEW_EDIT_SECRET}.age"
 
 EDITOR="echo 'created-by-edit' >" agenix edit --secrets-nix "$TEMP_RULES" "$NEW_EDIT_SECRET"
 
-if [ -f "$NEW_EDIT_SECRET" ]; then
+if [ -f "${NEW_EDIT_SECRET}.age" ]; then
   decrypted=$(agenix decrypt --secrets-nix "$TEMP_RULES" "$NEW_EDIT_SECRET")
   if [ "$decrypted" = "created-by-edit" ]; then
     echo "✓ Edit creates new file"
@@ -74,7 +80,7 @@ fi
 
 # Test 3: Edit preserves content when editor makes no changes
 echo "--- Test 3: Edit skips re-encryption when unchanged ---"
-UNCHANGED_SECRET="$TMPDIR/unchanged.age"
+UNCHANGED_SECRET="unchanged"
 cat > "$TEMP_RULES" << EOF
 {
   "$UNCHANGED_SECRET" = {
@@ -84,7 +90,7 @@ cat > "$TEMP_RULES" << EOF
 EOF
 
 echo "original" | agenix encrypt --secrets-nix "$TEMP_RULES" "$UNCHANGED_SECRET"
-original_hash=$(sha256sum "$UNCHANGED_SECRET" | cut -d' ' -f1)
+original_hash=$(sha256sum "${UNCHANGED_SECRET}.age" | cut -d' ' -f1)
 
 # Use cat as editor (makes no changes)
 EDITOR="cat" agenix edit --secrets-nix "$TEMP_RULES" "$UNCHANGED_SECRET" 2>&1 | grep -q "wasn't changed"
@@ -97,7 +103,7 @@ fi
 
 # Test 4: Edit short alias 'e' works
 echo "--- Test 4: Short alias 'e' ---"
-ALIAS_SECRET="$TMPDIR/alias-edit.age"
+ALIAS_SECRET="alias-edit"
 cat > "$TEMP_RULES" << EOF
 {
   "$ALIAS_SECRET" = {
@@ -119,13 +125,13 @@ fi
 echo "--- Test 5: File not in rules ---"
 cat > "$TEMP_RULES" << EOF
 {
-  "/some/other/secret.age" = {
+  "some-other-secret" = {
     publicKeys = [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH" ];
   };
 }
 EOF
 
-if EDITOR="echo test >" agenix edit --secrets-nix "$TEMP_RULES" "$TMPDIR/not-in-rules.age" 2>/dev/null; then
+if EDITOR="echo test >" agenix edit --secrets-nix "$TEMP_RULES" "not-in-rules" 2>/dev/null; then
   echo "✗ Edit should fail for file not in rules"
   exit 1
 else
@@ -134,7 +140,7 @@ fi
 
 # Test 6: Edit with failing editor should not modify file
 echo "--- Test 6: Failing editor ---"
-FAILING_SECRET="$TMPDIR/failing-edit.age"
+FAILING_SECRET="failing-edit"
 cat > "$TEMP_RULES" << EOF
 {
   "$FAILING_SECRET" = {
@@ -163,3 +169,5 @@ fi
 
 echo ""
 echo "All edit edge case tests passed!"
+
+cd "$HOME/secrets"
