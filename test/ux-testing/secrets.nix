@@ -12,18 +12,18 @@ let
 in
 {
   # Scenario 1: Gitea self-hosted application
-  "gitea-db-password.age".publicKeys = allKeys;
-  "gitea-admin-password.age".publicKeys = allKeys;
-  "gitea-secret-key.age".publicKeys = allKeys;
+  "gitea-db-password".publicKeys = allKeys;
+  "gitea-admin-password".publicKeys = allKeys;
+  "gitea-secret-key".publicKeys = allKeys;
 
   # Scenario 2: SSH deployment keys
-  "deploy-ssh-key.age".publicKeys = allKeys;
+  "deploy-ssh-key".publicKeys = allKeys;
 
   # Scenario 3: Shared secrets
-  "shared-api-token.age".publicKeys = allKeys;
-  "shared-db-password.age".publicKeys = allKeys;
+  "shared-api-token".publicKeys = allKeys;
+  "shared-db-password".publicKeys = allKeys;
 
   # Scenario 4: User-level secrets
-  "user-github-token.age".publicKeys = [ user1 ];
-  "user-ssh-key.age".publicKeys = [ user1 ];
+  "user-github-token".publicKeys = [ user1 ];
+  "user-ssh-key".publicKeys = [ user1 ];
 }

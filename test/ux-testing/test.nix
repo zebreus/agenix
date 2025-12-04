@@ -34,25 +34,24 @@ pkgs.testers.nixosTest {
       # Basic system configuration
       services.openssh.enable = true;
 
-      # Configure agenix with secrets from test/example directory
-      # Using existing test secrets that are encrypted with test keys
+      # Configure agenix to use secrets from the ux-testing directory
+      # When secretsPath is set, secrets automatically resolve to ${secretsPath}/${name}.age
+      age.secretsPath = ./.;
 
       # Scenario 1: Self-hosted Gitea with database secrets
       # This tests a common use case: web application with database
+      # No need to specify 'file' - it auto-resolves to ./gitea-db-password.age
       age.secrets.gitea-db-password = {
-        file = ../example/secret1.age;
         owner = "gitea";
         mode = "0400";
       };
 
       age.secrets.gitea-admin-password = {
-        file = ../example/passwordfile-user1.age;
         owner = "gitea";
         mode = "0400";
       };
 
       age.secrets.gitea-secret-key = {
-        file = ../example/-leading-hyphen-filename.age;
         owner = "gitea";
         mode = "0400";
       };
@@ -106,22 +105,22 @@ pkgs.testers.nixosTest {
 
       # Scenario 2: SSH deployment key management
       # This tests managing SSH keys for deployment
+      # Auto-resolves to ./deploy-ssh-key.age
       age.secrets.deploy-ssh-key = {
-        file = ../example/secret-with-public.age;
         owner = "deploy";
         mode = "0400";
       };
 
       # Scenario 3: Multi-service secret sharing
       # Tests shared secrets with proper permissions
+      # Auto-resolves to ./shared-api-token.age
       age.secrets.shared-api-token = {
-        file = ../example/secret-with-public.age;
         owner = "root";
         mode = "0440";
       };
 
+      # Auto-resolves to ./shared-db-password.age
       age.secrets.shared-db-password = {
-        file = ../example/secret1.age;
         owner = "postgres";
         group = "postgres";
         mode = "0400";
@@ -138,6 +137,10 @@ pkgs.testers.nixosTest {
             identityPaths = options.age.identityPaths.default ++ [
               "/home/testuser/.ssh/this_key_wont_exist"
             ];
+
+            # Use same secretsPath pattern as NixOS module
+            # This would need to be relative to where home-manager config is evaluated
+            # For now, we'll use explicit paths since home-manager is evaluated differently
 
             # User-level secrets
             secrets.user-github-token = {
