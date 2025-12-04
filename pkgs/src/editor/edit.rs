@@ -660,21 +660,23 @@ mod tests {
     #[test]
     fn test_encrypt_file_already_exists_without_force() -> Result<()> {
         let temp_dir = tempdir()?;
-        let test_file_path = temp_dir.path().join("existing.age");
+        let secret_name = "existing";
+        let test_file_path = temp_dir.path().join(format!("{}.age", secret_name));
 
         // Create the file so it exists
         File::create(&test_file_path)?;
 
-        // Create a temporary rules file with absolute path to the test file
+        // Create a temporary rules file with secret name
         let rules_content = format!(
             r#"
 {{
-  "{}" = {{
+  "{}/{}" = {{
 publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
   }};
 }}
 "#,
-            test_file_path.to_str().unwrap()
+            temp_dir.path().to_str().unwrap(),
+            secret_name
         );
 
         let temp_rules: PathBuf = temp_dir.path().join("secrets.nix").to_path_buf();
@@ -683,7 +685,7 @@ publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" 
         // Encrypt should fail because file exists and force is false
         let result = encrypt_file(
             temp_rules.to_str().unwrap(),
-            test_file_path.to_str().unwrap(),
+            secret_name,
             None,
             false,
             false,

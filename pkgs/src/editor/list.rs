@@ -508,12 +508,12 @@ mod tests {
     #[test]
     fn test_check_invalid_secret() {
         let temp_dir = tempdir().unwrap();
-        let secret_path = format!("{}/invalid.age", temp_dir.path().to_str().unwrap());
+        let secret_path = format!("{}/invalid", temp_dir.path().to_str().unwrap());
         let rules = single_secret_rules(&secret_path, "");
         let temp_rules = create_rules_file(&rules);
 
         // Create invalid secret file
-        fs::write(&secret_path, "not-a-valid-age-file").unwrap();
+        fs::write(format!("{}.age", secret_path), "not-a-valid-age-file").unwrap();
 
         // Should fail because secret cannot be decrypted
         let result = check_secrets(temp_rules.path().to_str().unwrap(), &[], &[], false);
@@ -571,8 +571,8 @@ mod tests {
         let temp_rules = create_rules_file(&rules);
 
         // Create two invalid secret files
-        fs::write(format!("{}/inv1", path), "invalid1").unwrap();
-        fs::write(format!("{}/inv2", path), "invalid2").unwrap();
+        fs::write(format!("{}/inv1.age", path), "invalid1").unwrap();
+        fs::write(format!("{}/inv2.age", path), "invalid2").unwrap();
 
         let result = check_secrets(temp_rules.path().to_str().unwrap(), &[], &[], false);
         assert!(result.is_err());
@@ -583,7 +583,7 @@ mod tests {
     fn test_check_nonexistent_secret_filter() {
         let temp_dir = tempdir().unwrap();
         let rules = single_secret_rules(
-            &format!("{}/existing.age", temp_dir.path().to_str().unwrap()),
+            &format!("{}/existing", temp_dir.path().to_str().unwrap()),
             "",
         );
         let temp_rules = create_rules_file(&rules);
@@ -626,7 +626,7 @@ mod tests {
     fn test_check_without_age_suffix_in_filter() {
         let temp_dir = tempdir().unwrap();
         let rules = single_secret_rules(
-            &format!("{}/secret.age", temp_dir.path().to_str().unwrap()),
+            &format!("{}/secret", temp_dir.path().to_str().unwrap()),
             "",
         );
         let temp_rules = create_rules_file(&rules);
@@ -663,12 +663,12 @@ mod tests {
     #[test]
     fn test_check_error_message_includes_file_name() {
         let temp_dir = tempdir().unwrap();
-        let secret_path = format!("{}/bad-secret.age", temp_dir.path().to_str().unwrap());
+        let secret_path = format!("{}/bad-secret", temp_dir.path().to_str().unwrap());
         let rules = single_secret_rules(&secret_path, "");
         let temp_rules = create_rules_file(&rules);
 
         // Create an invalid secret file
-        fs::write(&secret_path, "invalid").unwrap();
+        fs::write(format!("{}.age", secret_path), "invalid").unwrap();
 
         let result = check_secrets(temp_rules.path().to_str().unwrap(), &[], &[], false);
         assert!(result.is_err());
@@ -828,8 +828,8 @@ mod tests {
 
         // Create a minimal rules file
         let temp_rules = create_rules_file(&format!(
-            r#"{{ "{}" = {{ publicKeys = ["age1..."]; }}; }}"#,
-            path.to_str().unwrap()
+            r#"{{ "{}/invalid" = {{ publicKeys = ["age1..."]; }}; }}"#,
+            temp_dir.path().to_str().unwrap()
         ));
 
         let status = get_secret_status(
