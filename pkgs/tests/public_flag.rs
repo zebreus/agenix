@@ -6,7 +6,7 @@
 use std::fs;
 use std::io::Write;
 use std::process::Command;
-use tempfile::{NamedTempFile, tempdir};
+use tempfile::tempdir;
 
 /// Create a secrets.nix file in the given directory with the given content.
 /// Returns the path to the created file.
@@ -16,8 +16,8 @@ fn create_rules_file_in_dir(dir: &std::path::Path, content: &str) -> std::path::
     rules_path
 }
 
-/// Helper to convert PathBuf to string for use in command arguments.
-fn path_to_str(path: &std::path::PathBuf) -> &str {
+/// Helper to convert Path to string for use in command arguments.
+fn path_to_str(path: &std::path::Path) -> &str {
     path.to_str().unwrap()
 }
 

@@ -824,7 +824,7 @@ mod tests {
 
         let result = should_armor(temp_file.path().to_str().unwrap(), "test.age")?;
 
-        assert_eq!(result, true);
+        assert!(result);
         Ok(())
     }
 
@@ -842,7 +842,7 @@ mod tests {
 
         let result = should_armor(temp_file.path().to_str().unwrap(), "test.age")?;
 
-        assert_eq!(result, false);
+        assert!(!result);
         Ok(())
     }
 
@@ -861,7 +861,7 @@ mod tests {
         let result = should_armor(temp_file.path().to_str().unwrap(), "test.age")?;
 
         // Should default to false when armor attribute is missing
-        assert_eq!(result, false);
+        assert!(!result);
         Ok(())
     }
 
@@ -1013,9 +1013,9 @@ mod tests {
         assert_eq!(keys3.len(), 1);
 
         // Test armor settings
-        assert_eq!(should_armor(&rules_path, "secret1.age")?, true);
-        assert_eq!(should_armor(&rules_path, "secret2.age")?, false);
-        assert_eq!(should_armor(&rules_path, "secret3.age")?, false); // Default
+        assert!(should_armor(&rules_path, "secret1.age")?);
+        assert!(!(should_armor(&rules_path, "secret2.age")?));
+        assert!(!(should_armor(&rules_path, "secret3.age")?)); // Default
 
         Ok(())
     }
@@ -1054,14 +1054,11 @@ mod tests {
         let api_keys = get_public_keys(temp_file.path().to_str().unwrap(), "api-key.age")?;
         assert_eq!(api_keys.len(), 2); // Only common keys
 
-        assert_eq!(
-            should_armor(temp_file.path().to_str().unwrap(), "database.age")?,
-            true
-        );
-        assert_eq!(
-            should_armor(temp_file.path().to_str().unwrap(), "api-key.age")?,
-            false
-        );
+        assert!(should_armor(
+            temp_file.path().to_str().unwrap(),
+            "database.age"
+        )?);
+        assert!(!(should_armor(temp_file.path().to_str().unwrap(), "api-key.age")?));
 
         Ok(())
     }
@@ -1174,14 +1171,8 @@ mod tests {
         let config_keys = get_public_keys(rules_path.to_str().unwrap(), "config.age")?;
         assert_eq!(config_keys.len(), 2); // Just common keys
 
-        assert_eq!(
-            should_armor(rules_path.to_str().unwrap(), "database.age")?,
-            true
-        );
-        assert_eq!(
-            should_armor(rules_path.to_str().unwrap(), "config.age")?,
-            false
-        );
+        assert!(should_armor(rules_path.to_str().unwrap(), "database.age")?);
+        assert!(!(should_armor(rules_path.to_str().unwrap(), "config.age")?));
 
         Ok(())
     }
@@ -1220,18 +1211,15 @@ mod tests {
         assert!(all_files.contains(&"shared-config.age".to_string()));
 
         // Test armor settings based on function parameters
-        assert_eq!(
-            should_armor(temp_file.path().to_str().unwrap(), "team-password.age")?,
-            true
-        );
-        assert_eq!(
-            should_armor(temp_file.path().to_str().unwrap(), "alice-private.age")?,
-            false
-        );
-        assert_eq!(
-            should_armor(temp_file.path().to_str().unwrap(), "shared-config.age")?,
-            true
-        );
+        assert!(should_armor(
+            temp_file.path().to_str().unwrap(),
+            "team-password.age"
+        )?);
+        assert!(!(should_armor(temp_file.path().to_str().unwrap(), "alice-private.age")?));
+        assert!(should_armor(
+            temp_file.path().to_str().unwrap(),
+            "shared-config.age"
+        )?);
 
         // Test key counts
         let team_keys = get_public_keys(temp_file.path().to_str().unwrap(), "team-password.age")?;
@@ -1342,18 +1330,15 @@ mod tests {
         assert_eq!(keys_7.len(), 3); // 7 % 5 + 1 = 3
 
         // Check armor settings
-        assert_eq!(
-            should_armor(temp_file.path().to_str().unwrap(), "secret-000.age")?,
-            true
-        ); // 0 % 3 == 0
-        assert_eq!(
-            should_armor(temp_file.path().to_str().unwrap(), "secret-001.age")?,
-            false
-        ); // 1 % 3 != 0
-        assert_eq!(
-            should_armor(temp_file.path().to_str().unwrap(), "secret-003.age")?,
-            true
-        ); // 3 % 3 == 0
+        assert!(should_armor(
+            temp_file.path().to_str().unwrap(),
+            "secret-000.age"
+        )?); // 0 % 3 == 0
+        assert!(!(should_armor(temp_file.path().to_str().unwrap(), "secret-001.age")?)); // 1 % 3 != 0
+        assert!(should_armor(
+            temp_file.path().to_str().unwrap(),
+            "secret-003.age"
+        )?); // 3 % 3 == 0
 
         Ok(())
     }
@@ -1395,18 +1380,15 @@ mod tests {
         // Dev secret should include admin key (condition is true)
         let dev_keys = get_public_keys(temp_file.path().to_str().unwrap(), "dev-secret.age")?;
         assert_eq!(dev_keys.len(), 2); // devKey + adminKey
-        assert_eq!(
-            should_armor(temp_file.path().to_str().unwrap(), "dev-secret.age")?,
-            true
-        );
+        assert!(should_armor(
+            temp_file.path().to_str().unwrap(),
+            "dev-secret.age"
+        )?);
 
         // Prod secret should not include admin key (condition is false)
         let prod_keys = get_public_keys(temp_file.path().to_str().unwrap(), "prod-secret.age")?;
         assert_eq!(prod_keys.len(), 2); // Just prodKeys, no admin
-        assert_eq!(
-            should_armor(temp_file.path().to_str().unwrap(), "prod-secret.age")?,
-            false
-        );
+        assert!(!(should_armor(temp_file.path().to_str().unwrap(), "prod-secret.age")?));
 
         Ok(())
     }
@@ -1507,18 +1489,12 @@ mod tests {
         assert!(all_files.contains(&"global-config.age".to_string()));
 
         // Check armor settings (only prod-database should be armored)
-        assert_eq!(
-            should_armor(temp_file.path().to_str().unwrap(), "dev-database.age")?,
-            false
-        );
-        assert_eq!(
-            should_armor(temp_file.path().to_str().unwrap(), "staging-database.age")?,
-            false
-        );
-        assert_eq!(
-            should_armor(temp_file.path().to_str().unwrap(), "prod-database.age")?,
-            true
-        );
+        assert!(!(should_armor(temp_file.path().to_str().unwrap(), "dev-database.age")?));
+        assert!(!(should_armor(temp_file.path().to_str().unwrap(), "staging-database.age")?));
+        assert!(should_armor(
+            temp_file.path().to_str().unwrap(),
+            "prod-database.age"
+        )?);
 
         // Check key counts (api-key files should have 2 keys, others 1)
         let dev_db_keys = get_public_keys(temp_file.path().to_str().unwrap(), "dev-database.age")?;
