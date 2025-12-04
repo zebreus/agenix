@@ -653,3 +653,353 @@ fn test_edit_dry_run_short_flag() {
         "File should NOT be created with -n flag"
     );
 }
+
+// ============================================
+// COMPREHENSIVE FILE SYSTEM VERIFICATION TESTS
+// ============================================
+
+use std::collections::{HashMap, HashSet};
+use std::path::Path;
+
+/// Capture the state of all files in a directory (recursively).
+/// Returns a map of relative paths to file content (as Vec<u8>).
+fn capture_directory_state(dir: &Path) -> HashMap<String, Vec<u8>> {
+    let mut state = HashMap::new();
+
+    if let Ok(entries) = fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let rel_path = path
+                .strip_prefix(dir)
+                .unwrap()
+                .to_string_lossy()
+                .to_string();
+
+            if path.is_file() {
+                if let Ok(content) = fs::read(&path) {
+                    state.insert(rel_path, content);
+                }
+            } else if path.is_dir() {
+                // Recursively capture subdirectory state
+                let sub_state = capture_directory_state(&path);
+                state.extend(sub_state);
+            }
+        }
+    }
+
+    state
+}
+
+/// Verify that two directory states are identical.
+fn verify_states_identical(
+    before: &HashMap<String, Vec<u8>>,
+    after: &HashMap<String, Vec<u8>>,
+) -> Result<(), String> {
+    let before_files: HashSet<_> = before.keys().collect();
+    let after_files: HashSet<_> = after.keys().collect();
+
+    // Check for new files
+    let new_files: Vec<_> = after_files.difference(&before_files).collect();
+    if !new_files.is_empty() {
+        return Err(format!("New files created: {:?}", new_files));
+    }
+
+    // Check for deleted files
+    let deleted_files: Vec<_> = before_files.difference(&after_files).collect();
+    if !deleted_files.is_empty() {
+        return Err(format!("Files deleted: {:?}", deleted_files));
+    }
+
+    // Check for modified files
+    for file in before_files {
+        let before_content = &before[file.as_str()];
+        let after_content = &after[file.as_str()];
+        if before_content != after_content {
+            return Err(format!(
+                "File modified: {} (before: {} bytes, after: {} bytes)",
+                file,
+                before_content.len(),
+                after_content.len()
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+/// Comprehensive test that verifies generate --dry-run makes no file system changes.
+#[test]
+fn test_generate_dry_run_no_filesystem_changes() {
+    let temp_dir = tempdir().unwrap();
+    let secrets_nix_dir = temp_dir.path();
+
+    let secret_name = "test-secret";
+
+    // Create a rules file in the temp directory
+    let rules_path = secrets_nix_dir.join("secrets.nix");
+    let rules = format!(
+        r#"{{ "{}" = {{ publicKeys = [ "{}" ]; generator = {{ }}: "test-content"; }}; }}"#,
+        secret_name, TEST_PUBKEY
+    );
+    fs::write(&rules_path, rules).unwrap();
+
+    // Create an existing file to ensure it's not modified
+    let existing_file = secrets_nix_dir.join("existing.txt");
+    fs::write(&existing_file, "original content").unwrap();
+
+    // Capture state before
+    let state_before = capture_directory_state(secrets_nix_dir);
+
+    // Run generate with --dry-run
+    let output = Command::new(agenix_bin())
+        .args([
+            "generate",
+            "--dry-run",
+            "--secrets-nix",
+            rules_path.to_str().unwrap(),
+        ])
+        .output()
+        .expect("Failed to execute agenix");
+
+    assert!(
+        output.status.success(),
+        "generate --dry-run should succeed, stderr: {:?}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // Capture state after
+    let state_after = capture_directory_state(secrets_nix_dir);
+
+    // Verify no changes
+    verify_states_identical(&state_before, &state_after)
+        .expect("Directory state should be identical after dry-run");
+}
+
+/// Comprehensive test that verifies rekey --dry-run makes no file system changes.
+#[test]
+fn test_rekey_dry_run_no_filesystem_changes() {
+    let temp_dir = tempdir().unwrap();
+    let secrets_nix_dir = temp_dir.path();
+
+    let secret_name = "test-secret";
+
+    // Create a rules file
+    let rules_path = secrets_nix_dir.join("secrets.nix");
+    let rules = format!(
+        r#"{{ "{}" = {{ publicKeys = [ "{}" ]; }}; }}"#,
+        secret_name, TEST_PUBKEY
+    );
+    fs::write(&rules_path, rules).unwrap();
+
+    // Create an existing secret file
+    let secret_file = secrets_nix_dir.join(format!("{}.age", secret_name));
+    fs::write(&secret_file, "existing encrypted content").unwrap();
+
+    // Create another file to ensure it's not modified
+    let other_file = secrets_nix_dir.join("other.txt");
+    fs::write(&other_file, "other content").unwrap();
+
+    // Capture state before
+    let state_before = capture_directory_state(secrets_nix_dir);
+
+    // Run rekey with --dry-run (use --partial to continue even if decryption fails)
+    let _output = Command::new(agenix_bin())
+        .args([
+            "rekey",
+            "--dry-run",
+            "--partial",
+            "--secrets-nix",
+            rules_path.to_str().unwrap(),
+        ])
+        .output()
+        .expect("Failed to execute agenix");
+
+    // Capture state after (do this even if command fails)
+    let state_after = capture_directory_state(secrets_nix_dir);
+
+    // Verify no changes (regardless of command success/failure)
+    verify_states_identical(&state_before, &state_after)
+        .expect("Directory state should be identical after rekey --dry-run");
+}
+
+/// Comprehensive test that verifies encrypt --dry-run makes no file system changes.
+#[test]
+fn test_encrypt_dry_run_no_filesystem_changes() {
+    let temp_dir = tempdir().unwrap();
+    let secrets_nix_dir = temp_dir.path();
+
+    let secret_name = "new-secret";
+
+    // Create a rules file
+    let rules_path = secrets_nix_dir.join("secrets.nix");
+    let rules = format!(
+        r#"{{ "{}" = {{ publicKeys = [ "{}" ]; }}; }}"#,
+        secret_name, TEST_PUBKEY
+    );
+    fs::write(&rules_path, rules).unwrap();
+
+    // Create an existing file to ensure it's not modified
+    let existing_file = secrets_nix_dir.join("existing.txt");
+    fs::write(&existing_file, "original content").unwrap();
+
+    // Capture state before
+    let state_before = capture_directory_state(secrets_nix_dir);
+
+    // Run encrypt with --dry-run
+    let mut child = Command::new(agenix_bin())
+        .args([
+            "encrypt",
+            "--dry-run",
+            "--secrets-nix",
+            rules_path.to_str().unwrap(),
+            secret_name,
+        ])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("Failed to spawn agenix");
+
+    // Write content to stdin
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin.write_all(b"test-secret-content").unwrap();
+    }
+
+    let output = child.wait_with_output().expect("Failed to wait for agenix");
+
+    assert!(
+        output.status.success(),
+        "encrypt --dry-run should succeed, stderr: {:?}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // Capture state after
+    let state_after = capture_directory_state(secrets_nix_dir);
+
+    // Verify no changes
+    verify_states_identical(&state_before, &state_after)
+        .expect("Directory state should be identical after encrypt --dry-run");
+}
+
+/// Comprehensive test that verifies edit --dry-run makes no file system changes on new file.
+#[test]
+fn test_edit_dry_run_new_file_no_filesystem_changes() {
+    let temp_dir = tempdir().unwrap();
+    let secrets_nix_dir = temp_dir.path();
+
+    let secret_name = "new-secret";
+
+    // Create a rules file
+    let rules_path = secrets_nix_dir.join("secrets.nix");
+    let rules = format!(
+        r#"{{ "{}" = {{ publicKeys = [ "{}" ]; }}; }}"#,
+        secret_name, TEST_PUBKEY
+    );
+    fs::write(&rules_path, rules).unwrap();
+
+    // Create an existing file to ensure it's not modified
+    let existing_file = secrets_nix_dir.join("existing.txt");
+    fs::write(&existing_file, "original content").unwrap();
+
+    // Capture state before
+    let state_before = capture_directory_state(secrets_nix_dir);
+
+    // Run edit with --dry-run (pipe content to stdin)
+    let mut child = Command::new(agenix_bin())
+        .args([
+            "edit",
+            "--dry-run",
+            "--secrets-nix",
+            rules_path.to_str().unwrap(),
+            secret_name,
+        ])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("Failed to spawn agenix");
+
+    // Write content to stdin
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin.write_all(b"new content").unwrap();
+    }
+
+    let output = child.wait_with_output().expect("Failed to wait for agenix");
+
+    assert!(
+        output.status.success(),
+        "edit --dry-run should succeed, stderr: {:?}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // Capture state after
+    let state_after = capture_directory_state(secrets_nix_dir);
+
+    // Verify no changes
+    verify_states_identical(&state_before, &state_after)
+        .expect("Directory state should be identical after edit --dry-run on new file");
+}
+
+/// Comprehensive test that verifies edit --dry-run makes no file system changes on existing file.
+#[test]
+fn test_edit_dry_run_existing_file_no_filesystem_changes() {
+    let temp_dir = tempdir().unwrap();
+    let secrets_nix_dir = temp_dir.path();
+
+    let secret_name = "existing-secret";
+
+    // Create a rules file
+    let rules_path = secrets_nix_dir.join("secrets.nix");
+    let rules = format!(
+        r#"{{ "{}" = {{ publicKeys = [ "{}" ]; }}; }}"#,
+        secret_name, TEST_PUBKEY
+    );
+    fs::write(&rules_path, rules).unwrap();
+
+    // Create an existing secret file
+    let secret_file = secrets_nix_dir.join(format!("{}.age", secret_name));
+    fs::write(&secret_file, "existing encrypted content").unwrap();
+
+    // Create another file to ensure it's not modified
+    let other_file = secrets_nix_dir.join("other.txt");
+    fs::write(&other_file, "other content").unwrap();
+
+    // Capture state before
+    let state_before = capture_directory_state(secrets_nix_dir);
+
+    // Run edit with --dry-run and --force (pipe content to stdin)
+    let mut child = Command::new(agenix_bin())
+        .args([
+            "edit",
+            "--dry-run",
+            "--force",
+            "--secrets-nix",
+            rules_path.to_str().unwrap(),
+            secret_name,
+        ])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("Failed to spawn agenix");
+
+    // Write content to stdin
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin.write_all(b"modified content").unwrap();
+    }
+
+    let output = child.wait_with_output().expect("Failed to wait for agenix");
+
+    assert!(
+        output.status.success(),
+        "edit --dry-run should succeed, stderr: {:?}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // Capture state after
+    let state_after = capture_directory_state(secrets_nix_dir);
+
+    // Verify no changes
+    verify_states_identical(&state_before, &state_after)
+        .expect("Directory state should be identical after edit --dry-run on existing file");
+}
