@@ -823,13 +823,15 @@ mod tests {
     #[test]
     fn test_get_secret_status_invalid_file() {
         let temp_dir = tempdir().unwrap();
-        let path = temp_dir.path().join("invalid.age");
+        let secret_name = "invalid";
+        let path = temp_dir.path().join(format!("{}.age", secret_name));
         fs::write(&path, "not-valid-age-content").unwrap();
 
         // Create a minimal rules file
         let temp_rules = create_rules_file(&format!(
-            r#"{{ "{}/invalid" = {{ publicKeys = ["age1..."]; }}; }}"#,
-            temp_dir.path().to_str().unwrap()
+            r#"{{ "{}/{}" = {{ publicKeys = ["age1..."]; }}; }}"#,
+            temp_dir.path().to_str().unwrap(),
+            secret_name
         ));
 
         let status = get_secret_status(
