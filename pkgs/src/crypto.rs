@@ -857,7 +857,7 @@ mod tests {
 
         let result = decrypt_to_file(
             encrypted_file.path().to_str().unwrap(),
-            &decrypted_file.path(),
+            decrypted_file.path(),
             &identities,
             true,
         );
@@ -928,7 +928,7 @@ mod tests {
         // Use system defaults (empty identities, no_system_identities = false)
         let result = decrypt_to_file(
             encrypted_file.path().to_str().unwrap(),
-            &decrypted_file.path(),
+            decrypted_file.path(),
             &[],
             false,
         );

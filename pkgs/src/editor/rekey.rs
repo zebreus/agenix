@@ -299,7 +299,7 @@ mod tests {
     #[test]
     fn test_rekey_partial_flag_recognized() {
         // Test that --partial flag is recognized
-        let args = vec![
+        let args = [
             "agenix".to_string(),
             "rekey".to_string(),
             "--partial".to_string(),

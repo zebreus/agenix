@@ -132,16 +132,16 @@ impl SecretName {
 
         // Support matching by basename for internal filtering
         // (Nix evaluation may return paths in some contexts)
-        if let Some(basename) = self.name.rsplit('/').next() {
-            if basename == other.name {
-                return true;
-            }
+        if let Some(basename) = self.name.rsplit('/').next()
+            && basename == other.name
+        {
+            return true;
         }
 
-        if let Some(basename) = other.name.rsplit('/').next() {
-            if self.name == basename {
-                return true;
-            }
+        if let Some(basename) = other.name.rsplit('/').next()
+            && self.name == basename
+        {
+            return true;
         }
 
         false
