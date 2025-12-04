@@ -49,10 +49,11 @@ fi
 # Test 5: Check invalid secret fails
 echo "--- Test 5: Check invalid secret ---"
 TEMP_RULES="$TMPDIR/temp-check.nix"
+INVALID_SECRET_NAME="$TMPDIR/invalid-check"
 INVALID_SECRET="$TMPDIR/invalid-check.age"
 cat > "$TEMP_RULES" << EOF
 {
-  "$INVALID_SECRET" = {
+  "$INVALID_SECRET_NAME" = {
     publicKeys = [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH" ];
   };
 }
@@ -90,10 +91,11 @@ fi
 # Test 8: Check returns non-zero exit code on failure
 echo "--- Test 8: Exit code on failure ---"
 FAIL_RULES="$TMPDIR/fail-check-rules.nix"
+FAIL_SECRET_NAME="$TMPDIR/fail-secret"
 FAIL_SECRET="$TMPDIR/fail-secret.age"
 cat > "$FAIL_RULES" << EOF
 {
-  "$FAIL_SECRET" = {
+  "$FAIL_SECRET_NAME" = {
     publicKeys = [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH" ];
   };
 }
