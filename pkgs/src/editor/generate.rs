@@ -1039,7 +1039,7 @@ mod tests {
         use std::io::Write;
         use tempfile::NamedTempFile;
         let temp_dir = tempdir()?;
-        // Test that dependencies work whether they include .age suffix or not
+        // Test that dependencies work with correct secret names (without .age suffix)
         let rules_content = format!(
             r#"
     {{
@@ -1049,7 +1049,7 @@ mod tests {
       }};
       "{}/derived" = {{
     publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
-    dependencies = [ "base.age" ];
+    dependencies = [ "base" ];
     generator = {{ publics }}: {{ secret = "derived-" + publics."base"; public = "derived-pub"; }};
       }};
     }}
@@ -1069,7 +1069,7 @@ mod tests {
         let result = crate::run(args);
         assert!(
             result.is_ok(),
-            "Should handle .age suffix in dependencies: {:?}",
+            "Should handle dependencies correctly: {:?}",
             result.err()
         );
         assert!(
@@ -1503,7 +1503,7 @@ mod tests {
             result.is_err(),
             "Generate with .age suffix should be rejected"
         );
-        let err = result.unwrap_err().to_string();
+        let err = format!("{:?}", result.unwrap_err());
         assert!(
             err.contains("ends with '.age'"),
             "Error should mention .age suffix: {}",
@@ -2509,8 +2509,8 @@ mod tests {
         );
 
         // .pub file should be created
-        let pub_path = temp_dir.path().join("public-only.age.pub");
-        assert!(pub_path.exists(), "public-only.age.pub should be created");
+        let pub_path = temp_dir.path().join("public-only.pub");
+        assert!(pub_path.exists(), "public-only.pub should be created");
 
         // .age file should NOT be created (no secret to encrypt)
         let age_path = temp_dir.path().join("public-only.age");
@@ -2569,10 +2569,10 @@ mod tests {
             result.err()
         );
 
-        // metadata.age.pub should exist, metadata.age should NOT exist
+        // metadata.pub should exist, metadata.age should NOT exist
         assert!(
-            temp_dir.path().join("metadata.age.pub").exists(),
-            "metadata.age.pub should be created"
+            temp_dir.path().join("metadata.pub").exists(),
+            "metadata.pub should be created"
         );
         assert!(
             !temp_dir.path().join("metadata.age").exists(),
@@ -2630,10 +2630,10 @@ mod tests {
         assert!(age_path.exists(), "secret-only.age should be created");
 
         // .pub file should NOT be created (no public output)
-        let pub_path = temp_dir.path().join("secret-only.age.pub");
+        let pub_path = temp_dir.path().join("secret-only.pub");
         assert!(
             !pub_path.exists(),
-            "secret-only.age.pub should NOT be created"
+            "secret-only.pub should NOT be created"
         );
 
         Ok(())
@@ -2682,12 +2682,12 @@ mod tests {
             "both.age should be created"
         );
         assert!(
-            temp_dir.path().join("both.age.pub").exists(),
-            "both.age.pub should be created"
+            temp_dir.path().join("both.pub").exists(),
+            "both.pub should be created"
         );
 
         // Verify .pub content
-        let pub_content = fs::read_to_string(temp_dir.path().join("both.age.pub"))?;
+        let pub_content = fs::read_to_string(temp_dir.path().join("both.pub"))?;
         assert_eq!(pub_content.trim(), "my-public");
 
         Ok(())
@@ -2738,8 +2738,8 @@ mod tests {
 
         // .pub file should NOT be created
         assert!(
-            !temp_dir.path().join("string-gen.age.pub").exists(),
-            "string-gen.age.pub should NOT be created for string generator"
+            !temp_dir.path().join("string-gen.pub").exists(),
+            "string-gen.pub should NOT be created for string generator"
         );
 
         Ok(())
@@ -2992,16 +2992,16 @@ mod tests {
 
         // meta1 and meta2 should only have .pub files
         assert!(
-            temp_dir.path().join("meta1.age.pub").exists(),
-            "meta1.age.pub should be created"
+            temp_dir.path().join("meta1.pub").exists(),
+            "meta1.pub should be created"
         );
         assert!(
             !temp_dir.path().join("meta1.age").exists(),
             "meta1.age should NOT be created"
         );
         assert!(
-            temp_dir.path().join("meta2.age.pub").exists(),
-            "meta2.age.pub should be created"
+            temp_dir.path().join("meta2.pub").exists(),
+            "meta2.pub should be created"
         );
         assert!(
             !temp_dir.path().join("meta2.age").exists(),
