@@ -68,6 +68,15 @@
           inherit system;
           agenixPkg = self.packages.${system}.agenix;
         };
+        ux-testing =
+          if null == (builtins.match ".*darwin" system) then
+            (import ./test/ux-testing/test.nix {
+              inherit home-manager;
+              pkgs = nixpkgs.legacyPackages.${system};
+              system = system;
+            })
+          else
+            null;
       });
 
       darwinConfigurations.integration-x86_64.system = self.checks.x86_64-darwin.integration;
