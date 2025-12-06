@@ -3388,4 +3388,26 @@ mod tests {
         assert!(!info.has_public);
         Ok(())
     }
+
+    #[test]
+    fn test_get_secret_output_info_only_has_secret_false_should_error() -> Result<()> {
+        // Setting only hasSecret=false (without hasPublic) should error
+        // because hasPublic defaults to false, making both false
+        let rules_content = r#"
+        {
+          "only-has-secret-false" = {
+            publicKeys = [ "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p" ];
+            hasSecret = false;
+          };
+        }
+        "#;
+        let temp_file = create_test_rules_file(rules_content)?;
+        let result = get_secret_output_info(temp_file.path().to_str().unwrap(), "only-has-secret-false");
+
+        assert!(result.is_err(), "Should error when only hasSecret=false is set");
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("hasSecret=false"));
+        assert!(err.to_string().contains("hasPublic=false"));
+        Ok(())
+    }
 }
