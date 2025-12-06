@@ -488,6 +488,56 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_list_public_only_secret_with_pub_file() {
+        // Test for secrets with hasSecret=false and hasPublic=true with .pub file present
+        let temp_dir = tempdir().unwrap();
+        let secret_name = "public-only-secret";
+        let rules = single_secret_rules(
+            &format!("{}/{}", temp_dir.path().to_str().unwrap(), secret_name),
+            "hasSecret = false; hasPublic = true;",
+        );
+        let temp_rules = create_rules_file(&rules);
+
+        // Create the .pub file
+        let pub_path = temp_dir.path().join(format!("{}.pub", secret_name));
+        fs::write(
+            &pub_path,
+            "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPublicKeyContent",
+        )
+        .unwrap();
+
+        // List without status should succeed
+        let result = list_secrets(temp_rules.path().to_str().unwrap(), false, &[], &[], false);
+        assert!(result.is_ok());
+
+        // List with status should show PUBLIC_ONLY
+        let result = list_secrets(temp_rules.path().to_str().unwrap(), true, &[], &[], false);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_list_public_only_secret_missing_pub_file() {
+        // Test for secrets with hasSecret=false and hasPublic=true but .pub file missing
+        let temp_dir = tempdir().unwrap();
+        let secret_name = "public-only-missing";
+        let rules = single_secret_rules(
+            &format!("{}/{}", temp_dir.path().to_str().unwrap(), secret_name),
+            "hasSecret = false; hasPublic = true;",
+        );
+        let temp_rules = create_rules_file(&rules);
+
+        // Don't create the .pub file - it's missing
+
+        // List without status should succeed
+        let result = list_secrets(temp_rules.path().to_str().unwrap(), false, &[], &[], false);
+        assert!(result.is_ok());
+
+        // List with status should show PUB_MISSING
+        let result = list_secrets(temp_rules.path().to_str().unwrap(), true, &[], &[], false);
+        assert!(result.is_ok());
+    }
+
     // ===========================================
     // CHECK COMMAND TESTS (10+ tests)
     // ===========================================
