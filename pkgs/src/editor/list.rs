@@ -501,7 +501,11 @@ mod tests {
 
         // Create the .pub file
         let pub_path = temp_dir.path().join(format!("{}.pub", secret_name));
-        fs::write(&pub_path, "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPublicKeyContent").unwrap();
+        fs::write(
+            &pub_path,
+            "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPublicKeyContent",
+        )
+        .unwrap();
 
         // List without status should succeed
         let result = list_secrets(temp_rules.path().to_str().unwrap(), false, &[], &[], false);

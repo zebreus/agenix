@@ -3402,9 +3402,13 @@ mod tests {
         }
         "#;
         let temp_file = create_test_rules_file(rules_content)?;
-        let result = get_secret_output_info(temp_file.path().to_str().unwrap(), "only-has-secret-false");
+        let result =
+            get_secret_output_info(temp_file.path().to_str().unwrap(), "only-has-secret-false");
 
-        assert!(result.is_err(), "Should error when only hasSecret=false is set");
+        assert!(
+            result.is_err(),
+            "Should error when only hasSecret=false is set"
+        );
         let err = result.unwrap_err();
         assert!(err.to_string().contains("hasSecret=false"));
         assert!(err.to_string().contains("hasPublic=false"));
