@@ -180,31 +180,22 @@ pkgs.testers.nixosTest {
       system1.wait_until_tty_matches("2", "login: ${user}")
       system1.wait_until_succeeds("pgrep login")
       system1.sleep(2)
+      # Logging in proves the password secret was decrypted at boot (PAM
+      # checks against the decrypted password file) and starts the user
+      # session that triggers home-manager secret decryption.
       system1.send_chars("${password}\n")
       system1.send_chars("whoami > /tmp/1\n")
       system1.wait_for_file("/tmp/1")
       assert "${user}" in system1.succeed("cat /tmp/1")
 
-      # Test home-manager module: user secret should be decrypted at expected path
-      system1.send_chars("cat /run/user/$(id -u)/agenix/secret2 > /tmp/2\n")
-      system1.sleep(2)
-      system1.wait_for_file("/tmp/2")
-      system1.sleep(8)
-      assert "${secret2}" in system1.succeed("cat /tmp/2")
+      # Test home-manager module: user secret decrypted at the expected path
+      system1.wait_until_succeeds("grep -qF '${secret2}' /run/user/$(id -u ${user})/agenix/secret2")
 
       # Test home-manager module: armored secret should be decrypted
-      system1.send_chars("cat /run/user/$(id -u)/agenix/armored-secret > /tmp/3\n")
-      system1.sleep(2)
-      system1.wait_for_file("/tmp/3")
-      system1.sleep(5)
-      assert "${armored-secret}" in system1.succeed("cat /tmp/3")
+      system1.wait_until_succeeds("grep -qF '${armored-secret}' /run/user/$(id -u ${user})/agenix/armored-secret")
 
       # Test home-manager module: custom path for secret
-      system1.send_chars("cat /home/user1/secret2 > /tmp/4\n")
-      system1.sleep(2)
-      system1.wait_for_file("/tmp/4")
-      system1.sleep(5)
-      assert "${secret2}" in system1.succeed("cat /tmp/4")
+      system1.wait_until_succeeds("grep -qF '${secret2}' /home/user1/secret2")
 
       # Test NixOS module: public file at default location (symlink)
       assert "${public-content}" in system1.succeed("cat /run/agenix-public/secret-with-public.pub")
@@ -225,18 +216,10 @@ pkgs.testers.nixosTest {
       system1.succeed("test -f /etc/my-public-key-copy.pub && ! test -L /etc/my-public-key-copy.pub")
 
       # Test home-manager module: public file at default location
-      system1.send_chars("cat /run/user/$(id -u)/agenix-public/hm-secret-with-public.pub > /tmp/5\n")
-      system1.sleep(2)
-      system1.wait_for_file("/tmp/5")
-      system1.sleep(5)
-      assert "${public-content}" in system1.succeed("cat /tmp/5")
+      system1.wait_until_succeeds("grep -qF '${public-content}' /run/user/$(id -u ${user})/agenix-public/hm-secret-with-public.pub")
 
       # Test home-manager module: public file at custom path
-      system1.send_chars("cat /home/user1/.config/my-public-key.pub > /tmp/6\n")
-      system1.sleep(2)
-      system1.wait_for_file("/tmp/6")
-      system1.sleep(5)
-      assert "${public-content}" in system1.succeed("cat /tmp/6")
+      system1.wait_until_succeeds("grep -qF '${public-content}' /home/user1/.config/my-public-key.pub")
 
       # Real-world scenario tests:
 
@@ -251,15 +234,8 @@ pkgs.testers.nixosTest {
       system1.succeed("test -f /var/lib/deploy/.ssh/id_ed25519")
 
       # Test Home Manager: User SSH key pair
-      system1.send_chars("cat /home/user1/.ssh/id_ed25519_test.pub > /tmp/7\n")
-      system1.sleep(2)
-      system1.wait_for_file("/tmp/7")
-      system1.sleep(5)
-      assert "${public-content}" in system1.succeed("cat /tmp/7")
+      system1.wait_until_succeeds("grep -qF '${public-content}' /home/user1/.ssh/id_ed25519_test.pub")
       # Verify the private key also exists
-      system1.send_chars("test -f /home/user1/.ssh/id_ed25519_test && echo 'exists' > /tmp/8\n")
-      system1.sleep(2)
-      system1.wait_for_file("/tmp/8")
-      assert "exists" in system1.succeed("cat /tmp/8")
+      system1.succeed("test -f /home/user1/.ssh/id_ed25519_test")
     '';
 }
