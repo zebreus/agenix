@@ -9,6 +9,19 @@ with lib;
 let
   cfg = config.age;
 
+  # Resolve a file inside age.secretsPath, importing it into the store.
+  # Symlinks are rejected: importing copies the link itself, which then
+  # dangles in the store and fails silently at activation time.
+  fromSecretsPath =
+    file:
+    let
+      type = (builtins.readDir cfg.secretsPath).${file} or null;
+    in
+    if type == "symlink" then
+      throw "age: '${file}' in ${toString cfg.secretsPath} is a symlink. Symlinks to secret files are not supported; replace it with a regular file."
+    else
+      cfg.secretsPath + "/${file}";
+
   ageBin = lib.getExe config.age.package;
 
   newGeneration = ''
@@ -227,9 +240,9 @@ let
           type = types.nullOr types.path;
           default =
             let
-              # If secretsPath is set, construct path from secret name
-              secretPath =
-                if cfg.secretsPath != null then "${toString cfg.secretsPath}/${config.name}.age" else null;
+              # If secretsPath is set, construct path from secret name.
+              # The path is imported into the store like any Nix path.
+              secretPath = if cfg.secretsPath != null then fromSecretsPath "${config.name}.age" else null;
             in
             if secretPath != null && builtins.pathExists secretPath then secretPath else null;
           defaultText = literalExpression ''

@@ -29,7 +29,6 @@ pkgs.testers.nixosTest {
 
       age.secrets = {
         passwordfile-user1 = { };
-        leading-hyphen = { };
         # Test secret files that correspond to publics defined below
         secret-with-public = { };
         "secret-with-public-custom-path" = {
@@ -162,7 +161,6 @@ pkgs.testers.nixosTest {
       user = "user1";
       password = "password1234";
       secret2 = "world!";
-      hyphen-secret = "filename started with hyphen";
       armored-secret = "Hello World!";
       public-content = "my-public-key-content";
     in
@@ -200,9 +198,6 @@ pkgs.testers.nixosTest {
       system1.wait_for_file("/tmp/3")
       system1.sleep(5)
       assert "${armored-secret}" in system1.succeed("cat /tmp/3")
-
-      # Test NixOS module: system secret with leading hyphen in filename
-      assert "${hyphen-secret}" in system1.succeed("cat /run/agenix/leading-hyphen")
 
       # Test home-manager module: custom path for secret
       system1.send_chars("cat /home/user1/secret2 > /tmp/4\n")

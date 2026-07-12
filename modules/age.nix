@@ -9,6 +9,19 @@ with lib;
 let
   cfg = config.age;
 
+  # Resolve a file inside age.secretsPath, importing it into the store.
+  # Symlinks are rejected: importing copies the link itself, which then
+  # dangles in the store and fails silently at activation time.
+  fromSecretsPath =
+    file:
+    let
+      type = (builtins.readDir cfg.secretsPath).${file} or null;
+    in
+    if type == "symlink" then
+      throw "age: '${file}' in ${toString cfg.secretsPath} is a symlink. Symlinks to secret files are not supported; replace it with a regular file."
+    else
+      cfg.secretsPath + "/${file}";
+
   isDarwin = lib.attrsets.hasAttrByPath [ "environment" "darwinConfig" ] options;
 
   ageBin = config.age.ageBin;
@@ -197,8 +210,7 @@ let
         file = mkOption {
           type = types.path;
           internal = true;
-          # See age.secrets.*.file for why this is string interpolation.
-          default = "${cfg.secretsPath}/${config.name}.pub";
+          default = fromSecretsPath "${config.name}.pub";
           description = ''
             Public key file corresponding to the secret.
 
@@ -272,11 +284,7 @@ let
         file = mkOption {
           type = types.path;
           internal = true;
-          # String interpolation imports the whole secretsPath directory into
-          # the store as one path, so relative symlinks between secret files
-          # keep working. (`cfg.secretsPath + "/..."` would import just the
-          # one file and turn a relative symlink into a dangling one.)
-          default = "${cfg.secretsPath}/${config.name}.age";
+          default = fromSecretsPath "${config.name}.age";
           description = ''
             Age file the secret is loaded from.
 
