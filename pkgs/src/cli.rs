@@ -97,7 +97,7 @@ pub enum Command {
     Decrypt {
         /// The secret to decrypt
         #[arg(value_name = "SECRET", allow_hyphen_values = true)]
-        file: String,
+        secret: String,
 
         /// Output file (defaults to stdout)
         #[arg(short, long, value_name = "FILE")]
@@ -297,8 +297,8 @@ mod tests {
         let args =
             Args::try_parse_from(["agenix", "-i", "/path/to/key", "decrypt", "secret"]).unwrap();
         assert_eq!(args.identity, vec!["/path/to/key".to_string()]);
-        if let Some(Command::Decrypt { file, .. }) = args.command {
-            assert_eq!(file, "secret".to_string());
+        if let Some(Command::Decrypt { secret, .. }) = args.command {
+            assert_eq!(secret, "secret".to_string());
         } else {
             panic!("Expected Decrypt command");
         }
@@ -639,8 +639,8 @@ mod tests {
     fn test_decrypt_with_output() {
         let args =
             Args::try_parse_from(["agenix", "decrypt", "secret", "-o", "/path/to/output"]).unwrap();
-        if let Some(Command::Decrypt { file, output, .. }) = args.command {
-            assert_eq!(file, "secret".to_string());
+        if let Some(Command::Decrypt { secret, output, .. }) = args.command {
+            assert_eq!(secret, "secret".to_string());
             assert_eq!(output, Some("/path/to/output".to_string()));
         } else {
             panic!("Expected Decrypt command");
@@ -1429,8 +1429,8 @@ mod tests {
     fn test_quiet_with_decrypt() {
         let args = Args::try_parse_from(["agenix", "-q", "decrypt", "secret"]).unwrap();
         assert!(args.quiet);
-        if let Some(Command::Decrypt { file, .. }) = args.command {
-            assert_eq!(file, "secret");
+        if let Some(Command::Decrypt { secret, .. }) = args.command {
+            assert_eq!(secret, "secret");
         } else {
             panic!("Expected Decrypt command");
         }
@@ -1630,8 +1630,8 @@ mod tests {
     #[test]
     fn test_decrypt_public_flag() {
         let args = Args::try_parse_from(["agenix", "decrypt", "--public", "test"]).unwrap();
-        if let Some(Command::Decrypt { file, public, .. }) = args.command {
-            assert_eq!(file, "test");
+        if let Some(Command::Decrypt { secret, public, .. }) = args.command {
+            assert_eq!(secret, "test");
             assert!(public);
         } else {
             panic!("Expected Decrypt command");
@@ -1641,8 +1641,8 @@ mod tests {
     #[test]
     fn test_decrypt_public_short_flag() {
         let args = Args::try_parse_from(["agenix", "decrypt", "-p", "test"]).unwrap();
-        if let Some(Command::Decrypt { file, public, .. }) = args.command {
-            assert_eq!(file, "test");
+        if let Some(Command::Decrypt { secret, public, .. }) = args.command {
+            assert_eq!(secret, "test");
             assert!(public);
         } else {
             panic!("Expected Decrypt command");
@@ -1655,12 +1655,12 @@ mod tests {
             Args::try_parse_from(["agenix", "decrypt", "-p", "-o", "/path/to/output", "test"])
                 .unwrap();
         if let Some(Command::Decrypt {
-            file,
+            secret,
             public,
             output,
         }) = args.command
         {
-            assert_eq!(file, "test");
+            assert_eq!(secret, "test");
             assert!(public);
             assert_eq!(output, Some("/path/to/output".to_string()));
         } else {

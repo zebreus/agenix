@@ -13,4 +13,7 @@ mod keypair;
 mod public_key;
 mod raw_secret_entry;
 
-pub use engine::{Config, Operation, check_entry, flush, generate, init, list_names};
+pub use engine::{
+    Config, EntryStatus, Operation, PartStatus, check_entry, flush, generate, get_public,
+    get_secret, init, list_names, status,
+};

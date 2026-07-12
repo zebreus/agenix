@@ -59,6 +59,25 @@ enum EntryMode {
     ForceGenerate,
 }
 
+/// Whether one part of an entry is present and usable (for `list --status`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PartStatus {
+    /// The file exists (and, for secrets, is decryptable).
+    Available,
+    /// The file does not exist.
+    Missing,
+    /// The secret file exists but no identity can decrypt it.
+    CannotDecrypt,
+}
+
+/// Status of an entry's parts. None means the entry declares that part
+/// does not exist.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct EntryStatus {
+    pub secret: Option<PartStatus>,
+    pub public: Option<PartStatus>,
+}
+
 /// Resolution state of one part of an entry. Absence from the state map
 /// means the part has not been resolved yet.
 #[derive(Clone, Debug)]
@@ -387,6 +406,13 @@ impl Engine {
         Ok(())
     }
 
+    /// Decrypt a part's ciphertext and cache the plaintext.
+    fn decrypt(&self, name: &str, part: Part, ciphertext: &[u8]) -> Result<Vec<u8>, Report> {
+        let plaintext = crypto::decrypt(ciphertext, &self.identities, self.no_system_identities)?;
+        self.set_state(name, part, PartState::PlainText(plaintext.clone()));
+        Ok(plaintext)
+    }
+
     /// Resolve one part all the way to plaintext bytes, decrypting on the
     /// way if necessary.
     fn get(&self, name: &str, part: Part) -> Result<Vec<u8>, Report> {
@@ -399,14 +425,10 @@ impl Engine {
         match state {
             PartState::PlainText(bytes) | PartState::NewlyGenerated(bytes) => Ok(bytes),
             PartState::Encrypted(ciphertext) => {
-                let plaintext =
-                    crypto::decrypt(&ciphertext, &self.identities, self.no_system_identities)
-                        .context(format!(
-                            "Cannot decrypt {file} with the available identities. \
-                             Provide a matching identity with --identity."
-                        ))?;
-                self.set_state(name, part, PartState::PlainText(plaintext.clone()));
-                Ok(plaintext)
+                Ok(self.decrypt(name, part, &ciphertext).context(format!(
+                    "Cannot decrypt {file} with the available identities. \
+                     Provide a matching identity with --identity."
+                ))?)
             }
             PartState::Missing => {
                 let hint = if self.entry(name)?.has_generator {
@@ -432,6 +454,38 @@ impl Engine {
                  indirectly) needs its own output"
             )),
         }
+    }
+
+    /// Status of both parts of an entry, without failing on missing or
+    /// undecryptable files.
+    fn status(&self, name: &str) -> Result<EntryStatus, Report> {
+        Ok(EntryStatus {
+            secret: self.part_status(name, Part::Secret)?,
+            public: self.part_status(name, Part::Public)?,
+        })
+    }
+
+    /// Status of one part; None if the entry declares it does not exist.
+    fn part_status(&self, name: &str, part: Part) -> Result<Option<PartStatus>, Report> {
+        if !self.entry(name)?.has(part) {
+            return Ok(None);
+        }
+        self.resolve(name, part)?;
+        let status = match self
+            .state(name, part)
+            .expect("resolve always leaves a state")
+        {
+            PartState::PlainText(_) | PartState::NewlyGenerated(_) => PartStatus::Available,
+            PartState::Encrypted(ciphertext) => match self.decrypt(name, part, &ciphertext) {
+                Ok(_) => PartStatus::Available,
+                Err(_) => PartStatus::CannotDecrypt,
+            },
+            PartState::Missing => PartStatus::Missing,
+            PartState::NotNeeded | PartState::WorkInProgress => {
+                unreachable!("part is declared and no generator is running")
+            }
+        };
+        Ok(Some(status))
     }
 
     /// Resolve every entry on the generation agenda.
@@ -657,6 +711,12 @@ pub fn generate() -> Result<(), Report> {
 /// Check one entry, reporting all problems at once.
 pub fn check_entry(name: &str) -> Result<(), Report> {
     engine()?.check(name)
+}
+
+/// Status of an entry's parts, without failing on missing or undecryptable
+/// files.
+pub fn status(name: &str) -> Result<EntryStatus, Report> {
+    engine()?.status(name)
 }
 
 /// Persist everything that was generated this run. Transactional: on error
@@ -960,6 +1020,34 @@ mod tests {
         let error = error_text(check_entry("stray").unwrap_err());
         assert!(error.contains("stray.age"), "unhelpful error: {error}");
         assert!(error.contains("declares"), "unhelpful error: {error}");
+    }
+
+    #[test]
+    fn status_distinguishes_available_missing_and_undecryptable() {
+        let fx = Fixture::new(
+            r#"{
+              "good" = { publicKeys = [ "{PUB}" ]; };
+              "absent" = { publicKeys = [ "{PUB}" ]; };
+              "sealed" = { publicKeys = [ "{PUB}" ]; };
+              "pubonly" = { hasSecret = false; };
+              "pubmissing" = { hasSecret = false; };
+            }"#,
+        );
+        let good = crypto::encrypt(b"x", &[fx.public_key.clone()], false).unwrap();
+        std::fs::write(fx.path("good.age"), good).unwrap();
+        let other = age::x25519::Identity::generate();
+        let sealed = crypto::encrypt(b"x", &[other.to_public().to_string()], false).unwrap();
+        std::fs::write(fx.path("sealed.age"), sealed).unwrap();
+        std::fs::write(fx.path("pubonly.pub"), b"public data").unwrap();
+
+        fx.init(Operation::Read).unwrap();
+        use PartStatus::{Available, CannotDecrypt, Missing};
+        let of = |name| status(name).unwrap();
+        assert_eq!(of("good"), EntryStatus { secret: Some(Available), public: None });
+        assert_eq!(of("absent"), EntryStatus { secret: Some(Missing), public: None });
+        assert_eq!(of("sealed"), EntryStatus { secret: Some(CannotDecrypt), public: None });
+        assert_eq!(of("pubonly"), EntryStatus { secret: None, public: Some(Available) });
+        assert_eq!(of("pubmissing"), EntryStatus { secret: None, public: Some(Missing) });
     }
 
     #[test]
