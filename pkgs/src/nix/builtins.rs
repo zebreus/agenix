@@ -20,6 +20,41 @@ pub mod impure_builtins {
     /// Maximum length for random string generation (2^16).
     const MAX_LENGTH: i64 = 65536;
 
+    /// Shared implementation of getSecret/getPublic: resolve an entry part
+    /// through the engine and return it as a Nix string.
+    fn get_entry_part(
+        builtin: &str,
+        name: &Value,
+        get: fn(&str) -> Result<Vec<u8>, rootcause::Report>,
+    ) -> Result<Value, ErrorKind> {
+        let name = name
+            .to_str()
+            .map_err(|_| ErrorKind::Abort(format!("{builtin}: argument must be a string")))?;
+        let name = name
+            .as_str()
+            .map_err(|_| ErrorKind::Abort(format!("{builtin}: name must be valid UTF-8")))?;
+        let bytes =
+            get(name).map_err(|e| ErrorKind::Abort(format!("{builtin} \"{name}\": {e:?}")))?;
+        Ok(Value::String(NixString::from(&bytes[..])))
+    }
+
+    /// Returns the plaintext of another entry's secret, resolving it through
+    /// the engine (loading, decrypting, or generating as the current
+    /// operation allows).
+    #[builtin("getSecret")]
+    async fn builtin_get_secret(co: GenCo, name: Value) -> Result<Value, ErrorKind> {
+        let _ = co;
+        get_entry_part("getSecret", &name, crate::nix::engine::get_secret)
+    }
+
+    /// Returns the content of another entry's public part, resolving it
+    /// through the engine.
+    #[builtin("getPublic")]
+    async fn builtin_get_public(co: GenCo, name: Value) -> Result<Value, ErrorKind> {
+        let _ = co;
+        get_entry_part("getPublic", &name, crate::nix::engine::get_public)
+    }
+
     /// Validates length argument for random generators.
     fn validate_length(length: i64, name: &str) -> Result<usize, ErrorKind> {
         if !(0..=MAX_LENGTH).contains(&length) {

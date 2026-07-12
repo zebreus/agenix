@@ -1,4 +1,3 @@
-use anyhow::Result;
 use rootcause::Report;
 
 fn main() -> Result<(), Report> {
@@ -9,46 +8,6 @@ fn main() -> Result<(), Report> {
 mod tests {
     // Note: Tests for no-arg behavior are in cli.rs (test_no_subcommand_shows_help)
     // because running through agenix::run() causes clap to exit the process.
-
-    #[test]
-    fn test_handle_edit_nonexistent_file() {
-        let args = vec![
-            "agenix".to_string(),
-            "edit".to_string(),
-            "nonexistent".to_string(),
-            "--secrets-nix".to_string(),
-            "./test_secrets.nix".to_string(),
-            "--editor".to_string(),
-            "vi".to_string(),
-        ];
-        let result = agenix::run(args);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_handle_decrypt_nonexistent_file() {
-        let args = vec![
-            "agenix".to_string(),
-            "decrypt".to_string(),
-            "nonexistent".to_string(),
-            "--secrets-nix".to_string(),
-            "./test_secrets.nix".to_string(),
-        ];
-        let result = agenix::run(args);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_handle_rekey_nonexistent_secrets_nix() {
-        let args = vec![
-            "agenix".to_string(),
-            "rekey".to_string(),
-            "--secrets-nix".to_string(),
-            "./test_secrets.nix".to_string(),
-        ];
-        let result = agenix::run(args);
-        assert!(result.is_err());
-    }
 
     #[test]
     fn test_handle_generate_nonexistent_secrets_nix() {

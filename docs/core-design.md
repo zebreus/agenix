@@ -1,7 +1,7 @@
 # Core design: the secret resolution engine
 
-The core of agenix is a single lazy resolution engine (`GlobalState` in
-`pkgs/src/nix/global_state.rs`). Every command is a thin wrapper:
+The core of agenix is a single lazy resolution engine (`Engine` in
+`pkgs/src/nix/engine.rs`). Every command is a thin wrapper:
 initialize the engine, ask it for things, format the output. The engine
 is the only component that reads or writes secret files.
 

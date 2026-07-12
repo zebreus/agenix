@@ -1,255 +1,194 @@
-//! Nix expression evaluation and secret management integration.
+//! Loading and interpreting entries from secrets.nix.
 //!
-//! This module provides functionality for evaluating Nix expressions to extract
-//! public keys, file lists, and generator configurations from rules files.
+//! The single source of truth for entry semantics is [`effective_entry_nix`]:
+//! it merges the raw secrets.nix attrset with name-based implicit generators
+//! and resolves the `hasSecret`/`hasPublic` defaulting rules. Both the
+//! metadata load here and the generator call in [`super::generator`] go
+//! through it, so they can never disagree.
 
 use super::eval::{eval_nix_expression, value_to_bool, value_to_string_array};
 use super::public_key::PublicKeyString;
-use anyhow::Result;
-use rootcause::Report;
-use rootcause::report;
-use rootcause::report_collection::ReportCollection;
-use snix_eval::NixString;
+use rootcause::{Report, prelude::*, report};
 use snix_eval::Value;
-use std::env::current_dir;
+use std::path::Path;
 
-use crate::nix::eval::value_to_optional_bool;
-use crate::nix::eval::value_to_optional_string_array;
-use crate::nix::generator::get_entry_with_implicit_generator;
-
-fn validate_name(name: &str) -> Result<(), Report> {
-    if name.is_empty() {
-        return Err(report!("Secret name cannot be empty"));
-    }
-
-    if name.ends_with(".age") {
-        return Err(report!(
-            "Secret name '{}' ends with '.age'. \
-                Secret names in secrets.nix do not include the .age suffix. \
-                Please use '{}' instead.",
-            name,
-            name.strip_suffix(".age").unwrap()
-        ));
-    }
-
-    if name.contains('/') || name.contains('\\') {
-        return Err(report!(
-            "Secret name '{}' contains path separators. \
-                Secret names must be simple names, not paths. \
-                All secret files are located in the same directory as secrets.nix.",
-            name
-        ));
-    }
-
-    if name.starts_with('.') {
-        return Err(report!(
-            "Secret name '{}' starts with '.'. \
-                Secret names must not start with a dot. \
-                All secret files are located in the same directory as secrets.nix.",
-            name
-        ));
-    }
-
-    Ok(())
+/// The two parts an entry can have on disk: `<name>.age` and `<name>.pub`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Part {
+    Secret,
+    Public,
 }
 
+impl Part {
+    pub fn file_name(self, name: &str) -> String {
+        match self {
+            Part::Secret => format!("{name}.age"),
+            Part::Public => format!("{name}.pub"),
+        }
+    }
+}
+
+/// An entry from secrets.nix with all defaulting rules applied.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RawSecretEntry {
     pub public_keys: Vec<PublicKeyString>,
-    /// Whether the secret is armored (ASCII encoded)
+    /// Whether the secret file is ASCII-armored.
     pub armored: bool,
-    // TODO: document behavior after implementation
-    /// Whether the secret is expected to have a secret file
-    /// If hasSecret or hasPublic is set explicitly in the rules, those values are used.
-    ///
-    /// If a implicit generator is used has_secret and has_public are set to true if the implicit generator produces secret and/or public output.
-    ///
-    /// If no explicit generator is used, defaults to
-    /// {} => {hasSecret = true, hasPublic = false}
-    /// {hasSecret = false} => {hasSecret = false, hasPublic = true}
-    /// {hasSecret = true} => {hasSecret = true, hasPublic = false}
-    /// {hasPublic = false} => {hasSecret = true, hasPublic = false}
-    /// {hasPublic = true} => {hasSecret = true, hasPublic = true}
-    ///
-    /// If a explicit generator is used then ???
-    pub has_secret: Option<bool>,
-    /// See `has_secret` for documentation
-    pub has_public: Option<bool>,
-    /// Explicit dependencies listed in the secret entry
-    pub explicit_dependencies: Option<Vec<String>>,
-    // Whether a generator exists for this secret
+    pub has_secret: bool,
+    pub has_public: bool,
+    /// Declared dependencies. Only used for regeneration cascades, never for
+    /// resolution order (Nix laziness handles that).
+    pub dependencies: Vec<String>,
     pub has_generator: bool,
-    // // Whether the generator is implicitly set
-    // pub implicit_generator: bool,
 }
 
-fn get_raw_secret_entry_nix_expr() -> String {
-    // A function that takes rules and name and returns the raw secret entry in nix. Use
-    let nix_expr = format!(
-        r#"(rules: name: (let
-      entry = {get_entry_with_implicit_generator} rules name;
-      hasArmor = builtins.hasAttr "armor" entry;
-      armorVal = if hasArmor then entry.armor else false;
-      hasSecretVal = if builtins.hasAttr "hasSecret" entry then entry.hasSecret else null;
-      hasPublicVal = if builtins.hasAttr "hasPublic" entry then entry.hasPublic else null;
-      rawKeys = if builtins.hasAttr "publicKeys" entry then builtins.deepSeq entry.publicKeys entry.publicKeys else [];
-      generator = {get_entry_with_implicit_generator} rules name;
-      explicitDeps = if builtins.hasAttr "dependencies" entry then secret.dependencies else null;
-      hasGenerator = builtins.hasAttr "generator" generator; # TODO: Add that back after I did some performance testing: && generator.generator != null;
-      result = {{
-      name = name;
-      rawKeys = rawKeys;
-      armor = armorVal;
-      hasSecret = hasSecretVal;
-      hasPublic = hasPublicVal;
-      explicitDeps = explicitDeps;
-      hasGenerator = hasGenerator;
-      }};
-    in
-      builtins.deepSeq result result))"#,
-        get_entry_with_implicit_generator = get_entry_with_implicit_generator()
-    );
-
-    nix_expr
-}
-
-fn parse_raw_secret_entry(output: Value) -> Result<RawSecretEntry, ReportCollection> {
-    let mut errors = ReportCollection::new();
-
-    // Parse bundled metadata
-    let attrs = match output {
-        Value::Attrs(a) => a,
-        output => {
-            errors.push(
-                report!("secrets.nix entry is not an attrset, but: {output:?}",).into_cloneable(),
-            );
-            return Err(errors);
+impl RawSecretEntry {
+    pub fn has(&self, part: Part) -> bool {
+        match part {
+            Part::Secret => self.has_secret,
+            Part::Public => self.has_public,
         }
-    };
-
-    let raw_keys = attrs
-        .select(NixString::from(&"rawKeys"[..]).as_ref())
-        .unwrap();
-    let raw_keys = value_to_string_array(&raw_keys);
-
-    let armored = attrs
-        .select(NixString::from(&b"armor"[..]).as_ref())
-        .unwrap();
-    let armored = value_to_bool(&armored);
-
-    let has_secret = attrs
-        .select(NixString::from(&b"hasSecret"[..]).as_ref())
-        .unwrap();
-    let has_secret = value_to_optional_bool(&has_secret);
-
-    let has_public = attrs
-        .select(NixString::from(&b"hasPublic"[..]).as_ref())
-        .unwrap();
-    let has_public = value_to_optional_bool(&has_public);
-
-    let explicit_dependencies = attrs
-        .select(NixString::from(&b"explicitDeps"[..]).as_ref())
-        .unwrap();
-    let explicit_dependencies = value_to_optional_string_array(&explicit_dependencies);
-
-    let has_generator = attrs
-        .select(NixString::from(&b"hasGenerator"[..]).as_ref())
-        .unwrap();
-    let has_generator = value_to_bool(&has_generator);
-
-    let raw_keys = match raw_keys {
-        Ok(v) => Some(v),
-        Err(e) => {
-            errors.push(e.into_cloneable());
-            None
-        }
-    };
-    let armored = match armored {
-        Ok(v) => Some(v),
-        Err(e) => {
-            errors.push(e.into_cloneable());
-            None
-        }
-    };
-    let has_secret = match has_secret {
-        Ok(v) => Some(v),
-        Err(e) => {
-            errors.push(e.into_cloneable());
-            None
-        }
-    };
-    let has_public = match has_public {
-        Ok(v) => Some(v),
-        Err(e) => {
-            errors.push(e.into_cloneable());
-            None
-        }
-    };
-    let explicit_dependencies = match explicit_dependencies {
-        Ok(v) => Some(v),
-        Err(e) => {
-            errors.push(e.into_cloneable());
-            None
-        }
-    };
-    let has_generator = match has_generator {
-        Ok(v) => v,
-        Err(e) => {
-            errors.push(e.into_cloneable());
-            false
-        }
-    };
-
-    if !errors.is_empty() {
-        return Err(errors);
     }
-    let raw_keys = raw_keys.unwrap();
-    let armored = armored.unwrap();
-    let has_secret = has_secret.unwrap();
-    let has_public = has_public.unwrap();
-    let explicit_dependencies = explicit_dependencies.unwrap();
-
-    let raw_keys = raw_keys
-        .into_iter()
-        .map(|key| key.into())
-        .collect::<Vec<_>>();
-
-    return Ok(RawSecretEntry {
-        public_keys: raw_keys,
-        armored,
-        has_secret,
-        has_public,
-        explicit_dependencies,
-        has_generator,
-    });
 }
 
-pub fn get_raw_secret_entry(
-    rules_path: &std::path::Path,
-    name: &str,
-) -> Result<RawSecretEntry, Report> {
-    validate_name(&name)?;
+/// Validate a secret name. Names are strict: no paths, no leading dot, and
+/// no `.age` suffix (the suffix belongs to the file, not the name).
+pub fn validate_name(name: &str) -> Result<(), Report> {
+    if name.is_empty() {
+        return Err(report!("Secret name cannot be empty"));
+    }
+    if let Some(stripped) = name.strip_suffix(".age") {
+        return Err(report!(
+            "Secret name '{name}' ends with '.age'. \
+             Secret names in secrets.nix do not include the .age suffix. \
+             Use '{stripped}' instead."
+        ));
+    }
+    if name.contains('/') || name.contains('\\') {
+        return Err(report!(
+            "Secret name '{name}' contains path separators. \
+             Secret names must be simple names; all secret files live in the \
+             same directory as secrets.nix."
+        ));
+    }
+    if name.starts_with('.') {
+        return Err(report!("Secret name '{name}' must not start with a dot."));
+    }
+    Ok(())
+}
+
+/// Escape a string as a Nix string literal.
+pub(super) fn nix_string_literal(s: &str) -> String {
+    let escaped = s
+        .replace('\\', r"\\")
+        .replace('"', r#"\""#)
+        .replace("${", r"\${");
+    format!("\"{escaped}\"")
+}
+
+/// A Nix function `rules: name: entry` producing the effective entry:
+/// implicit generators applied, `hasSecret`/`hasPublic` defaulting resolved.
+///
+/// The defaulting rules (see docs/core-design.md):
+/// - A name-implied implicit generator carries its known shape.
+/// - Otherwise the default is `hasSecret = true, hasPublic = false`.
+/// - Explicit declarations always win.
+/// - Declaring `hasSecret = false` without declaring `hasPublic` implies the
+///   entry is public-only.
+///
+/// `generator` is null when the entry has none (or explicitly disabled it
+/// with `generator = null`).
+pub(super) fn effective_entry_nix() -> &'static str {
+    r#"(rules: name:
+      let
+        raw =
+          if builtins.isAttrs rules.${name}
+          then rules.${name}
+          else throw "Entry '${name}' in secrets.nix must be an attribute set";
+
+        lower = builtins.replaceStrings
+          ["A" "B" "C" "D" "E" "F" "G" "H" "I" "J" "K" "L" "M"
+           "N" "O" "P" "Q" "R" "S" "T" "U" "V" "W" "X" "Y" "Z"]
+          ["a" "b" "c" "d" "e" "f" "g" "h" "i" "j" "k" "l" "m"
+           "n" "o" "p" "q" "r" "s" "t" "u" "v" "w" "x" "y" "z"]
+          name;
+        hasSuffix = suffix: builtins.match ".*${suffix}$" lower != null;
+        implicit =
+          if hasSuffix "ed25519" || hasSuffix "ssh" || hasSuffix "ssh_key"
+          then { generator = builtins.sshKey; hasSecret = true; hasPublic = true; }
+          else if hasSuffix "x25519"
+          then { generator = builtins.ageKey; hasSecret = true; hasPublic = true; }
+          else if hasSuffix "_wg" || hasSuffix "_wireguard"
+          then { generator = builtins.wireguardKey; hasSecret = true; hasPublic = true; }
+          else if hasSuffix "password" || hasSuffix "passphrase"
+          then { generator = _: builtins.randomString 32; hasSecret = true; hasPublic = false; }
+          else { };
+
+        hasSecret = raw.hasSecret or (implicit.hasSecret or true);
+        hasPublic =
+          if raw ? hasPublic
+          then raw.hasPublic
+          else (implicit.hasPublic or false) || !hasSecret;
+      in {
+        inherit hasSecret hasPublic;
+        generator = if raw ? generator then raw.generator else implicit.generator or null;
+        publicKeys = raw.publicKeys or [ ];
+        armor = raw.armor or false;
+        dependencies = raw.dependencies or [ ];
+      })"#
+}
+
+/// Load the effective entry metadata for `name` from the rules file.
+/// The generator itself is not evaluated, only whether one exists.
+pub fn get_raw_secret_entry(rules_path: &Path, name: &str) -> Result<RawSecretEntry, Report> {
     let rules_path_str = rules_path
         .to_str()
-        .expect("Invalid encoding on path to secrets.nix");
+        .ok_or_else(|| report!("Path to secrets.nix is not valid UTF-8"))?;
 
-    // Bundle existence check, raw publicKeys, explicit armor/hasSecret/hasPublic and explicit dependencies in one eval
     let nix_expr = format!(
         r#"let
-      rules = import {rules_path};
-      getRawEntry = {get_raw_secret_entry_nix_expr};
-      in getRawEntry rules "{name}""#,
-        rules_path = rules_path_str,
-        get_raw_secret_entry_nix_expr = get_raw_secret_entry_nix_expr()
+          rules = import {rules_path_str};
+          entry = {effective_entry} rules {name_literal};
+          result = {{
+            publicKeys = entry.publicKeys;
+            armor = entry.armor;
+            hasSecret = entry.hasSecret;
+            hasPublic = entry.hasPublic;
+            dependencies = entry.dependencies;
+            hasGenerator = entry.generator != null;
+          }};
+        in builtins.deepSeq result result"#,
+        effective_entry = effective_entry_nix(),
+        name_literal = nix_string_literal(name),
     );
-    let current = current_dir()?;
-    let output = eval_nix_expression(&nix_expr, &current)?;
 
-    parse_raw_secret_entry(output).map_err(|e| {
-        e.context(format!(
-            "Failed to get raw secret entry for secret '{}'",
-            name
-        ))
-        .into_dyn_any()
+    let dir = rules_path.parent().unwrap_or_else(|| Path::new("."));
+    let output = eval_nix_expression(&nix_expr, dir)
+        .context(format!("Failed to load entry '{name}' from secrets.nix"))?;
+
+    let Value::Attrs(attrs) = output else {
+        return Err(report!("Entry metadata is not an attrset: {output:?}"));
+    };
+    let field = |key: &str| {
+        attrs
+            .select(key)
+            .unwrap_or_else(|| panic!("metadata expression always produces '{key}'"))
+    };
+
+    Ok(RawSecretEntry {
+        public_keys: value_to_string_array(&field("publicKeys"))
+            .context(format!("Invalid publicKeys for '{name}'"))?
+            .into_iter()
+            .map(PublicKeyString::from)
+            .collect(),
+        armored: value_to_bool(&field("armor")).context(format!("Invalid armor for '{name}'"))?,
+        has_secret: value_to_bool(&field("hasSecret"))
+            .context(format!("Invalid hasSecret for '{name}'"))?,
+        has_public: value_to_bool(&field("hasPublic"))
+            .context(format!("Invalid hasPublic for '{name}'"))?,
+        dependencies: value_to_string_array(&field("dependencies"))
+            .context(format!("Invalid dependencies for '{name}'"))?,
+        has_generator: value_to_bool(&field("hasGenerator"))
+            .context(format!("Invalid generator for '{name}'"))?,
     })
 }
