@@ -26,7 +26,8 @@ use std::rc::Rc;
 /// What the current invocation does with the entries.
 #[derive(Debug, Clone)]
 pub enum Operation {
-    /// Read-only: nothing is ever generated or written.
+    /// No generation. Values reach disk only through explicit `set_*` calls
+    /// followed by `flush`.
     Read,
     /// The generate command. Empty `targets` means all entries.
     Generate {
@@ -78,6 +79,14 @@ pub struct EntryStatus {
     pub public: Option<PartStatus>,
 }
 
+/// Declared parts of an entry and whether their files exist on disk.
+/// None means the entry declares that part does not exist.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct EntryInfo {
+    pub secret: Option<bool>,
+    pub public: Option<bool>,
+}
+
 /// Resolution state of one part of an entry. Absence from the state map
 /// means the part has not been resolved yet.
 #[derive(Clone, Debug)]
@@ -86,8 +95,8 @@ enum PartState {
     Encrypted(Vec<u8>),
     /// Available as plaintext (public file content or decrypted secret).
     PlainText(Vec<u8>),
-    /// Produced by a generator this run; not yet on disk.
-    NewlyGenerated(Vec<u8>),
+    /// Produced this run (generated or injected); not yet on disk.
+    Pending(Vec<u8>),
     /// This entry's generator is currently running.
     WorkInProgress,
     /// Expected but neither on disk nor generatable.
@@ -382,7 +391,7 @@ impl Engine {
             (Part::Public, output.public, "hasPublic"),
         ] {
             let state = match (entry.has(part), produced) {
-                (true, Some(value)) => PartState::NewlyGenerated(value.into_bytes()),
+                (true, Some(value)) => PartState::Pending(value.into_bytes()),
                 (false, None) => PartState::NotNeeded,
                 (needed, _) => {
                     let (did, expected) = if needed {
@@ -423,7 +432,7 @@ impl Engine {
         let file = part.file_name(name);
 
         match state {
-            PartState::PlainText(bytes) | PartState::NewlyGenerated(bytes) => Ok(bytes),
+            PartState::PlainText(bytes) | PartState::Pending(bytes) => Ok(bytes),
             PartState::Encrypted(ciphertext) => {
                 Ok(self.decrypt(name, part, &ciphertext).context(format!(
                     "Cannot decrypt {file} with the available identities. \
@@ -438,17 +447,7 @@ impl Engine {
                 };
                 Err(report!("{file} does not exist. {hint}"))
             }
-            PartState::NotNeeded => Err(report!(
-                "'{name}' does not have a {kind} part (has{declaration} = false)",
-                kind = match part {
-                    Part::Secret => "secret",
-                    Part::Public => "public",
-                },
-                declaration = match part {
-                    Part::Secret => "Secret",
-                    Part::Public => "Public",
-                },
-            )),
+            PartState::NotNeeded => Err(no_part_report(name, part)),
             PartState::WorkInProgress => Err(report!(
                 "Circular dependency: the generator of '{name}' (directly or \
                  indirectly) needs its own output"
@@ -475,7 +474,7 @@ impl Engine {
             .state(name, part)
             .expect("resolve always leaves a state")
         {
-            PartState::PlainText(_) | PartState::NewlyGenerated(_) => PartStatus::Available,
+            PartState::PlainText(_) | PartState::Pending(_) => PartStatus::Available,
             PartState::Encrypted(ciphertext) => match self.decrypt(name, part, &ciphertext) {
                 Ok(_) => PartStatus::Available,
                 Err(_) => PartStatus::CannotDecrypt,
@@ -486,6 +485,40 @@ impl Engine {
             }
         };
         Ok(Some(status))
+    }
+
+    /// Inject a value for one part (from edit/encrypt). It is persisted on
+    /// the next flush.
+    fn set(&self, name: &str, part: Part, content: Vec<u8>) -> Result<(), Report> {
+        if !self.entry(name)?.has(part) {
+            return Err(no_part_report(name, part));
+        }
+        self.set_state(name, part, PartState::Pending(content));
+        Ok(())
+    }
+
+    /// Declared parts of an entry and whether their files exist on disk,
+    /// without decrypting anything.
+    fn info(&self, name: &str) -> Result<EntryInfo, Report> {
+        let entry = self.entry(name)?;
+        let presence = |part: Part| entry.has(part).then(|| self.part_path(name, part).exists());
+        Ok(EntryInfo {
+            secret: presence(Part::Secret),
+            public: presence(Part::Public),
+        })
+    }
+
+    /// Mark an entry's secret for re-encryption against its current
+    /// publicKeys on the next flush. Returns false for entries without a
+    /// secret part. The public part is plaintext and recipient-independent,
+    /// so rekeying never touches it.
+    fn rekey(&self, name: &str) -> Result<bool, Report> {
+        if !self.entry(name)?.has_secret {
+            return Ok(false);
+        }
+        let plaintext = self.get(name, Part::Secret)?;
+        self.set_state(name, Part::Secret, PartState::Pending(plaintext));
+        Ok(true)
     }
 
     /// Resolve every entry on the generation agenda.
@@ -596,7 +629,7 @@ impl Engine {
             .borrow()
             .iter()
             .filter_map(|((name, part), state)| match state {
-                PartState::NewlyGenerated(data) => Some((name.clone(), *part, data.clone())),
+                PartState::Pending(data) => Some((name.clone(), *part, data.clone())),
                 _ => None,
             })
             .collect();
@@ -654,6 +687,15 @@ fn load_names(rules_path: &Path) -> Result<Vec<String>, Report> {
     let output = eval_nix_expression(&nix_expr, dir)
         .context(format!("Failed to read {rules_path_str}"))?;
     value_to_string_array(&output)
+}
+
+/// The error for accessing a part the entry declares it does not have.
+fn no_part_report(name: &str, part: Part) -> Report {
+    let (kind, declaration) = match part {
+        Part::Secret => ("secret", "hasSecret"),
+        Part::Public => ("public", "hasPublic"),
+    };
+    report!("'{name}' does not have a {kind} part ({declaration} = false)")
 }
 
 /// Read a file, mapping "not found" to None.
@@ -717,6 +759,29 @@ pub fn check_entry(name: &str) -> Result<(), Report> {
 /// files.
 pub fn status(name: &str) -> Result<EntryStatus, Report> {
     engine()?.status(name)
+}
+
+/// Declared parts of an entry and their on-disk presence, without
+/// decrypting anything.
+pub fn entry_info(name: &str) -> Result<EntryInfo, Report> {
+    engine()?.info(name)
+}
+
+/// Inject a secret value; persisted on the next flush, encrypted for the
+/// entry's publicKeys.
+pub fn set_secret(name: &str, content: Vec<u8>) -> Result<(), Report> {
+    engine()?.set(name, Part::Secret, content)
+}
+
+/// Inject a public value; persisted verbatim on the next flush.
+pub fn set_public(name: &str, content: Vec<u8>) -> Result<(), Report> {
+    engine()?.set(name, Part::Public, content)
+}
+
+/// Mark an entry's secret for re-encryption against its current publicKeys
+/// on the next flush. Returns false for entries without a secret part.
+pub fn rekey_entry(name: &str) -> Result<bool, Report> {
+    engine()?.rekey(name)
 }
 
 /// Persist everything that was generated this run. Transactional: on error
@@ -1048,6 +1113,96 @@ mod tests {
         assert_eq!(of("sealed"), EntryStatus { secret: Some(CannotDecrypt), public: None });
         assert_eq!(of("pubonly"), EntryStatus { secret: None, public: Some(Available) });
         assert_eq!(of("pubmissing"), EntryStatus { secret: None, public: Some(Missing) });
+    }
+
+    #[test]
+    fn set_and_flush_writes_both_parts() {
+        let fx = Fixture::new(
+            r#"{ "token" = { publicKeys = [ "{PUB}" ]; hasPublic = true; }; }"#,
+        );
+        fx.init(Operation::Read).unwrap();
+        set_secret("token", b"the secret".to_vec()).unwrap();
+        set_public("token", b"the public".to_vec()).unwrap();
+        flush().unwrap();
+
+        assert_eq!(fx.decrypt_file("token.age"), b"the secret");
+        assert_eq!(fx.read("token.pub"), b"the public");
+    }
+
+    #[test]
+    fn set_rejects_undeclared_parts() {
+        let fx = Fixture::new(r#"{ "token" = { publicKeys = [ "{PUB}" ]; }; }"#);
+        fx.init(Operation::Read).unwrap();
+        let error = error_text(set_public("token", b"x".to_vec()).unwrap_err());
+        assert!(error.contains("hasPublic"), "unhelpful error: {error}");
+    }
+
+    #[test]
+    fn entry_info_reports_declared_parts_and_presence() {
+        let fx = Fixture::new(
+            r#"{ "token" = { publicKeys = [ "{PUB}" ]; hasPublic = true; }; }"#,
+        );
+        std::fs::write(fx.path("token.pub"), b"public data").unwrap();
+        fx.init(Operation::Read).unwrap();
+        assert_eq!(
+            entry_info("token").unwrap(),
+            EntryInfo {
+                secret: Some(false),
+                public: Some(true),
+            }
+        );
+    }
+
+    #[test]
+    fn rekey_reencrypts_for_current_recipients() {
+        // The file is decryptable with the fixture identity, but secrets.nix
+        // now lists a different recipient: rekey must re-encrypt for it.
+        let new_recipient = age::x25519::Identity::generate();
+        let fx = Fixture::new(
+            &r#"{ "token" = { publicKeys = [ "{NEWPUB}" ]; }; }"#
+                .replace("{NEWPUB}", &new_recipient.to_public().to_string()),
+        );
+        let ciphertext = crypto::encrypt(b"payload", &[fx.public_key.clone()], false).unwrap();
+        std::fs::write(fx.path("token.age"), ciphertext).unwrap();
+
+        fx.init(Operation::Read).unwrap();
+        assert!(rekey_entry("token").unwrap());
+        flush().unwrap();
+
+        // Decryptable with the new recipient's identity, not the old one.
+        let new_identity_path = fx.path("new-identity.txt");
+        std::fs::write(
+            &new_identity_path,
+            format!("{}\n", new_recipient.to_string().expose_secret()),
+        )
+        .unwrap();
+        let plaintext = crypto::decrypt(
+            &fx.read("token.age"),
+            &[new_identity_path.to_str().unwrap().to_string()],
+            true,
+        )
+        .unwrap();
+        assert_eq!(plaintext, b"payload");
+        assert!(
+            crypto::decrypt(&fx.read("token.age"), &[fx.identity_path.clone()], true).is_err()
+        );
+    }
+
+    #[test]
+    fn rekey_skips_public_only_entries() {
+        let fx = Fixture::new(r#"{ "meta" = { hasSecret = false; }; }"#);
+        std::fs::write(fx.path("meta.pub"), b"public data").unwrap();
+        fx.init(Operation::Read).unwrap();
+        assert!(!rekey_entry("meta").unwrap());
+        flush().unwrap();
+        assert_eq!(fx.read("meta.pub"), b"public data");
+    }
+
+    #[test]
+    fn rekey_of_missing_secret_fails() {
+        let fx = Fixture::new(r#"{ "absent" = { publicKeys = [ "{PUB}" ]; }; }"#);
+        fx.init(Operation::Read).unwrap();
+        assert!(rekey_entry("absent").is_err());
     }
 
     #[test]

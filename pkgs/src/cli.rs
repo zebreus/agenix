@@ -57,9 +57,9 @@ pub enum Command {
     Edit {
         /// The secret to edit
         #[arg(value_name = "SECRET", allow_hyphen_values = true)]
-        file: String,
+        secret: String,
 
-        /// Editor command to use (defaults to $EDITOR, or stdin when not a TTY, or vi)
+        /// Editor command to use (defaults to $EDITOR, or vi)
         #[arg(short = 'e', long, env = "EDITOR", value_name = "COMMAND")]
         editor: Option<String>,
 
@@ -77,7 +77,7 @@ pub enum Command {
     Encrypt {
         /// The secret to create
         #[arg(value_name = "SECRET", allow_hyphen_values = true)]
-        file: String,
+        secret: String,
 
         /// Input file to read content from (defaults to stdin)
         #[arg(long, value_name = "FILE")]
@@ -224,8 +224,8 @@ mod tests {
         assert!(matches!(args.command, Some(Command::Edit { .. })));
         assert!(!args.verbose);
         assert!(args.identity.is_empty());
-        if let Some(Command::Edit { file, force, .. }) = args.command {
-            assert_eq!(file, "test".to_string());
+        if let Some(Command::Edit { secret, force, .. }) = args.command {
+            assert_eq!(secret, "test".to_string());
             assert!(!force);
         }
     }
@@ -239,8 +239,8 @@ mod tests {
     #[test]
     fn test_edit_with_force() {
         let args = Args::try_parse_from(["agenix", "edit", "--force", "test"]).unwrap();
-        if let Some(Command::Edit { file, force, .. }) = args.command {
-            assert_eq!(file, "test".to_string());
+        if let Some(Command::Edit { secret, force, .. }) = args.command {
+            assert_eq!(secret, "test".to_string());
             assert!(force);
         } else {
             panic!("Expected Edit command");
@@ -250,8 +250,8 @@ mod tests {
     #[test]
     fn test_edit_with_force_short() {
         let args = Args::try_parse_from(["agenix", "edit", "-f", "test"]).unwrap();
-        if let Some(Command::Edit { file, force, .. }) = args.command {
-            assert_eq!(file, "test".to_string());
+        if let Some(Command::Edit { secret, force, .. }) = args.command {
+            assert_eq!(secret, "test".to_string());
             assert!(force);
         } else {
             panic!("Expected Edit command");
@@ -261,8 +261,8 @@ mod tests {
     #[test]
     fn test_edit_with_dry_run() {
         let args = Args::try_parse_from(["agenix", "--dry-run", "edit", "test"]).unwrap();
-        if let Some(Command::Edit { file, .. }) = args.command {
-            assert_eq!(file, "test".to_string());
+        if let Some(Command::Edit { secret, .. }) = args.command {
+            assert_eq!(secret, "test".to_string());
             assert!(args.dry_run);
         } else {
             panic!("Expected Edit command");
@@ -272,8 +272,8 @@ mod tests {
     #[test]
     fn test_edit_with_dry_run_short() {
         let args = Args::try_parse_from(["agenix", "-n", "edit", "test"]).unwrap();
-        if let Some(Command::Edit { file, .. }) = args.command {
-            assert_eq!(file, "test".to_string());
+        if let Some(Command::Edit { secret, .. }) = args.command {
+            assert_eq!(secret, "test".to_string());
             assert!(args.dry_run);
         } else {
             panic!("Expected Edit command");
@@ -315,10 +315,10 @@ mod tests {
         let args = Args::try_parse_from(["agenix", "encrypt", "test"]).unwrap();
         assert!(matches!(args.command, Some(Command::Encrypt { .. })));
         if let Some(Command::Encrypt {
-            file, input, force, ..
+            secret, input, force, ..
         }) = args.command
         {
-            assert_eq!(file, "test".to_string());
+            assert_eq!(secret, "test".to_string());
             assert!(input.is_none());
             assert!(!force);
         } else {
@@ -336,10 +336,10 @@ mod tests {
     fn test_encrypt_with_force() {
         let args = Args::try_parse_from(["agenix", "encrypt", "--force", "test"]).unwrap();
         if let Some(Command::Encrypt {
-            file, input, force, ..
+            secret, input, force, ..
         }) = args.command
         {
-            assert_eq!(file, "test".to_string());
+            assert_eq!(secret, "test".to_string());
             assert!(input.is_none());
             assert!(force);
         } else {
@@ -351,10 +351,10 @@ mod tests {
     fn test_encrypt_with_force_short() {
         let args = Args::try_parse_from(["agenix", "encrypt", "-f", "test"]).unwrap();
         if let Some(Command::Encrypt {
-            file, input, force, ..
+            secret, input, force, ..
         }) = args.command
         {
-            assert_eq!(file, "test".to_string());
+            assert_eq!(secret, "test".to_string());
             assert!(input.is_none());
             assert!(force);
         } else {
@@ -368,10 +368,10 @@ mod tests {
             Args::try_parse_from(["agenix", "encrypt", "--input", "/path/to/input.txt", "test"])
                 .unwrap();
         if let Some(Command::Encrypt {
-            file, input, force, ..
+            secret, input, force, ..
         }) = args.command
         {
-            assert_eq!(file, "test".to_string());
+            assert_eq!(secret, "test".to_string());
             assert_eq!(input, Some("/path/to/input.txt".to_string()));
             assert!(!force);
         } else {
@@ -386,10 +386,10 @@ mod tests {
             Args::try_parse_from(["agenix", "encrypt", "--input", "/path/to/input.txt", "test"])
                 .unwrap();
         if let Some(Command::Encrypt {
-            file, input, force, ..
+            secret, input, force, ..
         }) = args.command
         {
-            assert_eq!(file, "test".to_string());
+            assert_eq!(secret, "test".to_string());
             assert_eq!(input, Some("/path/to/input.txt".to_string()));
             assert!(!force);
         } else {
@@ -409,10 +409,10 @@ mod tests {
         ])
         .unwrap();
         if let Some(Command::Encrypt {
-            file, input, force, ..
+            secret, input, force, ..
         }) = args.command
         {
-            assert_eq!(file, "test".to_string());
+            assert_eq!(secret, "test".to_string());
             assert_eq!(input, Some("/path/to/input.txt".to_string()));
             assert!(force);
         } else {
@@ -438,8 +438,8 @@ mod tests {
     fn test_args_parsing_default_editor() {
         with_env_var("EDITOR", None, || {
             let args = Args::try_parse_from(["agenix", "edit", "test"]).unwrap();
-            if let Some(Command::Edit { file, editor, .. }) = args.command {
-                assert_eq!(file, "test".to_string());
+            if let Some(Command::Edit { secret, editor, .. }) = args.command {
+                assert_eq!(secret, "test".to_string());
                 assert_eq!(editor, None);
             } else {
                 panic!("Expected Edit command");
@@ -1524,8 +1524,8 @@ mod tests {
     #[test]
     fn test_edit_public_flag() {
         let args = Args::try_parse_from(["agenix", "edit", "--public", "test"]).unwrap();
-        if let Some(Command::Edit { file, public, .. }) = args.command {
-            assert_eq!(file, "test");
+        if let Some(Command::Edit { secret, public, .. }) = args.command {
+            assert_eq!(secret, "test");
             assert!(public);
         } else {
             panic!("Expected Edit command");
@@ -1535,8 +1535,8 @@ mod tests {
     #[test]
     fn test_edit_public_short_flag() {
         let args = Args::try_parse_from(["agenix", "edit", "-p", "test"]).unwrap();
-        if let Some(Command::Edit { file, public, .. }) = args.command {
-            assert_eq!(file, "test");
+        if let Some(Command::Edit { secret, public, .. }) = args.command {
+            assert_eq!(secret, "test");
             assert!(public);
         } else {
             panic!("Expected Edit command");
@@ -1547,13 +1547,13 @@ mod tests {
     fn test_edit_public_with_force() {
         let args = Args::try_parse_from(["agenix", "edit", "-p", "-f", "test"]).unwrap();
         if let Some(Command::Edit {
-            file,
+            secret,
             public,
             force,
             ..
         }) = args.command
         {
-            assert_eq!(file, "test");
+            assert_eq!(secret, "test");
             assert!(public);
             assert!(force);
         } else {
@@ -1564,8 +1564,8 @@ mod tests {
     #[test]
     fn test_encrypt_public_flag() {
         let args = Args::try_parse_from(["agenix", "encrypt", "--public", "test"]).unwrap();
-        if let Some(Command::Encrypt { file, public, .. }) = args.command {
-            assert_eq!(file, "test");
+        if let Some(Command::Encrypt { secret, public, .. }) = args.command {
+            assert_eq!(secret, "test");
             assert!(public);
         } else {
             panic!("Expected Encrypt command");
@@ -1575,8 +1575,8 @@ mod tests {
     #[test]
     fn test_encrypt_public_short_flag() {
         let args = Args::try_parse_from(["agenix", "encrypt", "-p", "test"]).unwrap();
-        if let Some(Command::Encrypt { file, public, .. }) = args.command {
-            assert_eq!(file, "test");
+        if let Some(Command::Encrypt { secret, public, .. }) = args.command {
+            assert_eq!(secret, "test");
             assert!(public);
         } else {
             panic!("Expected Encrypt command");
@@ -1587,13 +1587,13 @@ mod tests {
     fn test_encrypt_public_with_force() {
         let args = Args::try_parse_from(["agenix", "encrypt", "-p", "-f", "test"]).unwrap();
         if let Some(Command::Encrypt {
-            file,
+            secret,
             public,
             force,
             ..
         }) = args.command
         {
-            assert_eq!(file, "test");
+            assert_eq!(secret, "test");
             assert!(public);
             assert!(force);
         } else {
@@ -1613,13 +1613,13 @@ mod tests {
         ])
         .unwrap();
         if let Some(Command::Encrypt {
-            file,
+            secret,
             public,
             input,
             ..
         }) = args.command
         {
-            assert_eq!(file, "test");
+            assert_eq!(secret, "test");
             assert!(public);
             assert_eq!(input, Some("/path/to/input".to_string()));
         } else {

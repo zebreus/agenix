@@ -14,6 +14,7 @@ mod public_key;
 mod raw_secret_entry;
 
 pub use engine::{
-    Config, EntryStatus, Operation, PartStatus, check_entry, flush, generate, get_public,
-    get_secret, init, list_names, status,
+    Config, EntryInfo, EntryStatus, Operation, PartStatus, check_entry, entry_info, flush,
+    generate, get_public, get_secret, init, list_names, rekey_entry, set_public, set_secret,
+    status,
 };
