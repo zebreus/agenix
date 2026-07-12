@@ -1,31 +1,32 @@
 mod cli;
 mod crypto;
-mod editor;
+// mod editor;
 mod nix;
 pub mod output;
 
 use anyhow::{Context, Result, anyhow};
 use clap::Parser;
+use rootcause::{Report, compat::IntoRootcause};
 use std::path::Path;
 
-/// Validate that a secret name is a simple name, not a path.
-///
-/// Secret names must not contain path separators and must not start with '.'.
-/// This ensures all secret files are located in the same directory as secrets.nix.
-fn validate_secret_name(name: &str) -> Result<()> {
-    editor::secret_name::SecretName::validate_and_create(name)?;
-    Ok(())
-}
+// /// Validate that a secret name is a simple name, not a path.
+// ///
+// /// Secret names must not contain path separators and must not start with '.'.
+// /// This ensures all secret files are located in the same directory as secrets.nix.
+// fn validate_secret_name(name: &str) -> Result<()> {
+//     editor::secret_name::SecretName::validate_and_create(name)?;
+//     Ok(())
+// }
 
 /// Validate a list of secret names.
 ///
 /// Returns an error if any secret name is invalid (contains paths, etc.).
-fn validate_secret_names(names: &[String]) -> Result<()> {
-    for name in names {
-        validate_secret_name(name).with_context(|| format!("Invalid secret name: {}", name))?;
-    }
-    Ok(())
-}
+// fn validate_secret_names(names: &[String]) -> Result<()> {
+//     for name in names {
+//         validate_secret_name(name).with_context(|| format!("Invalid secret name: {}", name))?;
+//     }
+//     Ok(())
+// }
 
 /// Check if the secrets.nix file exists and provide a helpful error message if not.
 ///
@@ -76,7 +77,7 @@ fn normalize_secrets_nix_path(secrets_nix_path: &str) -> String {
 /// # Errors
 /// Returns an error if required dependencies (`age`, `nix-instantiate`) are missing,
 /// if parsing arguments fails, or if any operation (rekey, decrypt, edit) fails.
-pub fn run<I, T>(iter: I) -> Result<()>
+pub fn run<I, T>(iter: I) -> Result<(), Report>
 where
     I: IntoIterator<Item = T>,
     T: Into<std::ffi::OsString> + Clone,
@@ -103,60 +104,66 @@ where
 
     // Check if secrets.nix exists (for all commands except completions and no command)
     if args.command.is_some() && !matches!(args.command, Some(cli::Command::Completions { .. })) {
-        check_secrets_nix_exists(&secrets_nix)?;
+        check_secrets_nix_exists(&secrets_nix).into_rootcause()?;
     }
 
     match args.command {
         Some(cli::Command::Rekey { secrets, partial }) => {
-            validate_secret_names(&secrets)?;
-            editor::rekey_files(
-                &secrets_nix,
-                &secrets,
-                &args.identity,
-                args.no_system_identities,
-                partial,
-                args.dry_run,
-            )
-            .context("Failed to rekey files")
+            // validate_secret_names(&secrets).into_rootcause()?;
+            // editor::rekey_files(
+            //     &secrets_nix,
+            //     &secrets,
+            //     &args.identity,
+            //     args.no_system_identities,
+            //     partial,
+            //     args.dry_run,
+            // )
+            // .context("Failed to rekey files")
+            // .into_rootcause()
+            todo!();
         }
         Some(cli::Command::Generate {
             force,
             no_dependencies,
             secrets,
         }) => {
-            validate_secret_names(&secrets)?;
-            editor::generate_secrets(
-                &secrets_nix,
-                force,
-                args.dry_run,
-                !no_dependencies,
-                &secrets,
-            )
-            .context("Failed to generate secrets")
+            // validate_secret_names(&secrets).into_rootcause()?;
+            // editor::generate_secrets(
+            //     &secrets_nix,
+            //     force,
+            //     args.dry_run,
+            //     !no_dependencies,
+            //     &secrets,
+            // )
+            // .context("Failed to generate secrets")
+            // .into_rootcause()
+            todo!();
         }
         Some(cli::Command::Decrypt {
             file,
             output,
             public,
         }) => {
-            validate_secret_name(&file)?;
-            let op = if public {
-                "read public file"
-            } else {
-                "decrypt"
-            };
-            if public {
-                editor::read_public_file(&secrets_nix, &file, output.as_deref())
-            } else {
-                editor::decrypt_file(
-                    &secrets_nix,
-                    &file,
-                    output.as_deref(),
-                    &args.identity,
-                    args.no_system_identities,
-                )
-            }
-            .with_context(|| format!("Failed to {} {}", op, file))
+            todo!();
+            // validate_secret_name(&file).into_rootcause()?;
+            // let op = if public {
+            //     "read public file"
+            // } else {
+            //     "decrypt"
+            // };
+            // if public {
+            //     editor::read_public_file(&secrets_nix, &file, output.as_deref())
+            // } else {
+            //     editor::decrypt_file(
+            //         &secrets_nix,
+            //         &file,
+            //         output.as_deref(),
+            //         &args.identity,
+            //         args.no_system_identities,
+            //     )
+            // }
+            // .with_context(|| format!("Failed to {} {}", op, file))
+            // .into_rootcause()
         }
         Some(cli::Command::Edit {
             file,
@@ -164,28 +171,30 @@ where
             force,
             public,
         }) => {
-            validate_secret_name(&file)?;
-            let op = if public { "edit public file" } else { "edit" };
-            if public {
-                editor::edit_public_file(
-                    &secrets_nix,
-                    &file,
-                    editor.as_deref(),
-                    force,
-                    args.dry_run,
-                )
-            } else {
-                editor::edit_file(
-                    &secrets_nix,
-                    &file,
-                    editor.as_deref(),
-                    &args.identity,
-                    args.no_system_identities,
-                    force,
-                    args.dry_run,
-                )
-            }
-            .with_context(|| format!("Failed to {} {}", op, file))
+            // validate_secret_name(&file).into_rootcause()?;
+            // let op = if public { "edit public file" } else { "edit" };
+            // if public {
+            //     editor::edit_public_file(
+            //         &secrets_nix,
+            //         &file,
+            //         editor.as_deref(),
+            //         force,
+            //         args.dry_run,
+            //     )
+            // } else {
+            //     editor::edit_file(
+            //         &secrets_nix,
+            //         &file,
+            //         editor.as_deref(),
+            //         &args.identity,
+            //         args.no_system_identities,
+            //         force,
+            //         args.dry_run,
+            //     )
+            // }
+            // .with_context(|| format!("Failed to {} {}", op, file))
+            // .into_rootcause()
+            todo!();
         }
         Some(cli::Command::Encrypt {
             file,
@@ -193,46 +202,47 @@ where
             force,
             public,
         }) => {
-            validate_secret_name(&file)?;
-            let op = if public {
-                "write public file"
-            } else {
-                "encrypt"
-            };
-            if public {
-                editor::write_public_file(
-                    &secrets_nix,
-                    &file,
-                    input.as_deref(),
-                    force,
-                    args.dry_run,
-                )
-            } else {
-                editor::encrypt_file(&secrets_nix, &file, input.as_deref(), force, args.dry_run)
-            }
-            .with_context(|| format!("Failed to {} {}", op, file))
+            // validate_secret_name(&file).into_rootcause()?;
+            // let op = if public {
+            //     "write public file"
+            // } else {
+            //     "encrypt"
+            // };
+            // if public {
+            //     editor::write_public_file(
+            //         &secrets_nix,
+            //         &file,
+            //         input.as_deref(),
+            //         force,
+            //         args.dry_run,
+            //     )
+            // } else {
+            //     editor::encrypt_file(&secrets_nix, &file, input.as_deref(), force, args.dry_run)
+            // }
+            // .with_context(|| format!("Failed to {} {}", op, file))
+            // .into_rootcause()
+            todo!();
         }
-        Some(cli::Command::List { status, secrets }) => {
-            validate_secret_names(&secrets)?;
-            editor::list_secrets(
-                &secrets_nix,
-                status,
-                &secrets,
-                &args.identity,
-                args.no_system_identities,
-            )
-            .context("Failed to list secrets")
-        }
+        Some(cli::Command::List { status, secrets }) => 
+        {
+        //     editor::list_secrets(
+        //     &secrets_nix,
+        //     status,
+        //     &secrets,
+        //     &args.identity,
+        //     args.no_system_identities,
+        // )
+        todo!();
+    },
         Some(cli::Command::Check { secrets }) => {
-            validate_secret_names(&secrets)?;
-            editor::check_secrets(
-                &secrets_nix,
-                &secrets,
-                &args.identity,
-                args.no_system_identities,
-            )
-            .context("Failed to check secrets")
-        }
+        //     editor::check_secrets(
+        //     &secrets_nix,
+        //     &secrets,
+        //     &args.identity,
+        //     args.no_system_identities,
+        // )
+        todo!();
+    },
         Some(cli::Command::Completions { shell }) => {
             cli::print_completions(shell, &mut cli::build_cli());
             Ok(())

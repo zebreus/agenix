@@ -345,7 +345,7 @@ pub fn decrypt_file(
 /// This is used for --public operations where we only need to verify the secret
 /// is defined in secrets.nix, but don't need publicKeys since we're not encrypting.
 fn validate_secret_exists(rules_path: &str, secret_name: &str) -> Result<()> {
-    let all_files = get_all_files(rules_path)?;
+    let all_files = get_all_files(std::path::Path::new(rules_path))?;
     if all_files.iter().any(|f| f == secret_name) {
         Ok(())
     } else {

@@ -3,16 +3,11 @@
 //! This module provides functions for listing secrets defined in the rules file
 //! and displaying their status.
 
+use crate::nix::get_secret;
+use crate::nix::{check_entry, get_all_files};
 use anyhow::Result;
-
-use crate::crypto;
-use crate::log;
-use crate::nix::{get_all_files, get_secret_output_info};
-use crate::output::{is_quiet, pluralize_secret};
-
-use super::filter_files;
-use super::secret_name::SecretName;
-use super::validate_secrets_exist;
+use rootcause::Report;
+use rootcause::prelude::*;
 
 /// Status of a secret file
 #[derive(Debug, Clone, PartialEq)]
@@ -73,69 +68,64 @@ pub struct SecretInfo {
     pub status: SecretStatus,
 }
 
-/// Get the status of a secret file, considering public-only secrets
-fn get_secret_status(
-    rules_path: &str,
-    file: &str,
-    identities: &[String],
-    no_system_identities: bool,
-) -> SecretStatus {
-    // Check if this is a public-only secret
-    if let Ok(output_info) = get_secret_output_info(rules_path, file)
-        && !output_info.has_secret
-        && output_info.has_public
-    {
-        // This is a public-only secret - check if .pub file exists
-        let sname = SecretName::new(file);
-        let rules_path_obj = std::path::Path::new(rules_path);
-        let rules_dir = rules_path_obj
-            .parent()
-            .unwrap_or_else(|| std::path::Path::new("."));
+// /// Get the status of a secret file, considering public-only secrets
+// fn get_secret_status(identities: &[String], secret: SecretEntry) -> SecretStatus {
+//     // Check if this is a public-only secret
+//     if let Ok(output_info) = get_secret_output_info(rules_path, file)
+//         && !output_info.has_secret
+//         && output_info.has_public
+//     {
+//         // This is a public-only secret - check if .pub file exists
+//         let sname = SecretName::new(file);
+//         let rules_path_obj = std::path::Path::new(rules_path);
+//         let rules_dir = rules_path_obj
+//             .parent()
+//             .unwrap_or_else(|| std::path::Path::new("."));
 
-        let pub_path = rules_dir.join(sname.public_file());
+//         let pub_path = rules_dir.join(sname.public_file());
 
-        if pub_path.exists() {
-            return SecretStatus::PublicOnly;
-        } else {
-            return SecretStatus::PublicOnlyMissing;
-        }
-    }
+//         if pub_path.exists() {
+//             return SecretStatus::PublicOnly;
+//         } else {
+//             return SecretStatus::PublicOnlyMissing;
+//         }
+//     }
 
-    // Normal secret - check for .age file
-    let sname = SecretName::new(file);
-    let rules_path_obj = std::path::Path::new(rules_path);
-    let rules_dir = rules_path_obj
-        .parent()
-        .unwrap_or_else(|| std::path::Path::new("."));
-    let secret_file = rules_dir.join(sname.secret_file());
+//     // Normal secret - check for .age file
+//     let sname = SecretName::new(file);
+//     let rules_path_obj = std::path::Path::new(rules_path);
+//     let rules_dir = rules_path_obj
+//         .parent()
+//         .unwrap_or_else(|| std::path::Path::new("."));
+//     let secret_file = rules_dir.join(sname.secret_file());
 
-    if !secret_file.exists() {
-        return SecretStatus::Missing;
-    }
+//     if !secret_file.exists() {
+//         return SecretStatus::Missing;
+//     }
 
-    let secret_file_str = match secret_file.to_str() {
-        Some(s) => s,
-        None => return SecretStatus::CannotDecrypt("Invalid path encoding".to_string()),
-    };
+//     let secret_file_str = match secret_file.to_str() {
+//         Some(s) => s,
+//         None => return SecretStatus::CannotDecrypt("Invalid path encoding".to_string()),
+//     };
 
-    match crypto::can_decrypt(secret_file_str, identities, no_system_identities) {
-        Ok(()) => SecretStatus::Ok,
-        Err(e) => SecretStatus::CannotDecrypt(format!("{e:#}")),
-    }
-}
+//     match crypto::can_decrypt(secret_file_str, identities, no_system_identities) {
+//         Ok(()) => SecretStatus::Ok,
+//         Err(e) => SecretStatus::CannotDecrypt(format!("{e:#}")),
+//     }
+// }
 
-/// Get information about a secret
-fn get_secret_info(
-    rules_path: &str,
-    file: &str,
-    identities: &[String],
-    no_system_identities: bool,
-) -> SecretInfo {
-    SecretInfo {
-        name: SecretName::new(file).name().to_string(),
-        status: get_secret_status(rules_path, file, identities, no_system_identities),
-    }
-}
+// /// Get information about a secret
+// fn get_secret_info(
+//     rules_path: &str,
+//     file: &str,
+//     identities: &[String],
+//     no_system_identities: bool,
+// ) -> SecretInfo {
+//     SecretInfo {
+//         name: SecretName::new(file).name().to_string(),
+//         status: get_secret_status(rules_path, file, identities, no_system_identities),
+//     }
+// }
 
 /// List secrets from the rules file
 ///
@@ -151,61 +141,41 @@ pub fn list_secrets(
     secrets: &[String],
     identities: &[String],
     no_system_identities: bool,
-) -> Result<()> {
-    let all_files = get_all_files(rules_path)?;
-    let files = filter_files(&all_files, secrets);
-    validate_secrets_exist(&files, secrets)?;
+) -> Result<(), Report> {
+    let rules_path = std::path::Path::new(rules_path);
+    let mut secret_names = if secrets.is_empty() {
+        get_all_files(rules_path)?
+    } else {
+        secrets.to_vec()
+    };
 
-    if files.is_empty() {
-        log!("No secrets defined in {}", rules_path);
-        return Ok(());
-    }
-
-    // Simple list mode: just output secret names (one per line)
-    if !show_status {
-        let mut names: Vec<_> = files
-            .iter()
-            .map(|f| SecretName::new(f).name().to_string())
-            .collect();
-        names.sort();
-        for name in names {
-            println!("{}", name);
-        }
-        return Ok(());
-    }
-
-    // Status mode: collect full info and print with status
-    let mut secret_infos: Vec<SecretInfo> = files
+    // Check secrets
+    secret_names
         .iter()
-        .map(|file| get_secret_info(rules_path, file, identities, no_system_identities))
-        .collect();
-    secret_infos.sort_by(|a, b| a.name.cmp(&b.name));
+        .map(|secret_name| get_secret(secret_name))
+        .collect_reports_vec()
+        .map_err(|errors| errors.context("Failed to get secret info").into_dyn_any())?;
 
-    let (ok, missing, errors, public_only) = print_secrets_with_status(&secret_infos);
-
-    if !is_quiet() {
-        if public_only > 0 {
-            eprintln!(
-                "Total: {} {} ({} exists, {} missing, {} no decrypt, {} public-only)",
-                secret_infos.len(),
-                pluralize_secret(secret_infos.len()),
-                ok,
-                missing,
-                errors,
-                public_only
-            );
-        } else {
-            eprintln!(
-                "Total: {} {} ({} exists, {} missing, {} no decrypt)",
-                secret_infos.len(),
-                pluralize_secret(secret_infos.len()),
-                ok,
-                missing,
-                errors
-            );
-        }
+    secret_names.sort();
+    for name in secret_names {
+        println!("{}", name);
     }
 
+    Ok(())
+}
+
+pub fn check_secrets(
+    rules_path: &str,
+    secrets: &[String],
+    identities: &[String],
+    no_system_identities: bool,
+) -> Result<(), Report> {
+    let rules_path = std::path::Path::new(rules_path);
+    secrets
+        .iter()
+        .map(|secret_name| check_entry(secret_name))
+        .collect_reports_vec()
+        .map_err(|errors| errors.context("Secret check failed").into_dyn_any())?;
     Ok(())
 }
 
@@ -219,97 +189,6 @@ fn print_secrets_with_status(secrets: &[SecretInfo]) -> (usize, usize, usize, us
     }
 
     counts
-}
-
-/// Check that secrets can be decrypted
-///
-/// # Arguments
-/// * `rules_path` - Path to the Nix rules file
-/// * `secrets` - Secrets to check (if empty, checks all)
-/// * `identities` - Identity files for decryption
-/// * `no_system_identities` - If true, don't use default system identities
-///
-/// # Returns
-/// Ok(()) if all specified secrets can be decrypted, Err otherwise
-pub fn check_secrets(
-    rules_path: &str,
-    secrets: &[String],
-    identities: &[String],
-    no_system_identities: bool,
-) -> Result<()> {
-    let all_files = get_all_files(rules_path)?;
-    let files = filter_files(&all_files, secrets);
-    validate_secrets_exist(&files, secrets)?;
-
-    let rules_path_obj = std::path::Path::new(rules_path);
-    let rules_dir = rules_path_obj
-        .parent()
-        .unwrap_or_else(|| std::path::Path::new("."));
-
-    let existing: Vec<_> = files
-        .iter()
-        .filter(|secret_name| {
-            let sname = SecretName::new(secret_name);
-            let secret_file = rules_dir.join(sname.secret_file());
-            secret_file.exists()
-        })
-        .collect();
-
-    if existing.is_empty() {
-        if files.is_empty() {
-            log!("No secrets defined in {}", rules_path);
-        } else {
-            log!("No existing secret files to check");
-        }
-        return Ok(());
-    }
-
-    log!(
-        "Checking {} {}...",
-        existing.len(),
-        pluralize_secret(existing.len())
-    );
-
-    let mut failed = 0;
-    for secret_name in &existing {
-        let name = SecretName::new(secret_name).name().to_string();
-        let sname = SecretName::new(secret_name);
-        let secret_file = rules_dir.join(sname.secret_file());
-        let secret_file_str = match secret_file.to_str() {
-            Some(s) => s,
-            None => {
-                log!("ERROR: {}: Invalid path encoding", name);
-                failed += 1;
-                continue;
-            }
-        };
-
-        match crypto::can_decrypt(secret_file_str, identities, no_system_identities) {
-            Ok(()) => log!("OK: {}", name),
-            Err(e) => {
-                log!("ERROR: {}: {}", name, e);
-                failed += 1;
-            }
-        }
-    }
-
-    log!("");
-
-    if failed == 0 {
-        log!(
-            "All {} {} verified successfully.",
-            existing.len(),
-            pluralize_secret(existing.len())
-        );
-        Ok(())
-    } else {
-        Err(anyhow::anyhow!(
-            "Verification failed: {} of {} {} could not be decrypted",
-            failed,
-            existing.len(),
-            pluralize_secret(existing.len())
-        ))
-    }
 }
 
 #[cfg(test)]
@@ -798,49 +677,5 @@ mod tests {
 
         let (ok, missing, err, public) = SecretStatus::PublicOnly.update_counts(counts);
         assert_eq!((ok, missing, err, public), (5, 3, 2, 2));
-    }
-
-    // ===========================================
-    // SECRET INFO TESTS
-    // ===========================================
-
-    #[test]
-    fn test_get_secret_status_missing_file() {
-        // Create a minimal rules file
-        let temp_rules = create_rules_file(r#"{ "nonexistent" = { publicKeys = ["age1..."]; }; }"#);
-        let status = get_secret_status(
-            temp_rules.path().to_str().unwrap(),
-            "/nonexistent/file.age",
-            &[],
-            false,
-        );
-        assert_eq!(status, SecretStatus::Missing);
-    }
-
-    #[test]
-    fn test_get_secret_status_invalid_file() {
-        let temp_dir = tempdir().unwrap();
-        let secret_name = "invalid";
-        let secret_path_without_age = temp_dir.path().join(secret_name);
-        let secret_path_with_age = temp_dir.path().join(format!("{}.age", secret_name));
-        fs::write(&secret_path_with_age, "not-valid-age-content").unwrap();
-
-        // Create a minimal rules file
-        let temp_rules = create_rules_file(&format!(
-            r#"{{ "{}" = {{ publicKeys = ["age1..."]; }}; }}"#,
-            secret_path_without_age.to_str().unwrap()
-        ));
-
-        let status = get_secret_status(
-            temp_rules.path().to_str().unwrap(),
-            secret_path_without_age.to_str().unwrap(),
-            &[],
-            false,
-        );
-        assert!(
-            matches!(status, SecretStatus::CannotDecrypt(_)),
-            "Got status: {:?}",
-            status
-        );
     }
 }

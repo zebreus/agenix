@@ -13,16 +13,16 @@
 //! - [`generate`] - Secret generation operations
 //! - [`list`] - List and status operations
 
-pub mod context;
-pub mod dependency_resolver;
-pub mod edit;
-pub mod generate;
-pub mod list;
-pub mod rekey;
-pub mod secret_name;
+// pub mod context;
+// pub mod dependency_resolver;
+// pub mod edit;
+// pub mod generate;
+// pub mod list;
+// pub mod rekey;
+// pub mod secret_name;
 
 use anyhow::{Result, anyhow};
-use secret_name::SecretName;
+// use secret_name::SecretName;
 
 /// Validate that requested secrets exist in secrets.nix.
 ///

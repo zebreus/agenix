@@ -155,7 +155,7 @@ pub fn rekey_files(
     partial: bool,
     dry_run: bool,
 ) -> Result<()> {
-    let all_files = get_all_files(rules_path)?;
+    let all_files = get_all_files(std::path::Path::new(rules_path))?;
     let files = filter_files(&all_files, secrets);
 
     validate_secrets_exist(&files, secrets)?;

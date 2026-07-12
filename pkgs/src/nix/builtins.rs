@@ -86,7 +86,7 @@ pub mod impure_builtins {
         let mut hasher = Sha3::v256();
         hasher.update(data.as_bytes());
         let mut result = [0u8; 32];
-        hasher.finalize(&mut result);
+        hasher.finalize(&mut result[..]);
         Ok(Value::String(NixString::from(
             hex::encode(result).as_bytes(),
         )))
@@ -142,7 +142,7 @@ pub mod impure_builtins {
     /// Generates a random password-safe string (alphanumeric + `-_+=.`).
     #[builtin("passwordSafe")]
     async fn builtin_password_safe(co: GenCo, var: Value) -> Result<Value, ErrorKind> {
-        const CHARSET: &[u8] =
+        const CHARSET: &[u8; 67] =
             b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_+=.";
         let _ = co;
         let len = validate_length(var.as_int()?, "passwordSafe")?;
@@ -260,7 +260,7 @@ mod tests {
         let (mut secret, mut public) = (String::new(), String::new());
         for (k, v) in attrs.into_iter_sorted() {
             let key = k.as_str().map(|s| s.to_owned()).unwrap_or_default();
-            let value = value_to_string(v.clone()).unwrap_or_default();
+            let value = value_to_string(&v.clone()).unwrap_or_default();
             match key.as_str() {
                 "secret" => secret = value,
                 "public" => public = value,
@@ -277,7 +277,7 @@ mod tests {
         let current_dir = current_dir()?;
         let output = eval_nix_expression(nix_expr, &current_dir)?;
 
-        let private_key = value_to_string(output)?;
+        let private_key = value_to_string(&output)?;
 
         // Verify it's a PEM private key
         assert!(private_key.starts_with("-----BEGIN PRIVATE KEY-----"));
@@ -294,7 +294,7 @@ mod tests {
         let current_dir = current_dir()?;
         let output = eval_nix_expression(nix_expr, &current_dir)?;
 
-        let public_key = value_to_string(output)?;
+        let public_key = value_to_string(&output)?;
 
         // Verify it's an SSH public key
         assert!(public_key.starts_with("ssh-ed25519 "));
@@ -335,7 +335,7 @@ mod tests {
         let current_dir = current_dir()?;
         let output = eval_nix_expression(nix_expr, &current_dir)?;
 
-        let private_key = value_to_string(output)?;
+        let private_key = value_to_string(&output)?;
 
         // Verify it's an age secret key
         assert!(private_key.starts_with("AGE-SECRET-KEY-1"));
@@ -352,7 +352,7 @@ mod tests {
         let current_dir = current_dir()?;
         let output = eval_nix_expression(nix_expr, &current_dir)?;
 
-        let public_key = value_to_string(output)?;
+        let public_key = value_to_string(&output)?;
 
         // Verify it's an age public key
         assert!(public_key.starts_with("age1"));
@@ -396,7 +396,7 @@ mod tests {
         let current_dir = current_dir()?;
         let output = eval_nix_expression(nix_expr, &current_dir)?;
 
-        let private_key = value_to_string(output)?;
+        let private_key = value_to_string(&output)?;
 
         // Verify it's a base64 encoded WireGuard private key (44 characters for 32 bytes)
         assert_eq!(private_key.len(), 44);
@@ -416,7 +416,7 @@ mod tests {
         let current_dir = current_dir()?;
         let output = eval_nix_expression(nix_expr, &current_dir)?;
 
-        let public_key = value_to_string(output)?;
+        let public_key = value_to_string(&output)?;
 
         // Verify it's a base64 encoded WireGuard public key (44 characters for 32 bytes)
         assert_eq!(public_key.len(), 44);
@@ -464,7 +464,7 @@ mod tests {
         let current_dir = current_dir()?;
         let output = eval_nix_expression(nix_expr, &current_dir)?;
 
-        let private_key = value_to_string(output)?;
+        let private_key = value_to_string(&output)?;
 
         // Decode the private key
         let private_bytes = general_purpose::STANDARD.decode(&private_key)?;
@@ -490,7 +490,7 @@ mod tests {
             let nix_expr = "(builtins.wireguardKey {}).secret";
             let current_dir = current_dir()?;
             let output = eval_nix_expression(nix_expr, &current_dir)?;
-            let private_key = value_to_string(output)?;
+            let private_key = value_to_string(&output)?;
             let private_bytes = general_purpose::STANDARD.decode(&private_key)?;
 
             // First byte must have bits 0, 1, 2 clear
@@ -509,7 +509,7 @@ mod tests {
             let nix_expr = "(builtins.wireguardKey {}).secret";
             let current_dir = current_dir()?;
             let output = eval_nix_expression(nix_expr, &current_dir)?;
-            let private_key = value_to_string(output)?;
+            let private_key = value_to_string(&output)?;
             let private_bytes = general_purpose::STANDARD.decode(&private_key)?;
 
             // Last byte must have bit 7 clear and bit 6 set
@@ -705,7 +705,7 @@ mod tests {
         let current_dir = current_dir()?;
         let output = eval_nix_expression(nix_expr, &current_dir)?;
 
-        let hex_string = value_to_string(output)?;
+        let hex_string = value_to_string(&output)?;
 
         // Verify length and hex characters
         assert_eq!(hex_string.len(), 32);
@@ -725,7 +725,7 @@ mod tests {
         let current_dir = current_dir()?;
         let output = eval_nix_expression(nix_expr, &current_dir)?;
 
-        let hex_string = value_to_string(output)?;
+        let hex_string = value_to_string(&output)?;
         assert_eq!(hex_string.len(), 0);
 
         Ok(())
@@ -737,7 +737,7 @@ mod tests {
         let current_dir = current_dir()?;
         let output = eval_nix_expression(nix_expr, &current_dir)?;
 
-        let hex_string = value_to_string(output)?;
+        let hex_string = value_to_string(&output)?;
         assert_eq!(hex_string.len(), 7);
         assert!(hex_string.chars().all(|c| c.is_ascii_hexdigit()));
 
@@ -753,8 +753,8 @@ mod tests {
         let output1 = eval_nix_expression(nix_expr1, &current_dir)?;
         let output2 = eval_nix_expression(nix_expr2, &current_dir)?;
 
-        let hex1 = value_to_string(output1)?;
-        let hex2 = value_to_string(output2)?;
+        let hex1 = value_to_string(&output1)?;
+        let hex2 = value_to_string(&output2)?;
 
         assert_ne!(hex1, hex2);
 
@@ -768,7 +768,7 @@ mod tests {
         let current_dir = current_dir()?;
         let output = eval_nix_expression(nix_expr, &current_dir)?;
 
-        let base64_string = value_to_string(output)?;
+        let base64_string = value_to_string(&output)?;
 
         // 32 bytes = 44 base64 characters (with padding)
         assert_eq!(base64_string.len(), 44);
@@ -789,7 +789,7 @@ mod tests {
         let current_dir = current_dir()?;
         let output = eval_nix_expression(nix_expr, &current_dir)?;
 
-        let base64_string = value_to_string(output)?;
+        let base64_string = value_to_string(&output)?;
         assert_eq!(base64_string.len(), 0);
 
         Ok(())
@@ -804,8 +804,8 @@ mod tests {
         let output1 = eval_nix_expression(nix_expr1, &current_dir)?;
         let output2 = eval_nix_expression(nix_expr2, &current_dir)?;
 
-        let base64_1 = value_to_string(output1)?;
-        let base64_2 = value_to_string(output2)?;
+        let base64_1 = value_to_string(&output1)?;
+        let base64_2 = value_to_string(&output2)?;
 
         assert_ne!(base64_1, base64_2);
 
@@ -819,7 +819,7 @@ mod tests {
         let current_dir = current_dir()?;
         let output = eval_nix_expression(nix_expr, &current_dir)?;
 
-        let password = value_to_string(output)?;
+        let password = value_to_string(&output)?;
 
         assert_eq!(password.len(), 32);
         // Verify only safe characters are used
@@ -835,7 +835,7 @@ mod tests {
         let current_dir = current_dir()?;
         let output = eval_nix_expression(nix_expr, &current_dir)?;
 
-        let password = value_to_string(output)?;
+        let password = value_to_string(&output)?;
         assert_eq!(password.len(), 0);
 
         Ok(())
@@ -850,8 +850,8 @@ mod tests {
         let output1 = eval_nix_expression(nix_expr1, &current_dir)?;
         let output2 = eval_nix_expression(nix_expr2, &current_dir)?;
 
-        let password1 = value_to_string(output1)?;
-        let password2 = value_to_string(output2)?;
+        let password1 = value_to_string(&output1)?;
+        let password2 = value_to_string(&output2)?;
 
         assert_ne!(password1, password2);
 
@@ -865,7 +865,7 @@ mod tests {
         let current_dir = current_dir()?;
         let output = eval_nix_expression(nix_expr, &current_dir)?;
 
-        let password = value_to_string(output)?;
+        let password = value_to_string(&output)?;
 
         // These characters can cause issues in shell scripts, config files, etc.
         let dangerous_chars = "\"'`\\$!#&|;<>(){}[]^~*?";
@@ -881,7 +881,7 @@ mod tests {
         let current_dir = current_dir()?;
         let output = eval_nix_expression(nix_expr, &current_dir)?;
 
-        let uuid = value_to_string(output)?;
+        let uuid = value_to_string(&output)?;
 
         // UUID format: xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx
         assert_eq!(uuid.len(), 36);
@@ -930,8 +930,8 @@ mod tests {
         let output1 = eval_nix_expression(nix_expr1, &current_dir)?;
         let output2 = eval_nix_expression(nix_expr2, &current_dir)?;
 
-        let uuid1 = value_to_string(output1)?;
-        let uuid2 = value_to_string(output2)?;
+        let uuid1 = value_to_string(&output1)?;
+        let uuid2 = value_to_string(&output2)?;
 
         assert_ne!(uuid1, uuid2);
 
@@ -948,7 +948,7 @@ mod tests {
         let current_dir = current_dir()?;
         let output = eval_nix_expression(nix_expr, &current_dir)?;
 
-        let private_key = value_to_string(output)?;
+        let private_key = value_to_string(&output)?;
 
         // Verify it's a PEM private key
         assert!(private_key.starts_with("-----BEGIN PRIVATE KEY-----"));
@@ -966,7 +966,7 @@ mod tests {
         let current_dir = current_dir()?;
         let output = eval_nix_expression(nix_expr, &current_dir)?;
 
-        let public_key = value_to_string(output)?;
+        let public_key = value_to_string(&output)?;
 
         // Verify it's an SSH public key
         assert!(public_key.starts_with("ssh-rsa "));
@@ -984,7 +984,7 @@ mod tests {
         let current_dir = current_dir()?;
         let output = eval_nix_expression(nix_expr, &current_dir)?;
 
-        let public_key = value_to_string(output)?;
+        let public_key = value_to_string(&output)?;
 
         // Verify it's an SSH public key
         assert!(public_key.starts_with("ssh-rsa "));
@@ -1001,7 +1001,7 @@ mod tests {
         let current_dir = current_dir()?;
         let output = eval_nix_expression(nix_expr, &current_dir)?;
 
-        let public_key = value_to_string(output)?;
+        let public_key = value_to_string(&output)?;
 
         // Verify it's an SSH public key
         assert!(public_key.starts_with("ssh-rsa "));
@@ -1017,7 +1017,7 @@ mod tests {
         let current_dir = current_dir()?;
         let output = eval_nix_expression(nix_expr, &current_dir)?;
 
-        let public_key = value_to_string(output)?;
+        let public_key = value_to_string(&output)?;
 
         // Verify it's an SSH public key
         assert!(public_key.starts_with("ssh-rsa "));
@@ -1037,8 +1037,8 @@ mod tests {
         let output1 = eval_nix_expression(nix_expr1, &current_dir)?;
         let output2 = eval_nix_expression(nix_expr2, &current_dir)?;
 
-        let key1 = value_to_string(output1)?;
-        let key2 = value_to_string(output2)?;
+        let key1 = value_to_string(&output1)?;
+        let key2 = value_to_string(&output2)?;
 
         assert_ne!(key1, key2);
 
@@ -1129,7 +1129,7 @@ mod tests {
         let current_dir = current_dir()?;
         let output = eval_nix_expression(nix_expr, &current_dir)?;
 
-        let public_key = value_to_string(output)?;
+        let public_key = value_to_string(&output)?;
 
         // Verify SSH public key format
         assert!(public_key.starts_with("ssh-rsa "));
@@ -1165,7 +1165,7 @@ mod tests {
         let current_dir = current_dir()?;
         let output = eval_nix_expression(nix_expr, &current_dir)?;
 
-        let hash = value_to_string(output)?;
+        let hash = value_to_string(&output)?;
 
         // Blake2b-512 produces 128 hex characters
         assert_eq!(hash.len(), 128);
@@ -1184,8 +1184,8 @@ mod tests {
         let output1 = eval_nix_expression(nix_expr1, &current_dir)?;
         let output2 = eval_nix_expression(nix_expr2, &current_dir)?;
 
-        let hash1 = value_to_string(output1)?;
-        let hash2 = value_to_string(output2)?;
+        let hash1 = value_to_string(&output1)?;
+        let hash2 = value_to_string(&output2)?;
 
         // Verify they're different
         assert_ne!(hash1, hash2);
@@ -1202,7 +1202,7 @@ mod tests {
         let current_dir = current_dir()?;
         let output = eval_nix_expression(nix_expr, &current_dir)?;
 
-        let hash = value_to_string(output)?;
+        let hash = value_to_string(&output)?;
 
         // Blake2s-256 produces 64 hex characters
         assert_eq!(hash.len(), 64);
@@ -1219,7 +1219,7 @@ mod tests {
         let current_dir = current_dir()?;
         let output = eval_nix_expression(nix_expr, &current_dir)?;
 
-        let hash = value_to_string(output)?;
+        let hash = value_to_string(&output)?;
 
         // SHA3-256 produces 64 hex characters
         assert_eq!(hash.len(), 64);
@@ -1238,7 +1238,7 @@ mod tests {
         let current_dir = current_dir()?;
         let output = eval_nix_expression(nix_expr, &current_dir)?;
 
-        let hash = value_to_string(output)?;
+        let hash = value_to_string(&output)?;
 
         // Verify it's different from "hello"
         assert_ne!(

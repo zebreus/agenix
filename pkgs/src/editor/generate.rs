@@ -4,6 +4,7 @@
 //! defined in the rules file.
 
 use anyhow::{Context, Result, anyhow};
+use rootcause::prelude::IntoAnyhow;
 use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
@@ -11,10 +12,7 @@ use tempfile::TempDir;
 
 use crate::crypto::encrypt_from_file;
 use crate::log;
-use crate::nix::{
-    generate_secret_with_public, generate_secret_with_public_and_context, get_all_files,
-    get_public_keys, get_secret_dependencies, should_armor,
-};
+use crate::nix::get_all_files;
 
 use super::context::SecretContext;
 use super::dependency_resolver::DependencyResolver;
@@ -228,7 +226,9 @@ fn run_generator(
                     ));
                 }
             }
-            Err(err.context(format!("Failed to generate secret '{}'", file)))
+            Err(err
+                .into_anyhow()
+                .context(format!("Failed to generate secret '{}'", file)))
         }
     }
 }
@@ -357,7 +357,7 @@ pub fn generate_secrets(
     with_dependencies: bool,
     secrets: &[String],
 ) -> Result<()> {
-    let all_files = get_all_files(rules_path)?;
+    let all_files = get_all_files(std::path::Path::new(rules_path))?;
     let ctx = SecretContext::new(rules_path, all_files.clone());
 
     let files_to_process = build_processing_list(&ctx, secrets, with_dependencies)?;
@@ -408,6 +408,7 @@ pub fn generate_secrets(
 #[cfg(test)]
 mod tests {
     use anyhow::Result;
+    use rootcause::prelude::IntoAnyhow;
     use std::fs;
     use tempfile::tempdir;
 
@@ -649,7 +650,7 @@ mod tests {
             "Generation should fail with missing dependency"
         );
         // The error chain should include information about the dependency
-        let err = result.unwrap_err();
+        let err = result.unwrap_err().into_anyhow();
         let err_chain: Vec<String> = err.chain().map(|e| e.to_string()).collect();
         let full_error = err_chain.join(": ");
         assert!(

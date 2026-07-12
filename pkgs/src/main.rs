@@ -1,6 +1,7 @@
 use anyhow::Result;
+use rootcause::Report;
 
-fn main() -> Result<()> {
+fn main() -> Result<(), Report> {
     agenix::run(std::env::args())
 }
 
