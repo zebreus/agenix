@@ -197,7 +197,8 @@ let
         file = mkOption {
           type = types.path;
           internal = true;
-          default = cfg.secretsPath + "/${config.name}.pub";
+          # See age.secrets.*.file for why this is string interpolation.
+          default = "${cfg.secretsPath}/${config.name}.pub";
           description = ''
             Public key file corresponding to the secret.
 
@@ -271,7 +272,11 @@ let
         file = mkOption {
           type = types.path;
           internal = true;
-          default = cfg.secretsPath + "/${config.name}.age";
+          # String interpolation imports the whole secretsPath directory into
+          # the store as one path, so relative symlinks between secret files
+          # keep working. (`cfg.secretsPath + "/..."` would import just the
+          # one file and turn a relative symlink into a dangling one.)
+          default = "${cfg.secretsPath}/${config.name}.age";
           description = ''
             Age file the secret is loaded from.
 
