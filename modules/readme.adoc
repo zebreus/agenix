@@ -45,49 +45,31 @@ This ensures no partial updates and allows cleanup of removed secrets.
 
 Import with `agenix.nixosModules.default`.
 
-=== age.secrets
-
-Attribute set of secrets to decrypt. Each key is the secret name, each value is the secret configuration.
-
-[source,nix]
-----
-{
-  age.secrets.my-secret.file = ./secrets/my-secret.age;
-}
-----
-
 === age.secretsPath
 
-Path to the directory containing `secrets.nix` and all secret files. When set, the `file` option becomes optional and defaults to `${secretsPath}/${name}.age`.
+**Required.** Path to the directory containing `secrets.nix` and all secret files. Secret files are resolved as `${secretsPath}/${name}.age` and public files as `${secretsPath}/${name}.pub`; there is no per-secret file option.
 
 [source,nix]
 ----
 {
-  # All secrets auto-resolve to files in ./secrets/
+  # All secrets resolve to files in ./secrets/
   age.secretsPath = ./secrets;
   age.secrets.database-password = {};  # Uses ./secrets/database-password.age
   age.secrets.api-key = {};            # Uses ./secrets/api-key.age
 }
 ----
 
-=== age.secrets.<name>.file
+NOTE: Secret files must be regular files. Symlinks are rejected at evaluation time, because importing a symlink into the Nix store would break it.
 
-Path to the encrypted `.age` file. **Required** unless `secretsPath` is set.
+=== age.secrets
 
-[source,nix]
-----
-{
-  age.secrets.database-password.file = ../secrets/db-pass.age;
-}
-----
-
-With `secretsPath`, you can omit the `file` option:
+Attribute set of secrets to decrypt. Each key is a secret name from `secrets.nix`, each value is the secret's installation configuration.
 
 [source,nix]
 ----
 {
   age.secretsPath = ./secrets;
-  age.secrets.database-password = {};  # Auto-resolves to ./secrets/database-password.age
+  age.secrets.my-secret = {};
 }
 ----
 
@@ -99,7 +81,6 @@ Path where the decrypted secret is accessible. Default: `/run/agenix/<name>`.
 ----
 {
   age.secrets.nginx-cert = {
-    file = ./secrets/nginx.crt.age;
     path = "/etc/nginx/ssl/cert.pem";
   };
 }
@@ -118,14 +99,13 @@ IMPORTANT: Never use `builtins.readFile` on a secret path. This copies the clear
 
 === age.secrets.<name>.name
 
-Name of the decrypted file in the secrets directory. Default: the attribute name.
+Name of the secret in `secrets.nix` and of the decrypted file in the secrets directory. Default: the attribute name. Setting it lets one secret file be installed under several attribute names with different configurations.
 
 [source,nix]
 ----
 {
-  age.secrets.my-secret = {
-    name = "actual-filename";  # Creates /run/agenix/actual-filename
-    file = ./secrets/my-secret.age;
+  age.secrets.my-alias = {
+    name = "actual-secret";  # Decrypts ./secrets/actual-secret.age
   };
 }
 ----
@@ -138,7 +118,6 @@ File permissions in chmod format. Default: `"0400"` (owner read-only).
 ----
 {
   age.secrets.shared-secret = {
-    file = ./secrets/shared.age;
     mode = "0440";  # Owner and group can read
   };
 }
@@ -152,7 +131,6 @@ Username of the file owner. Default: `"0"` (root).
 ----
 {
   age.secrets.app-secret = {
-    file = ./secrets/app.age;
     owner = "myapp";
   };
 }
@@ -166,7 +144,6 @@ Group name of the file. Default: derived from owner's primary group.
 ----
 {
   age.secrets.nginx-key = {
-    file = ./secrets/nginx.key.age;
     mode = "0440";
     owner = "nginx";
     group = "nginx";
@@ -184,7 +161,6 @@ When `false`, the secret is copied directly to `path` instead of symlinking. Use
 ----
 {
   age.secrets.elasticsearch-config = {
-    file = ./secrets/es.conf.age;
     symlink = false;  # Copy instead of symlink
   };
 }
@@ -213,15 +189,11 @@ Public keys are typically generated alongside secrets (e.g., SSH keys) and store
 
 === age.publics.<name>.file
 
-Path to the public key file. Default: auto-detected as `${secretsPath}/${name}.pub` if `secretsPath` is set.
+**Read-only.** Path to the public key file, resolved as `${secretsPath}/${name}.pub`.
 
 [source,nix]
 ----
 {
-  # Explicit path:
-  age.publics.deploy-key.file = ./secrets/deploy-key.pub;
-  
-  # Or use secretsPath for auto-detection:
   age.secretsPath = ./secrets;
   age.publics.deploy-key = {};  # Uses ./secrets/deploy-key.pub
 }
@@ -269,7 +241,6 @@ File permissions for the installed public file. Default: `"0444"` (readable by a
 ----
 {
   age.publics.private-pub = {
-    file = ./secrets/private.pub;
     installPath = "/etc/myapp/key.pub";
     mode = "0400";  # Owner read-only
   };
@@ -284,7 +255,6 @@ Username of the installed public file owner (NixOS only). Default: `"root"`.
 ----
 {
   age.publics.app-key = {
-    file = ./secrets/app.pub;
     installPath = "/home/myapp/.ssh/id_ed25519.pub";
     owner = "myapp";
   };
@@ -299,7 +269,6 @@ Group name of the installed public file (NixOS only). Default: `"keys"` or deriv
 ----
 {
   age.publics.app-key = {
-    file = ./secrets/app.pub;
     installPath = "/home/myapp/.ssh/id_ed25519.pub";
     owner = "myapp";
     group = "myapp";
@@ -407,6 +376,14 @@ The Home Manager module provides user-scoped secrets, decrypted with user SSH ke
 |===
 |Option |NixOS Module |Home Manager Module
 
+|`age.secretsPath`
+|Required
+|Optional
+
+|`age.secrets.<name>.file`
+|Derived from `secretsPath` (read-only)
+|Settable; defaults to `${secretsPath}/${name}.age`
+
 |`age.ageBin`
 |String path
 |`age.package` (package)
@@ -445,7 +422,7 @@ The age package to use for decryption. Default: `pkgs.age`.
 
 === age.secrets
 
-Same as NixOS module, but without `owner` and `group` options.
+Same as NixOS module, but without `owner` and `group`, and with a settable `file` option (`age.secretsPath` is optional here).
 
 [source,nix]
 ----

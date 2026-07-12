@@ -31,8 +31,9 @@ Many NixOS services accept secret values via file paths. For example:
 [source,nix]
 ----
 {
-  # Define which secret to decrypt
-  age.secrets.db-password.file = ./secrets/db-password.age;
+  # Where the secrets live, and which one to decrypt
+  age.secretsPath = ./secrets;
+  age.secrets.db-password = { };
 
   # Point the service to the decrypted secret
   services.grafana.database.passwordFile = config.age.secrets.db-password.path;
@@ -46,7 +47,7 @@ The module handles decryption automatically—you just wire up the paths.
 * Encrypt secrets using SSH keys (system host keys or user keys)
 * Deploy encrypted secrets through the Nix store with `nixos-rebuild`
 * Automatic decryption to `/run/agenix/` at system activation
-* Generate secrets using built-in generators (SSH keys, passwords, UUIDs, age keys)
+* Generate secrets using built-in generators (SSH keys, passwords, UUIDs, age keys, WireGuard keys)
 * Reference generated public keys in other secrets
 
 == Quick Start
@@ -75,7 +76,8 @@ cd secrets && agenix edit db-password
 [source,nix]
 ----
 {
-  age.secrets.db-password.file = ./secrets/db-password.age;
+  age.secretsPath = ./secrets;
+  age.secrets.db-password = { };
   services.grafana.database.passwordFile = config.age.secrets.db-password.path;
 }
 ----
