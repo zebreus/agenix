@@ -98,6 +98,17 @@ is the only component that reads or writes secret files.
    "did you mean" error instead of silent stripping. No backwards
    compatibility with the old suffixed form.
 
+## Generator calling convention
+
+Generators are called callPackage-style: the argument attrset
+(`{ secrets, publics }`, all values lazy thunks) is intersected with
+`builtins.functionArgs` of the generator, so a generator receives exactly
+the arguments its pattern names. `{ }:` receives nothing, `{ publics }:`
+receives only `publics`, plain lambdas (`_:`) receive `{ }`. Non-function
+generators are constant values. Bare builtins
+(`generator = builtins.sshKey`) are not supported — `functionArgs` cannot
+introspect them; wrap them: `generator = { }: builtins.sshKey { };`.
+
 ## Non-goals
 
 - No speculative caching layers (`cached`, `cachelito-core`,

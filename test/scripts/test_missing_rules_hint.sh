@@ -6,39 +6,31 @@ source "$(dirname "$0")/common_setup.sh"
 
 echo "=== Test: Missing secrets.nix hint ==="
 
-# Test 1: Missing secrets.nix should show hint
+# Test 1: Missing secrets.nix should show a helpful error
 echo "--- Test 1: Missing secrets.nix shows hint ---"
 cd "$TMPDIR" || exit 1
 ERROR_OUTPUT=$(agenix list 2>&1) || true
 
-if echo "$ERROR_OUTPUT" | grep -q "secrets.nix not found"; then
-  echo "✓ Error message mentions 'secrets.nix not found'"
+if echo "$ERROR_OUTPUT" | grep -q "No rules file found"; then
+  echo "✓ Error message mentions the missing rules file"
 else
-  echo "✗ Error message should mention 'secrets.nix not found'"
+  echo "✗ Error message should mention the missing rules file"
   echo "  Got: $ERROR_OUTPUT"
   exit 1
 fi
 
-if echo "$ERROR_OUTPUT" | grep -q "Hint:"; then
-  echo "✓ Error message contains hint"
+if echo "$ERROR_OUTPUT" | grep -q "Create a secrets.nix"; then
+  echo "✓ Error suggests creating a secrets.nix"
 else
-  echo "✗ Error message should contain hint"
-  echo "  Got: $ERROR_OUTPUT"
-  exit 1
-fi
-
-if echo "$ERROR_OUTPUT" | grep -q "cd to a directory with secrets.nix"; then
-  echo "✓ Hint suggests changing directory"
-else
-  echo "✗ Hint should suggest changing directory"
+  echo "✗ Error should suggest creating a secrets.nix"
   echo "  Got: $ERROR_OUTPUT"
   exit 1
 fi
 
 if echo "$ERROR_OUTPUT" | grep -q "\-\-secrets-nix"; then
-  echo "✓ Hint mentions --secrets-nix flag"
+  echo "✓ Error mentions --secrets-nix flag"
 else
-  echo "✗ Hint should mention --secrets-nix flag"
+  echo "✗ Error should mention --secrets-nix flag"
   echo "  Got: $ERROR_OUTPUT"
   exit 1
 fi
@@ -47,10 +39,10 @@ fi
 echo "--- Test 2: Hint works with encrypt command ---"
 ERROR_OUTPUT=$(echo "test" | agenix encrypt test 2>&1) || true
 
-if echo "$ERROR_OUTPUT" | grep -q "secrets.nix not found"; then
-  echo "✓ Encrypt command shows secrets.nix hint"
+if echo "$ERROR_OUTPUT" | grep -q "No rules file found"; then
+  echo "✓ Encrypt command shows the missing rules file error"
 else
-  echo "✗ Encrypt command should show secrets.nix hint"
+  echo "✗ Encrypt command should show the missing rules file error"
   echo "  Got: $ERROR_OUTPUT"
   exit 1
 fi

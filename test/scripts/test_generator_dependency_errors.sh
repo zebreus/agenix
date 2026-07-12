@@ -14,11 +14,11 @@ cd "$TMPDIR/dep-edge-cases"
 echo "--- Test 1: Dependency needs secret but only public available ---"
 cat > "public-only-dep.nix" << 'EOF'
 {
-  "base.age" = {
-    publicKeys = [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH" ];
+  "base" = {
+    hasSecret = false;
     generator = {}: { public = "base-public-only"; };
   };
-  "derived.age" = {
+  "derived" = {
     publicKeys = [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH" ];
     dependencies = [ "base" ];
     generator = { secrets }: "needs-" + secrets."base";
@@ -51,11 +51,11 @@ rm -f "$TMPDIR/dep-edge-cases/"*.age "$TMPDIR/dep-edge-cases/"*.pub
 
 cat > "secret-only-dep.nix" << 'EOF'
 {
-  "base.age" = {
+  "base" = {
     publicKeys = [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH" ];
     generator = {}: { secret = "base-secret-only"; };
   };
-  "derived.age" = {
+  "derived" = {
     publicKeys = [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH" ];
     dependencies = [ "base" ];
     generator = { publics }: "needs-" + publics."base";
@@ -88,7 +88,7 @@ rm -f "$TMPDIR/dep-edge-cases/"*.age "$TMPDIR/dep-edge-cases/"*.pub
 
 cat > "empty-attrset.nix" << 'EOF'
 {
-  "empty.age" = {
+  "empty" = {
     publicKeys = [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH" ];
     generator = {}: { };
   };
@@ -153,11 +153,12 @@ rm -f "$TMPDIR/dep-edge-cases/"*.age "$TMPDIR/dep-edge-cases/"*.pub
 cat > "valid-public-chain.nix" << 'EOF'
 {
   "meta" = {
-    publicKeys = [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH" ];
+    hasSecret = false;
     generator = {}: { public = "metadata-v1"; };
   };
   "config" = {
     publicKeys = [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH" ];
+    hasPublic = true;
     dependencies = [ "meta" ];
     generator = { publics }: { secret = "config-" + publics."meta"; public = "config-pub"; };
   };

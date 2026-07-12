@@ -17,6 +17,7 @@ cat > "generate-public-secrets.nix" << 'EOF'
   };
   "with-public" = {
     publicKeys = [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH" ];
+    hasPublic = true;
     generator = {}: { secret = "my-secret-value"; public = "my-public-value"; };
   };
   "secret-only-attrset" = {
@@ -25,7 +26,8 @@ cat > "generate-public-secrets.nix" << 'EOF'
   };
   "ssh-keypair" = {
     publicKeys = [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH" ];
-    generator = builtins.sshKey;
+    hasPublic = true;
+    generator = { }: builtins.sshKey { };
   };
 }
 EOF

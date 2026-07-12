@@ -32,6 +32,15 @@ pub fn call_generator(
         .to_str()
         .ok_or_else(|| report!("Path to secrets.nix is not valid UTF-8"))?;
 
+    // Generators are called callPackage-style: they receive exactly the
+    // arguments their pattern names ({ }: gets nothing, { publics }: gets
+    // only publics), so every documented signature works. Plain lambdas
+    // (_: ...) receive an empty attrset.
+    //
+    // Bare builtins (generator = builtins.sshKey) are not supported:
+    // functionArgs cannot introspect them, and the resulting type error is
+    // not interceptable (addErrorContext does not wrap type errors). Wrap
+    // them: generator = { }: builtins.sshKey { };
     let nix_expr = format!(
         r#"let
           rules = import {rules_path_str};
@@ -41,7 +50,7 @@ pub fn call_generator(
             if generator == null
             then throw "Entry '{name}' has no generator"
             else if builtins.isFunction generator
-            then generator {args}
+            then generator (builtins.intersectAttrs (builtins.functionArgs generator) {args})
             else generator;
         in builtins.deepSeq result result"#,
         effective_entry = effective_entry_nix(),

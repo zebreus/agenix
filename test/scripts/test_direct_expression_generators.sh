@@ -20,11 +20,13 @@ cat > "direct-expr-secrets.nix" << 'EOF'
   # Direct attrset expression with secret and public
   "direct-attrset" = {
     publicKeys = [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH" ];
+    hasPublic = true;
     generator = { secret = "direct-secret-part"; public = "direct-public-part"; };
   };
   # Direct builtins.sshKey call (instead of `generator = builtins.sshKey`)
   "direct-ssh-call" = {
     publicKeys = [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH" ];
+    hasPublic = true;
     generator = builtins.sshKey {};
   };
   # Direct builtins.randomString call (instead of `generator = {}: builtins.randomString 16`)
@@ -35,6 +37,7 @@ cat > "direct-expr-secrets.nix" << 'EOF'
   # Direct builtins.ageKey call
   "direct-age-key" = {
     publicKeys = [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH" ];
+    hasPublic = true;
     generator = builtins.ageKey {};
   };
   # Function-based generator still works (existing behavior)

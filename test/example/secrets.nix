@@ -25,6 +25,7 @@ in
       user1
       system1
     ];
+    hasPublic = true;
     generator =
       { }:
       {

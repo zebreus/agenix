@@ -16,7 +16,7 @@ cat > "generator-variations.nix" << 'EOF'
 {
   # Public-only generator - should create .pub file but no .age file
   "public-only" = {
-    publicKeys = [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH" ];
+    hasSecret = false;
     generator = {}: { public = "my-public-metadata"; };
   };
   
@@ -35,6 +35,7 @@ cat > "generator-variations.nix" << 'EOF'
   # Both secret and public - should create both .age and .pub files
   "both-outputs" = {
     publicKeys = [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH" ];
+    hasPublic = true;
     generator = {}: { secret = "my-secret"; public = "my-public"; };
   };
   

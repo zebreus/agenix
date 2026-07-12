@@ -113,15 +113,18 @@ pub(super) fn effective_entry_nix() -> &'static str {
            "n" "o" "p" "q" "r" "s" "t" "u" "v" "w" "x" "y" "z"]
           name;
         hasSuffix = suffix: builtins.match ".*${suffix}$" lower != null;
+        # Always lambdas, never bare builtins: generators are called with
+        # the arguments their pattern names (builtins.functionArgs), which
+        # is only well-defined for lambdas.
         implicit =
           if hasSuffix "ed25519" || hasSuffix "ssh" || hasSuffix "ssh_key"
-          then { generator = builtins.sshKey; hasSecret = true; hasPublic = true; }
+          then { generator = { }: builtins.sshKey { }; hasSecret = true; hasPublic = true; }
           else if hasSuffix "x25519"
-          then { generator = builtins.ageKey; hasSecret = true; hasPublic = true; }
+          then { generator = { }: builtins.ageKey { }; hasSecret = true; hasPublic = true; }
           else if hasSuffix "_wg" || hasSuffix "_wireguard"
-          then { generator = builtins.wireguardKey; hasSecret = true; hasPublic = true; }
+          then { generator = { }: builtins.wireguardKey { }; hasSecret = true; hasPublic = true; }
           else if hasSuffix "password" || hasSuffix "passphrase"
-          then { generator = _: builtins.randomString 32; hasSecret = true; hasPublic = false; }
+          then { generator = { }: builtins.randomString 32; hasSecret = true; hasPublic = false; }
           else { };
 
         hasSecret = raw.hasSecret or (implicit.hasSecret or true);

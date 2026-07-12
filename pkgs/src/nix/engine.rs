@@ -193,9 +193,7 @@ impl Engine {
 
         for target in targets {
             if !self.names.contains(target) {
-                return Err(report!(
-                    "Cannot generate '{target}': no such entry in secrets.nix"
-                ));
+                return Err(unknown_name_report(target).context("Cannot generate").into_dyn_any());
             }
         }
 
@@ -268,7 +266,7 @@ impl Engine {
             return Ok(entry.clone());
         }
         if !self.names.iter().any(|n| n == name) {
-            return Err(report!("No entry named '{name}' in secrets.nix"));
+            return Err(unknown_name_report(name));
         }
         let entry = Rc::new(get_raw_secret_entry(&self.rules_path, name)?);
         self.entries
@@ -689,6 +687,15 @@ fn load_names(rules_path: &Path) -> Result<Vec<String>, Report> {
     value_to_string_array(&output)
 }
 
+/// The error for a name that is not in secrets.nix. Invalid names (like a
+/// stray .age suffix) get the validation error with its fix-it hint instead.
+fn unknown_name_report(name: &str) -> Report {
+    match validate_name(name) {
+        Err(e) => e,
+        Ok(()) => report!("No entry named '{name}' in secrets.nix"),
+    }
+}
+
 /// The error for accessing a part the entry declares it does not have.
 fn no_part_report(name: &str, part: Part) -> Report {
     let (kind, declaration) = match part {
@@ -935,6 +942,47 @@ mod tests {
 
         flush().unwrap();
         assert_eq!(fx.decrypt_file("derived.age"), expected);
+    }
+
+    #[test]
+    fn generators_are_called_callpackage_style() {
+        // All documented signature forms: `{ }:` takes nothing and
+        // `{ publics }:` receives exactly what it names.
+        let fx = Fixture::new(
+            r#"{
+              "fixed" = { publicKeys = [ "{PUB}" ]; generator = { }: "fixed-value"; };
+              "meta" = { hasSecret = false; generator = { }: { public = "meta-public"; }; };
+              "derived" = {
+                publicKeys = [ "{PUB}" ];
+                generator = { publics }: "key=" + publics.meta;
+              };
+            }"#,
+        );
+        fx.init_generate_all();
+        generate().unwrap();
+        assert_eq!(get_secret("fixed").unwrap(), b"fixed-value");
+        assert_eq!(get_public("meta").unwrap(), b"meta-public");
+        assert_eq!(get_secret("derived").unwrap(), b"key=meta-public");
+    }
+
+    #[test]
+    fn bare_builtin_generator_is_rejected() {
+        // functionArgs cannot introspect builtins, so bare builtins are not
+        // callable as generators (same restriction as callPackage) — they
+        // must be wrapped: generator = { }: builtins.sshKey { };
+        // The resulting type error is a snix eval error we cannot improve
+        // (addErrorContext does not wrap type errors).
+        let fx = Fixture::new(
+            r#"{
+              "mykey" = {
+                publicKeys = [ "{PUB}" ];
+                hasPublic = true;
+                generator = builtins.sshKey;
+              };
+            }"#,
+        );
+        fx.init_generate_all();
+        assert!(generate().is_err());
     }
 
     #[test]

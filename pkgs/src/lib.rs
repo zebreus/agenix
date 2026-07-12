@@ -19,6 +19,7 @@ where
     let args = cli::Args::parse_from(iter);
     output::set_verbose(args.verbose);
     output::set_quiet(args.quiet);
+    verbose!("Using secrets.nix: {}", args.secrets_nix);
 
     let config = |operation| nix::Config {
         rules_path: args.secrets_nix.clone().into(),
@@ -48,17 +49,36 @@ where
             } else {
                 secrets
             };
+            if names.is_empty() {
+                log!("No secrets defined in secrets.nix");
+                return Ok(());
+            }
             let mut reports = ReportCollection::new();
+            let mut failed = 0;
             for name in &names {
-                if let Err(e) = nix::check_entry(name) {
-                    reports.push(e.into_cloneable());
+                match nix::check_entry(name) {
+                    Ok(()) => log!("{name}: OK"),
+                    Err(e) => {
+                        failed += 1;
+                        reports.push(e.into_cloneable());
+                    }
                 }
             }
             if reports.is_empty() {
-                log!("All checks passed");
+                log!(
+                    "{} {} verified successfully",
+                    names.len(),
+                    output::pluralize_secret(names.len())
+                );
                 Ok(())
             } else {
-                Err(reports.context("Check failed").into())
+                Err(reports
+                    .context(format!(
+                        "Check failed for {failed} of {} {}",
+                        names.len(),
+                        output::pluralize_secret(names.len())
+                    ))
+                    .into())
             }
         }
         Some(cli::Command::Decrypt {
@@ -67,6 +87,7 @@ where
             public,
         }) => {
             nix::init(config(nix::Operation::Read))?;
+            verbose!("Decrypting secret: {secret}");
             let content = if public {
                 nix::get_public(&secret)?
             } else {
@@ -87,12 +108,28 @@ where
             } else {
                 secrets
             };
+            if names.is_empty() {
+                log!("No secrets defined in secrets.nix");
+                return Ok(());
+            }
+            let mut ok = 0;
             for name in &names {
                 if status {
-                    println!("{name}\t{}", status_code(nix::status(name)?));
+                    let code = status_code(nix::status(name)?);
+                    println!("{name}\t{code}");
+                    if matches!(code, "EXISTS" | "PUBLIC_ONLY") {
+                        ok += 1;
+                    }
                 } else {
                     println!("{name}");
                 }
+            }
+            if status {
+                log!(
+                    "Total: {} {} ({ok} ok)",
+                    names.len(),
+                    output::pluralize_secret(names.len())
+                );
             }
             Ok(())
         }

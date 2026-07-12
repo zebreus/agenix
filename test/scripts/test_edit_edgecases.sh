@@ -93,7 +93,7 @@ echo "original" | agenix encrypt --secrets-nix "$TEMP_RULES" "$UNCHANGED_SECRET"
 original_hash=$(sha256sum "${UNCHANGED_SECRET}.age" | cut -d' ' -f1)
 
 # Use cat as editor (makes no changes)
-EDITOR="cat" agenix edit --secrets-nix "$TEMP_RULES" "$UNCHANGED_SECRET" 2>&1 | grep -q "wasn't changed"
+EDITOR="cat" agenix edit --secrets-nix "$TEMP_RULES" "$UNCHANGED_SECRET" 2>&1 | grep -q "unchanged"
 if [ $? -eq 0 ]; then
   echo "✓ Edit detects unchanged content"
 else

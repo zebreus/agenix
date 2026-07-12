@@ -155,8 +155,8 @@ fi
 # Test 13: Check multiple invalid secrets shows count
 echo "--- Test 13: Multiple invalid secrets count ---"
 MULTI_RULES="$TMPDIR/multi-check-rules.nix"
-MULTI_SECRET1_NAME="$TMPDIR/multi-invalid1"
-MULTI_SECRET2_NAME="$TMPDIR/multi-invalid2"
+MULTI_SECRET1_NAME="multi-invalid1"
+MULTI_SECRET2_NAME="multi-invalid2"
 MULTI_SECRET1="$TMPDIR/multi-invalid1.age"
 MULTI_SECRET2="$TMPDIR/multi-invalid2.age"
 cat > "$MULTI_RULES" << EOF

@@ -49,7 +49,7 @@ echo "--- Test 5: Custom secrets.nix ---"
 TEMP_RULES="$TMPDIR/custom-secrets.nix"
 cat > "$TEMP_RULES" << EOF
 {
-  "$TMPDIR/custom-secret.age" = {
+  "custom-secret" = {
     publicKeys = [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL0idNvgGiucWgup/mP78zyC23uFjYq0evcWdjGQUaBH" ];
   };
 }
@@ -117,7 +117,7 @@ fi
 # Test 11: List --status with corrupted secret shows NO_DECRYPT
 echo "--- Test 11: Corrupted secret status ---"
 CORRUPT_RULES="$TMPDIR/corrupt-secrets.nix"
-CORRUPT_SECRET_NAME="$TMPDIR/corrupt-secret"
+CORRUPT_SECRET_NAME="corrupt-secret"
 CORRUPT_SECRET="$TMPDIR/corrupt-secret.age"
 cat > "$CORRUPT_RULES" << EOF
 {
